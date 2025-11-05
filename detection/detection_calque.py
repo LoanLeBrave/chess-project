@@ -2,6 +2,7 @@ import cv2
 import numpy as np
 import os
 
+
 orb = cv2.ORB_create(nfeatures=2000)  # plus de features !
 
 img_test = cv2.imread("test3.jpg")  # ton image avec toutes les pièces
