@@ -147,57 +147,121 @@ On interroge directement http://10.5.5.9/gp/gpControl/status pour la vérité br
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-"""
-Script interactif minimal :
-- tape "photo" pour prendre une photo et la sauvegarder dans ./images/
-- tape "quit" pour quitter
-
-Remarque :
-On n'utilise PAS gopro.getStatus(...) pour lire tout le JSON (version de la lib trop capricieuse).
-On interroge directement http://10.5.5.9/gp/gpControl/status pour la vérité brute.
-"""
-
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-  
 from goprocam import GoProCamera, constants
+import requests
 import time
 import datetime
 from pathlib import Path
 
-# === CONFIGURATION ===
-
-# Dossier pour sauvegarder les photos
 OUTDIR = Path(__file__).parent / "images"
 OUTDIR.mkdir(exist_ok=True)
 
-# Connexion GoPro (Wi-Fi en mode gpcontrol)
 gopro = GoProCamera.GoPro()
 
+GOPRO_IP = "10.5.5.9"
+STATUS_URL = f"http://{GOPRO_IP}/gp/gpControl/status"
+MEDIA_URL = f"http://{GOPRO_IP}:8080/videos/DCIM/100GOPRO/"
+
+def wake_gopro():
+    """Réveille la GoPro et attend qu'elle soit réellement active."""
+    print("⏰ Réveil GoPro...")
+
+    # une requête suffit à la réveiller
+    try:
+        requests.get(STATUS_URL, timeout=1)
+    except:
+        pass
+
+    # attendre qu'elle réponde vraiment
+    for _ in range(20):  # ~ 4 secondes max
+        try:
+            r = requests.get(STATUS_URL, timeout=0.5)
+            if r.ok and "status" in r.json():
+                print("⚡ GoPro réveillée.")
+                return True
+        except:
+            pass
+        time.sleep(0.2)
+      
+    time.sleep(8)
+
+    print("❌ Impossible de réveiller la GoPro.")
+    return False
+
+
 def switch_to_photo_mode():
-    """Met la GoPro en mode Photo / Single."""
     print("🎛 Passage en mode Photo / Single...")
     gopro.mode(constants.Mode.PhotoMode, constants.Mode.SubMode.Photo.Single)
-    time.sleep(10.0)  # donner un peu de temps à la GoPro
+    time.sleep(2)
+
+
+def wait_for_new_media(before_list):
+    """Attend qu'un nouveau média arrive dans gpMediaList."""
+    for _ in range(25):  # ~5 secondes max
+        try:
+            listing = gopro.getMediaList()
+            last_dir = list(listing["media"].values())[-2]["d"]
+            last_file = list(listing["media"].values())[-1]["fs"][-1]["n"]
+
+            file_id = (last_dir, last_file)
+            if file_id not in before_list:
+                return file_id
+        except:
+            pass
+
+        time.sleep(0.2)
+
+    return None
+
 
 def take_photo():
-    """Déclenche une photo et télécharge l’image capturée."""
+    # 1. Réveil
+    if not wake_gopro():
+        return
+
+    # 2. Lecture de la liste AVANT la photo
+    before = set()
+    try:
+        listing = gopro.getMediaList()
+        d = list(listing["media"].values())[-2]["d"]
+        f = list(listing["media"].values())[-1]["fs"][-1]["n"]
+        before.add((d, f))
+    except:
+        pass
+
+    # 3. Mode photo
     switch_to_photo_mode()
 
-    print("📸 Déclenchement de la photo...")
-    gopro.shutter(constants.start)  # signature correcte
-    time.sleep(5.0)  # laisser le temps d'écrire sur la carte SD
+    time.sleep(8)
 
-    # Nom de fichier horodaté
-    timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
-    filename = OUTDIR / f"photo_{timestamp}.jpg"
+    # 4. Déclenchement
+    print("📸 Déclenchement...")
+    gopro.shutter(constants.start)
 
-    print("⬇️  Téléchargement de la photo...")
-    try:
-        gopro.downloadLastMedia(str(filename))
-        print(f"✅ Photo sauvegardée : {filename.resolve()}")
-    except Exception as e:
-        print("❌ Échec du téléchargement :", e)
+    # 5. Attendre le nouveau fichier
+    print("⏳ Attente du fichier...")
+    new_media = wait_for_new_media(before)
+
+    if not new_media:
+        print("❌ La GoPro n'a pas généré de média.")
+        return
+
+    directory, filename = new_media
+
+    # 6. Téléchargement direct dans ton dossier
+    ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    local_path = OUTDIR / f"photo_{ts}.jpg"
+
+    url = f"http://{GOPRO_IP}:8080/videos/DCIM/{directory}/{filename}"
+
+    print("⬇️ Téléchargement :", url)
+    r = requests.get(url, stream=True)
+    with open(local_path, "wb") as f:
+        for chunk in r.iter_content(4096):
+            f.write(chunk)
+
+    print(f"✅ Photo sauvegardée : {local_path.resolve()}")
+
 
 if __name__ == "__main__":
     take_photo()
