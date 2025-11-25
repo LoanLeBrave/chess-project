@@ -159,14 +159,8 @@ On interroge directement http://10.5.5.9/gp/gpControl/status pour la vérité br
 
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-
-"""
-Script : prendre une photo et la sauvegarder dans ./images/
-⚠️ Assure-toi que la GoPro est déjà en mode PHOTO avant de lancer ce script.
-"""
-
-from goprocam_local_backup import GoProCamera, constants
-import os
+  
+from goprocam import GoProCamera, constants
 import time
 import datetime
 from pathlib import Path
@@ -184,15 +178,15 @@ def switch_to_photo_mode():
     """Met la GoPro en mode Photo / Single."""
     print("🎛 Passage en mode Photo / Single...")
     gopro.mode(constants.Mode.PhotoMode, constants.Mode.SubMode.Photo.Single)
-    time.sleep(5.0)  # attendre que le changement de mode soit effectif
+    time.sleep(10.0)  # donner un peu de temps à la GoPro
 
 def take_photo():
     """Déclenche une photo et télécharge l’image capturée."""
     switch_to_photo_mode()
 
     print("📸 Déclenchement de la photo...")
-    gopro.shutter()
-    time.sleep(7.5)  # attendre que la photo soit bien écrite sur la SD
+    gopro.shutter(constants.start)  # signature correcte
+    time.sleep(5.0)  # laisser le temps d'écrire sur la carte SD
 
     # Nom de fichier horodaté
     timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
