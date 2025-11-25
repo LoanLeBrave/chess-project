@@ -19,6 +19,7 @@ Robot (UR) mapping example (Installation → Modbus):
     Input Register 4 -> ry_deg10
     Input Register 5 -> rz_deg10
     Coil 0           -> GO_coil
+    Coil 1           -> GRIPPER_coil (1 = open, 0 = close)
 
 In your UR program, convert units then build pose_target:
     x_m_val  = x_m / 1000.0
@@ -57,22 +58,32 @@ device = ModbusDeviceContext(
 context = ModbusServerContext(devices=device, single=True)
 
 def _set_pose_and_go_mm_deg10(
-    x_mm:int, y_mm:int, z_mm:int, rx_deg10:int, ry_deg10:int, rz_deg10:int, go:int=1
+    x_mm:int, y_mm:int, z_mm:int, rx_deg10:int, ry_deg10:int, rz_deg10:int, go:int=1, gripper:int=-1
 ) -> None:
-    """Write the 6 values into Input Registers 0..5 and set Coil 0 = GO."""
+    """
+    Write the 6 values into Input Registers 0..5 and set Coil 0 = GO.
+    If gripper >= 0, also set Coil 1 for Robotiq Hand-E control (1=open, 0=close).
+    """
     vals = [x_mm, y_mm, z_mm, rx_deg10, ry_deg10, rz_deg10]
     # Clamp to 16-bit unsigned
     vals = [max(0, min(65535, int(v))) for v in vals]
     # 4 = Input Registers, 1 = Coils
     device.setValues(4, 0, vals)
     device.setValues(1, 0, [1 if go else 0])
-    print(f"[Modbus] IR[0..5] = {vals}   Coil[0]= {1 if go else 0}")
 
-def _parse_udp_payload(data: bytes) -> Tuple[int,int,int,int,int,int,int]:
+    # Set Coil 1 for gripper control if specified (gripper = 0 or 1)
+    if gripper >= 0:
+        device.setValues(1, 1, [1 if gripper else 0])
+        print(f"[Modbus] IR[0..5] = {vals}   Coil[0]= {1 if go else 0}   Coil[1](GRIPPER)= {1 if gripper else 0}")
+    else:
+        print(f"[Modbus] IR[0..5] = {vals}   Coil[0]= {1 if go else 0}")
+
+def _parse_udp_payload(data: bytes) -> Tuple[int,int,int,int,int,int,int,int]:
     """
-    Accept JSON: {"x":..,"y":..,"z":..,"rx":..,"ry":..,"rz":..,"go":0/1}
-    Or space-separated: x y z rx ry rz [go]
+    Accept JSON: {"x":..,"y":..,"z":..,"rx":..,"ry":..,"rz":..,"go":0/1,"gripper":-1/0/1}
+    Or space-separated: x y z rx ry rz [go] [gripper]
     Units: mm for x,y,z; degrees for rx,ry,rz (converted to deg*10 here).
+    gripper: -1 = no change, 0 = close, 1 = open
     """
     s = data.decode("utf-8").strip()
     if s.startswith("{"):
@@ -84,16 +95,18 @@ def _parse_udp_payload(data: bytes) -> Tuple[int,int,int,int,int,int,int]:
         ry = int(round(float(obj["ry"]) * 10.0))
         rz = int(round(float(obj["rz"]) * 10.0))
         go = int(obj.get("go", 1))
-        return x, y, z, rx, ry, rz, go
+        gripper = int(obj.get("gripper", -1))
+        return x, y, z, rx, ry, rz, go, gripper
     parts = s.split()
     if len(parts) < 6:
-        raise ValueError("Need at least 6 values: x y z rx ry rz [go]")
+        raise ValueError("Need at least 6 values: x y z rx ry rz [go] [gripper]")
     x, y, z = [int(round(float(v))) for v in parts[:3]]
     rx = int(round(float(parts[3]) * 10.0))
     ry = int(round(float(parts[4]) * 10.0))
     rz = int(round(float(parts[5]) * 10.0))
     go = int(parts[6]) if len(parts) >= 7 else 1
-    return x, y, z, rx, ry, rz, go
+    gripper = int(parts[7]) if len(parts) >= 8 else -1
+    return x, y, z, rx, ry, rz, go, gripper
 
 def udp_listener() -> None:
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -102,9 +115,10 @@ def udp_listener() -> None:
     while True:
         data, addr = sock.recvfrom(4096)
         try:
-            x, y, z, rx, ry, rz, go = _parse_udp_payload(data)
-            print(f"[UDP] From {addr}: x={x} y={y} z={z} rx={rx/10.0}° ry={ry/10.0}° rz={rz/10.0}° go={go}")
-            _set_pose_and_go_mm_deg10(x, y, z, rx, ry, rz, go)
+            x, y, z, rx, ry, rz, go, gripper = _parse_udp_payload(data)
+            gripper_str = "no change" if gripper < 0 else ("open" if gripper else "close")
+            print(f"[UDP] From {addr}: x={x} y={y} z={z} rx={rx/10.0}° ry={ry/10.0}° rz={rz/10.0}° go={go} gripper={gripper_str}")
+            _set_pose_and_go_mm_deg10(x, y, z, rx, ry, rz, go, gripper)
         except Exception as e:
             print(f"[UDP] Error parsing payload from {addr}: {e}")
 
