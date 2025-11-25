@@ -6,10 +6,15 @@ import termios
 import json
 from datetime import datetime
 import time
+import socket
 
 # Connexion au robot
 rtde_c = RTDEControlInterface("192.168.0.11")
 rtde_r = RTDEReceiveInterface("192.168.0.11")
+
+# Connexion socket pour les commandes URScript (gripper)
+ur_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+ur_socket.connect(("192.168.0.11", 30002))
 
 # Paramètres de mouvement
 STEP_LINEAR = 0.01  # 1 cm
@@ -26,6 +31,12 @@ sequence_active = []
 enregistrement_sequence = False
 
 
+def send_urscript(script):
+    """Envoie une commande URScript au robot"""
+    ur_socket.send((script + "\n").encode())
+    time.sleep(0.1)
+
+
 def get_key():
     """Lit une touche du clavier"""
     fd = sys.stdin.fileno()
@@ -33,7 +44,7 @@ def get_key():
     try:
         tty.setraw(sys.stdin.fileno())
         ch = sys.stdin.read(1)
-        if ch == '\x1b':  # Séquence d'échappement (flèches)
+        if ch == '\x1b':
             ch2 = sys.stdin.read(1)
             ch3 = sys.stdin.read(1)
             return ch + ch2 + ch3
@@ -42,26 +53,10 @@ def get_key():
         termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
 
 
-def gripper_activate():
-    """Active le gripper Hand-E"""
-    # Script URScript pour activer le gripper Robotiq
-    script = """
-def activate_gripper():
-    set_tool_voltage(24)
-    sleep(0.5)
-    rq_activate()
-    sleep(1.0)
-end
-"""
-    rtde_c.sendCustomScriptCommand(script)
-    time.sleep(2)
-    print("✓ Gripper activé")
-
-
 def gripper_open():
     """Ouvre le gripper"""
     global gripper_ouvert
-    rtde_c.sendCustomScriptCommand("rq_open()")
+    send_urscript("rq_open()")
     gripper_ouvert = True
     print("✋ Gripper OUVERT")
 
@@ -69,7 +64,7 @@ def gripper_open():
 def gripper_close():
     """Ferme le gripper"""
     global gripper_ouvert
-    rtde_c.sendCustomScriptCommand("rq_close()")
+    send_urscript("rq_close()")
     gripper_ouvert = False
     print("✊ Gripper FERMÉ")
 
@@ -84,7 +79,7 @@ def gripper_toggle():
 
 def gripper_position(pos):
     """Positionne le gripper (0=ouvert, 255=fermé)"""
-    rtde_c.sendCustomScriptCommand(f"rq_move({pos})")
+    send_urscript(f"rq_move({pos})")
     print(f"🤏 Gripper position: {pos}")
 
 
@@ -130,7 +125,6 @@ def play_sequence():
         print(f"  Position {i + 1}/{len(sequence_active)}")
         rtde_c.moveJ(pos["joints"], VELOCITY, ACCELERATION)
 
-        # Gestion du gripper
         if pos.get("gripper") == "ouvert":
             gripper_open()
         elif pos.get("gripper") == "ferme":
@@ -150,16 +144,6 @@ def save_to_file():
     with open(filename, 'w') as f:
         json.dump(data, f, indent=2)
     print(f"\n✓ Sauvegardé dans {filename}")
-
-
-def load_from_file(filename):
-    """Charge les positions depuis un fichier"""
-    global positions_enregistrees, sequence_active
-    with open(filename, 'r') as f:
-        data = json.load(f)
-    positions_enregistrees = data.get("positions", [])
-    sequence_active = data.get("sequence", [])
-    print(f"\n✓ Chargé: {len(positions_enregistrees)} positions, {len(sequence_active)} points de séquence")
 
 
 def print_help():
@@ -209,16 +193,16 @@ def main():
         key = get_key()
 
         # Flèches directionnelles
-        if key == '\x1b[A':  # Flèche haut
+        if key == '\x1b[A':
             print("↑ Y+")
             move_cartesian(dy=STEP_LINEAR)
-        elif key == '\x1b[B':  # Flèche bas
+        elif key == '\x1b[B':
             print("↓ Y-")
             move_cartesian(dy=-STEP_LINEAR)
-        elif key == '\x1b[C':  # Flèche droite
+        elif key == '\x1b[C':
             print("→ X+")
             move_cartesian(dx=STEP_LINEAR)
-        elif key == '\x1b[D':  # Flèche gauche
+        elif key == '\x1b[D':
             print("← X-")
             move_cartesian(dx=-STEP_LINEAR)
 
@@ -288,11 +272,12 @@ def main():
             print_help()
 
         # Quitter
-        elif key == '\x1b' or key == '\x03':  # ESC ou Ctrl+C
+        elif key == '\x1b' or key == '\x03':
             print("\nArrêt du programme...")
             break
 
     rtde_c.stopScript()
+    ur_socket.close()
     print("Déconnecté")
 
 
@@ -302,3 +287,4 @@ if __name__ == "__main__":
     except Exception as e:
         print(f"\nErreur: {e}")
         rtde_c.stopScript()
+        ur_socket.close()
