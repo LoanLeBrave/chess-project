@@ -3,9 +3,9 @@ import re
 from PIL import Image, ImageDraw, ImageFont
 
 reader = easyocr.Reader(['en'])
-result = reader.readtext('test/test9.jpg')
+result = reader.readtext('test/test7.jpg')
 
-img = Image.open('test/test9.jpg')
+img = Image.open('test/test7.jpg')
 draw = ImageDraw.Draw(img)
 
 # Essayer de charger une font, sinon utiliser la default
