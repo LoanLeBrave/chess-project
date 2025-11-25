@@ -165,7 +165,7 @@ Script : prendre une photo et la sauvegarder dans ./images/
 ⚠️ Assure-toi que la GoPro est déjà en mode PHOTO avant de lancer ce script.
 """
 
-from goprocam import GoProCamera, constants
+from goprocam_local_backup import GoProCamera, constants
 import os
 import time
 import datetime
@@ -178,7 +178,7 @@ OUTDIR = Path(__file__).parent / "images"
 OUTDIR.mkdir(exist_ok=True)
 
 # Connexion GoPro (Wi-Fi en mode gpcontrol)
-gopro = GoProCamera.GoPro(constants.gpcontrol)
+gopro = GoProCamera.GoPro()
 
 def switch_to_photo_mode():
     """Met la GoPro en mode Photo / Single."""
@@ -191,7 +191,7 @@ def take_photo():
     switch_to_photo_mode()
 
     print("📸 Déclenchement de la photo...")
-    gopro.take_photo()
+    gopro.shutter()
     time.sleep(7.5)  # attendre que la photo soit bien écrite sur la SD
 
     # Nom de fichier horodaté
@@ -200,7 +200,7 @@ def take_photo():
 
     print("⬇️  Téléchargement de la photo...")
     try:
-        gopro.downloadLastMedia(custom_filename=str(filename))
+        gopro.downloadLastMedia(str(filename))
         print(f"✅ Photo sauvegardée : {filename.resolve()}")
     except Exception as e:
         print("❌ Échec du téléchargement :", e)
