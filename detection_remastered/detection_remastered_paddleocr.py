@@ -10,9 +10,9 @@ ocr = PaddleOCR(
 )
 
 # Lecture de l'image
-result = ocr.predict(f"/home/loan/Documents/Junia/AP5/projet_chess/chess-project/detection_remastered/image_sale.png")
+result = ocr.predict(f"/home/loan/Documents/Junia/AP5/projet_chess/chess-project/detection_remastered/image_propre.jpg")
 
-img = Image.open('/home/loan/Documents/Junia/AP5/projet_chess/chess-project/detection_remastered/image_sale.png')
+img = Image.open('/home/loan/Documents/Junia/AP5/projet_chess/chess-project/detection_remastered/image_propre.jpg')
 draw = ImageDraw.Draw(img)
 
 # Charger la font
@@ -50,16 +50,23 @@ if result and len(result) > 0:
             points = [(int(p[0]), int(p[1])) for p in bbox]
             draw.polygon(points, outline='red', width=2)
             
-            # Position en haut à gauche
-            min_x = min(p[0] for p in bbox)
-            min_y = min(p[1] for p in bbox)
+            # Calculer le centre du polygone pour placer le label
+            center_x = sum(p[0] for p in bbox) / len(bbox)
+            center_y = sum(p[1] for p in bbox) / len(bbox)
             
-            # Afficher le texte détecté
+            # Trouver le point le plus haut du polygone pour placer le label au-dessus
+            top_y = min(p[1] for p in bbox)
+            
+            # Afficher le texte détecté au centre horizontal, au-dessus du texte
             label = f"{texte} ({confiance:.2f})"
-            draw.text((int(min_x), int(min_y) - 25), label, fill='red', font=font)
+            # Obtenir la taille du texte pour le centrer
+            bbox_text = draw.textbbox((0, 0), label, font=font)
+            text_width = bbox_text[2] - bbox_text[0]
+            
+            draw.text((int(center_x - text_width/2), int(top_y) - 25), label, fill='red', font=font)
 
 # Sauvegarder l'image annotée
-img.save('/home/loan/Documents/Junia/AP5/projet_chess/chess-project/detection_remastered/image_sale_detecte_paddle.png')
+img.save('/home/loan/Documents/Junia/AP5/projet_chess/chess-project/detection_remastered/image_propre_detecte_paddle.png')
 
 print("Nombres détectés:")
 for item in nombres_avec_pos:
