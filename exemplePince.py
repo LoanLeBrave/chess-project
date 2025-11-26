@@ -1,7 +1,7 @@
 import robotiq_gripper
 import time
 
-ip = "127.0.0.1"
+ip = "127.168.0.11"
 
 def log_info(gripper):
     print(f"Pos: {str(gripper.get_current_position()): >3}  "
