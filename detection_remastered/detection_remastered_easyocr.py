@@ -42,7 +42,7 @@ for detection in result:
         label = f"{texte} ({confiance:.2f})"
         draw.text((int(min_x), int(min_y) - 25), label, fill='red', font=font)
 
-img.save('/home/loan/Documents/Junia/AP5/projet_chess/chess-project/detection_remastered/image_propre_detecte.png')
+img.save('/home/loan/Documents/Junia/AP5/projet_chess/chess-project/detection_remastered/image_propre_detecte_easy.png')
 
 print("Nombres détectés:")
 for item in nombres_avec_pos:
