@@ -3,9 +3,9 @@ import re
 from PIL import Image, ImageDraw, ImageFont
 
 reader = easyocr.Reader(['en'])
-result = reader.readtext('test/test7.jpg')
+result = reader.readtext('test/test4.jpg')
 
-img = Image.open('test/test7.jpg')
+img = Image.open('test/test4.jpg')
 draw = ImageDraw.Draw(img)
 
 # Essayer de charger une font, sinon utiliser la default
@@ -40,7 +40,7 @@ for detection in result:
         label = f"{texte} ({confiance:.2f})"
         draw.text((int(min_x), int(min_y) - 25), label, fill='red', font=font)
 
-img.save('image_2_detecte.png')
+img.save('image_detecte.png')
 
 print("Nombres détectés:")
 for item in nombres_avec_pos:
