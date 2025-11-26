@@ -17,5 +17,4 @@ time.sleep(1)
 gripper.open()
 gripper.move(55)  # mm
 
-# Stop the rtde control script
-rtde_c.stopRobot()
+print("Finish")
