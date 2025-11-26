@@ -129,4 +129,143 @@ def save_to_file():
     print(f"\n✓ Sauvegardé: {filename}")
 
 
-def load_fr
+def load_from_file(filename):
+    global positions_enregistrees, sequence_active
+    with open(filename, 'r') as f:
+        data = json.load(f)
+    positions_enregistrees = data.get("positions", [])
+    sequence_active = data.get("sequence", [])
+    print(f"\n✓ Chargé: {len(positions_enregistrees)} positions, {len(sequence_active)} points")
+
+
+def print_help():
+    print("""
+╔═══════════════════════════════════════════════════════════╗
+║              CONTRÔLE ROBOT UR5e + Hand-E                 ║
+╠═══════════════════════════════════════════════════════════╣
+║  DÉPLACEMENT:                                             ║
+║    ↑/↓     : Avancer/Reculer (Y)                         ║
+║    ←/→     : Gauche/Droite (X)                           ║
+║    z/s     : Monter/Descendre (Z)                        ║
+║    a/e     : Rotation RX                                 ║
+║    q/d     : Rotation RY                                 ║
+║    w/x     : Rotation RZ                                 ║
+║                                                           ║
+║  GRIPPER:                                                 ║
+║    g       : Ouvrir/Fermer (toggle)                      ║
+║    o       : Ouvrir                                      ║
+║    c       : Fermer                                      ║
+║    1-9     : Position (1=0mm ouvert, 9=50mm fermé)       ║
+║                                                           ║
+║  ENREGISTREMENT:                                          ║
+║    ESPACE  : Enregistrer position actuelle               ║
+║    r       : Démarrer/Arrêter enregistrement séquence    ║
+║    p       : Rejouer la séquence                         ║
+║    l       : Sauvegarder dans fichier                    ║
+║                                                           ║
+║  AUTRES:                                                  ║
+║    i       : Afficher position actuelle                  ║
+║    h       : Afficher cette aide                         ║
+║    ECHAP   : Quitter                                     ║
+╚═══════════════════════════════════════════════════════════╝
+""")
+
+
+def main():
+    global enregistrement_sequence
+
+    print("Connexion au robot...")
+    print(f"TCP: {rtde_r.getActualTCPPose()}")
+    print_help()
+
+    while True:
+        key = get_key()
+
+        # Flèches directionnelles
+        if key == '\x1b[A':
+            print("↑ Y+")
+            move_cartesian(dy=STEP_LINEAR)
+        elif key == '\x1b[B':
+            print("↓ Y-")
+            move_cartesian(dy=-STEP_LINEAR)
+        elif key == '\x1b[C':
+            print("→ X+")
+            move_cartesian(dx=STEP_LINEAR)
+        elif key == '\x1b[D':
+            print("← X-")
+            move_cartesian(dx=-STEP_LINEAR)
+
+        # Hauteur Z
+        elif key == 'z':
+            print("Z+")
+            move_cartesian(dz=STEP_LINEAR)
+        elif key == 's':
+            print("Z-")
+            move_cartesian(dz=-STEP_LINEAR)
+
+        # Rotations
+        elif key == 'a':
+            move_cartesian(drx=STEP_ANGULAR)
+        elif key == 'e':
+            move_cartesian(drx=-STEP_ANGULAR)
+        elif key == 'q':
+            move_cartesian(dry=STEP_ANGULAR)
+        elif key == 'd':
+            move_cartesian(dry=-STEP_ANGULAR)
+        elif key == 'w':
+            move_cartesian(drz=STEP_ANGULAR)
+        elif key == 'x':
+            move_cartesian(drz=-STEP_ANGULAR)
+
+        # Gripper
+        elif key == 'g':
+            gripper_toggle()
+        elif key == 'o':
+            gripper_open()
+        elif key == 'c':
+            gripper_close()
+        elif key in '123456789':
+            # 1 = 0mm (ouvert), 9 = 50mm (fermé pour Hand-E)
+            pos_mm = int((int(key) - 1) * 50 / 8)
+            gripper_position(pos_mm)
+
+        # Enregistrement
+        elif key == ' ':
+            save_position()
+        elif key == 'r':
+            enregistrement_sequence = not enregistrement_sequence
+            if enregistrement_sequence:
+                sequence_active.clear()
+                print("\n● ENREGISTREMENT DÉMARRÉ")
+            else:
+                print(f"\n■ ENREGISTREMENT ARRÊTÉ ({len(sequence_active)} positions)")
+        elif key == 'p':
+            play_sequence()
+        elif key == 'l':
+            save_to_file()
+
+        # Infos
+        elif key == 'i':
+            pose = rtde_r.getActualTCPPose()
+            joints = rtde_r.getActualQ()
+            print(f"\nPosition TCP: X={pose[0]:.4f} Y={pose[1]:.4f} Z={pose[2]:.4f}")
+            print(f"Orientation:  RX={pose[3]:.4f} RY={pose[4]:.4f} RZ={pose[5]:.4f}")
+            print(f"Gripper: {'OUVERT' if gripper_ouvert else 'FERMÉ'}")
+        elif key == 'h':
+            print_help()
+
+        # Quitter
+        elif key == '\x1b' or key == '\x03':
+            print("\nArrêt...")
+            break
+
+    rtde_c.stopScript()
+    print("Déconnecté")
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except Exception as e:
+        print(f"\nErreur: {e}")
+        rtde_c.stopScript()
