@@ -2,7 +2,7 @@ from robotiq_gripper_control import RobotiqGripper
 from rtde_control import RTDEControlInterface
 import time
 
-rtde_c = RTDEControlInterface("<ROBOT_IP>")
+rtde_c = RTDEControlInterface("192.168.0.11")
 gripper = RobotiqGripper(rtde_c)
 
 # Activate the gripper and initialize force and speed
