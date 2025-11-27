@@ -12,10 +12,25 @@ ocr = PaddleOCR(
 )
 
 # Lecture de l'image
-image_path = "/home/loan/Documents/Junia/AP5/projet_chess/chess-project/detection_remastered/photo_noirblanc.jpg"
+image_path = "/home/loan/Documents/Junia/AP5/projet_chess/chess-project/detection_remastered/photo_reelle_1.jpg"
 
 # Charger l'image originale
-original_img = Image.open(image_path)
+original_img_full = Image.open(image_path)
+
+# Redimensionnement intelligent : seulement si l'image est trop grande
+MAX_DIMENSION = 1200  # Taille max (largeur ou hauteur)
+width, height = original_img_full.size
+scale_factor = 1.0
+
+if max(width, height) > MAX_DIMENSION:
+    scale_factor = MAX_DIMENSION / max(width, height)
+    new_width = int(width * scale_factor)
+    new_height = int(height * scale_factor)
+    original_img = original_img_full.resize((new_width, new_height), Image.LANCZOS)
+    print(f"Image redimensionnée: {width}x{height} → {new_width}x{new_height} (facteur: {scale_factor:.2f})")
+else:
+    original_img = original_img_full
+    print(f"Image conservée en taille originale: {width}x{height}")
 
 # Charger la font
 try:
@@ -84,6 +99,8 @@ def deduplicate_detections(detections, distance_threshold=50):
     return kept
 
 
+import gc  # Pour le garbage collector
+
 # Stratégie: faire plusieurs passes avec différentes rotations de l'image
 # puis fusionner les résultats
 rotations = [0, 90, 180, 270]  # Degrés de rotation à tester
@@ -133,6 +150,11 @@ for rotation in rotations:
                         'rotation_source': rotation
                     })
                     print(f"    {match} (confiance: {confiance:.2f})")
+    
+    # Libérer la mémoire après chaque passe
+    del rotated_img, rotated_np, result
+    gc.collect()
+    print(f"  Mémoire libérée.\n")
 
 # Dédupliquer les résultats
 unique_detections = deduplicate_detections(all_detections)
@@ -166,7 +188,7 @@ for det in unique_detections:
     draw.text((int(center_x - text_width/2), int(top_y) - 20), label, fill='red', font=font_small)
 
 # Sauvegarder
-img_annotated.save('/home/loan/Documents/Junia/AP5/projet_chess/chess-project/detection_remastered/image_sale_detecte_multipass.png')
+img_annotated.save('/home/loan/Documents/Junia/AP5/projet_chess/chess-project/detection_remastered/photo_reelle_1_detecte.png')
 
 print("\n=== Nombres détectés (uniques) ===")
 for det in sorted(unique_detections, key=lambda x: int(x['valeur']) if x['valeur'].isdigit() else 0):
