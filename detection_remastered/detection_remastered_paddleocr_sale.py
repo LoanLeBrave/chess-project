@@ -3,14 +3,17 @@ import re
 from PIL import Image, ImageDraw, ImageFont
 import numpy as np
 
-# Initialiser PaddleOCR avec détection d'angle
+# Initialiser PaddleOCR sans correction d'orientation du document
+# car l'image sale est déjà bien orientée
 ocr = PaddleOCR(
-    use_textline_orientation=True,  # Gère les rotations
+    use_textline_orientation=True,  # Gère les rotations des lignes de texte
+    use_doc_orientation_classify=False,  # Désactive la rotation automatique du document
+    use_doc_unwarping=False,  # Désactive la correction de perspective
     lang='en'
 )
 
 # Lecture de l'image
-image_path = "/home/loan/Documents/Junia/AP5/projet_chess/chess-project/detection_remastered/image_propre.jpg"
+image_path = "/home/loan/Documents/Junia/AP5/projet_chess/chess-project/detection_remastered/image_sale.png"
 result = ocr.predict(image_path)
 
 # Charger la font
@@ -72,10 +75,10 @@ if result and len(result) > 0:
             draw.text((int(center_x - text_width/2), int(top_y) - 25), label, fill='red', font=font)
 
     # Sauvegarder l'image annotée (image prétraitée avec annotations)
-    img.save('/home/loan/Documents/Junia/AP5/projet_chess/chess-project/detection_remastered/image_propre_detecte_paddle.png')
+    img.save('/home/loan/Documents/Junia/AP5/projet_chess/chess-project/detection_remastered/image_sale_detecte_paddle.png')
     
     # Optionnel: sauvegarder aussi l'image prétraitée sans annotations pour comparaison
-    Image.fromarray(preprocessed_img).save('/home/loan/Documents/Junia/AP5/projet_chess/chess-project/detection_remastered/image_preprocessed.png')
+    Image.fromarray(ocr_result['doc_preprocessor_res']['output_img']).save('/home/loan/Documents/Junia/AP5/projet_chess/chess-project/detection_remastered/image_sale_preprocessed.png')
 
 print("Nombres détectés:")
 for item in nombres_avec_pos:

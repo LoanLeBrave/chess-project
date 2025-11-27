@@ -75,7 +75,7 @@ if result and len(result) > 0:
     img.save('/home/loan/Documents/Junia/AP5/projet_chess/chess-project/detection_remastered/image_propre_detecte_paddle.png')
     
     # Optionnel: sauvegarder aussi l'image prétraitée sans annotations pour comparaison
-    Image.fromarray(preprocessed_img).save('/home/loan/Documents/Junia/AP5/projet_chess/chess-project/detection_remastered/image_preprocessed.png')
+    Image.fromarray(ocr_result['doc_preprocessor_res']['output_img']).save('/home/loan/Documents/Junia/AP5/projet_chess/chess-project/detection_remastered/image_propre_preprocessed.png')
 
 print("Nombres détectés:")
 for item in nombres_avec_pos:
