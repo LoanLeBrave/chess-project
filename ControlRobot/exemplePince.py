@@ -1,5 +1,4 @@
 import robotiq_gripper
-import time
 
 ip = "192.168.0.11"
 
