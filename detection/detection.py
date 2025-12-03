@@ -4,7 +4,6 @@ Ultra-rapide et natif OpenCV (pas de dépendance externe)t
 """
 
 
-
 import cv2
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont

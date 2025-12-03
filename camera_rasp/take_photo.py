@@ -4,6 +4,7 @@ Script simple pour prendre une photo avec la caméra Raspberry Pi
 Utilise Picamera2 (sur Raspberry Pi) ou OpenCV (sur PC)
 """
 
+
 from datetime import datetime
 import os
 
