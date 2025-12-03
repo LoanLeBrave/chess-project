@@ -101,13 +101,19 @@ def take_photo(filename=None):
     
     if USE_PICAMERA:
         # Raspberry Pi avec Picamera2
+        import time as cam_time
         picam2 = Picamera2()
         config = picam2.create_still_configuration()
         picam2.configure(config)
         picam2.start()
+        cam_time.sleep(2)  # Attendre que la caméra se stabilise
         picam2.capture_file(filepath)
         picam2.stop()
         picam2.close()
+        
+        # Vérifier que le fichier a bien été créé
+        if not os.path.exists(filepath):
+            raise RuntimeError(f"Échec de la capture: {filepath} n'a pas été créé")
     else:
         # PC avec OpenCV (webcam USB)
         cap = cv2.VideoCapture(0)
