@@ -18,8 +18,10 @@ import time
 import json
 
 # ============================================================
-# CONFIGURATION
+# CONFIGURATION GÉNÉRALE
 # ============================================================
+
+# Dimension maximale des images (pour réduire le temps de traitement)
 MAX_DIMENSION = 1500
 
 # Dossiers
@@ -30,7 +32,82 @@ RESULTS_DIR = os.path.join(SCRIPT_DIR, "results")
 # Dictionnaire ArUco (doit correspondre à celui utilisé pour la génération)
 ARUCO_DICT = cv2.aruco.DICT_4X4_50
 
-# Mapping ID ArUco -> Pièce
+# ============================================================
+# CONFIGURATION CAMÉRA RASPBERRY PI
+# ============================================================
+# Ces paramètres sont utilisés avec rpicam-still sur Raspberry Pi
+# Ajustez-les selon vos conditions d'éclairage
+
+CAMERA_CONFIG = {
+    # --- Exposition ---
+    # Temps d'exposition en microsecondes (None = auto)
+    # Plus bas = moins de halos lumineux, mais image plus sombre
+    # Recommandé: 5000-20000 pour réduire les halos
+    'shutter': 10000,  # 10ms
+    
+    # --- Gain (sensibilité ISO) ---
+    # Multiplicateur de gain (1.0 = minimum, plus = plus lumineux mais plus de bruit)
+    # None = auto, Recommandé: 1.0-2.0 pour éviter le bruit
+    'gain': 1.5,
+    
+    # --- Balance des blancs ---
+    # Options: 'auto', 'tungsten', 'fluorescent', 'indoor', 'daylight', 'cloudy'
+    # None = auto
+    'awb': 'auto',
+    
+    # --- Luminosité ---
+    # Ajustement de luminosité (-1.0 à 1.0, 0 = normal)
+    # Valeur négative = plus sombre (réduit les halos)
+    'brightness': 0.0,
+    
+    # --- Contraste ---
+    # Multiplicateur de contraste (1.0 = normal, >1 = plus de contraste)
+    # Recommandé: 1.2-1.5 pour des ArUco plus nets
+    'contrast': 1.2,
+    
+    # --- Saturation ---
+    # Saturation des couleurs (1.0 = normal, 0 = noir et blanc)
+    'saturation': 1.0,
+    
+    # --- Netteté ---
+    # Niveau de netteté (1.0 = normal, >1 = plus net)
+    # Recommandé: 1.5-2.0 pour des bords ArUco plus définis
+    'sharpness': 1.5,
+    
+    # --- Réduction de bruit ---
+    # Options: 'auto', 'off', 'cdn_off', 'cdn_fast', 'cdn_hq'
+    # 'off' = désactivé (préserve les détails des ArUco)
+    'denoise': 'off',
+    
+    # --- Timeout ---
+    # Temps d'attente pour la stabilisation de la caméra (en ms)
+    'timeout': 2000,
+}
+
+# ============================================================
+# CONFIGURATION PRÉTRAITEMENT IMAGE
+# ============================================================
+# Optionnel: améliorer l'image avant détection ArUco
+
+PREPROCESS_CONFIG = {
+    # Activer le prétraitement
+    'enabled': False,
+    
+    # CLAHE (Contrast Limited Adaptive Histogram Equalization)
+    # Améliore le contraste local
+    'clahe_enabled': False,
+    'clahe_clip_limit': 2.0,
+    'clahe_grid_size': 8,
+    
+    # Réduction de bruit
+    'blur_enabled': False,
+    'blur_kernel_size': 3,
+}
+
+# ============================================================
+# MAPPING ID ARUCO -> PIÈCES D'ÉCHECS
+# ============================================================
+
 PIECES = {
     # Pièces blanches (IDs 0-15)
     0: {'code': 'WK', 'nom': 'Roi', 'couleur': 'Blanc', 'symbole': '♔'},
@@ -68,7 +145,9 @@ PIECES = {
     31: {'code': 'BP8', 'nom': 'Pion 8', 'couleur': 'Noir', 'symbole': '♟'},
 }
 
-# Détection automatique de l'environnement caméra
+# ============================================================
+# DÉTECTION AUTOMATIQUE DE L'ENVIRONNEMENT CAMÉRA
+# ============================================================
 # Priorité: 1) rpicam-still (CLI), 2) Picamera2, 3) OpenCV
 import subprocess
 import shutil
@@ -156,11 +235,59 @@ def _capture_with_rpicam(filepath):
     else:
         cmd = 'libcamera-still'
     
+    # Construire la commande avec les paramètres de configuration
+    args = [cmd, '-n', '-o', filepath]
+    
+    # Timeout
+    timeout_ms = CAMERA_CONFIG.get('timeout', 2000)
+    args.extend(['--timeout', str(timeout_ms)])
+    
+    # Exposition (shutter speed)
+    if CAMERA_CONFIG.get('shutter') is not None:
+        args.extend(['--shutter', str(CAMERA_CONFIG['shutter'])])
+        print(f"   ⚙️  Exposition: {CAMERA_CONFIG['shutter']}µs")
+    
+    # Gain (sensibilité)
+    if CAMERA_CONFIG.get('gain') is not None:
+        args.extend(['--gain', str(CAMERA_CONFIG['gain'])])
+        print(f"   ⚙️  Gain: {CAMERA_CONFIG['gain']}")
+    
+    # Balance des blancs
+    if CAMERA_CONFIG.get('awb') is not None:
+        args.extend(['--awb', str(CAMERA_CONFIG['awb'])])
+        print(f"   ⚙️  Balance blancs: {CAMERA_CONFIG['awb']}")
+    
+    # Luminosité
+    if CAMERA_CONFIG.get('brightness') is not None:
+        args.extend(['--brightness', str(CAMERA_CONFIG['brightness'])])
+        print(f"   ⚙️  Luminosité: {CAMERA_CONFIG['brightness']}")
+    
+    # Contraste
+    if CAMERA_CONFIG.get('contrast') is not None:
+        args.extend(['--contrast', str(CAMERA_CONFIG['contrast'])])
+        print(f"   ⚙️  Contraste: {CAMERA_CONFIG['contrast']}")
+    
+    # Saturation
+    if CAMERA_CONFIG.get('saturation') is not None:
+        args.extend(['--saturation', str(CAMERA_CONFIG['saturation'])])
+        print(f"   ⚙️  Saturation: {CAMERA_CONFIG['saturation']}")
+    
+    # Netteté
+    if CAMERA_CONFIG.get('sharpness') is not None:
+        args.extend(['--sharpness', str(CAMERA_CONFIG['sharpness'])])
+        print(f"   ⚙️  Netteté: {CAMERA_CONFIG['sharpness']}")
+    
+    # Réduction de bruit
+    if CAMERA_CONFIG.get('denoise') is not None:
+        args.extend(['--denoise', str(CAMERA_CONFIG['denoise'])])
+        print(f"   ⚙️  Débruitage: {CAMERA_CONFIG['denoise']}")
+    
     print(f"   🔄 Exécution de {cmd}...")
+    print(f"   📝 Commande: {' '.join(args)}")
+    
     try:
-        # -n = pas de preview, -o = output, --immediate = pas d'attente
         result = subprocess.run(
-            [cmd, '-n', '-o', filepath, '--timeout', '2000'],
+            args,
             capture_output=True,
             text=True,
             timeout=30
