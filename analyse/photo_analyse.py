@@ -91,6 +91,7 @@ def take_photo(filename=None):
     """
     # Créer le dossier images s'il n'existe pas
     os.makedirs(IMAGES_DIR, exist_ok=True)
+    print(f"   📁 Dossier images créé/vérifié: {IMAGES_DIR}")
     
     # Générer un nom de fichier si non spécifié
     if filename is None:
@@ -98,31 +99,64 @@ def take_photo(filename=None):
         filename = f"photo_{timestamp}.jpg"
     
     filepath = os.path.join(IMAGES_DIR, filename)
+    print(f"   📄 Fichier cible: {filepath}")
+    print(f"   🎥 Mode caméra: {'Picamera2 (Raspberry Pi)' if USE_PICAMERA else 'OpenCV (Webcam)'}")
     
     if USE_PICAMERA:
         # Raspberry Pi avec Picamera2
         import time as cam_time
-        picam2 = Picamera2()
-        config = picam2.create_still_configuration()
-        picam2.configure(config)
-        picam2.start()
-        cam_time.sleep(2)  # Attendre que la caméra se stabilise
-        picam2.capture_file(filepath)
-        picam2.stop()
-        picam2.close()
+        try:
+            print("   🔄 Initialisation Picamera2...")
+            picam2 = Picamera2()
+            config = picam2.create_still_configuration()
+            picam2.configure(config)
+            print("   🔄 Démarrage de la caméra...")
+            picam2.start()
+            print("   ⏳ Attente stabilisation (2s)...")
+            cam_time.sleep(2)
+            print("   📸 Capture en cours...")
+            picam2.capture_file(filepath)
+            print("   🛑 Arrêt de la caméra...")
+            picam2.stop()
+            picam2.close()
+            print("   ✅ Capture terminée")
+        except Exception as e:
+            print(f"   ❌ Erreur Picamera2: {e}")
+            raise RuntimeError(f"Erreur Picamera2: {e}")
+        
+        # Vérifier que le fichier a bien été créé
+        if not os.path.exists(filepath):
+            print(f"   ❌ ERREUR: Le fichier n'existe pas après capture!")
+            # Lister le contenu du dossier pour debug
+            print(f"   📂 Contenu de {IMAGES_DIR}:")
+            if os.path.exists(IMAGES_DIR):
+                for f in os.listdir(IMAGES_DIR):
+                    print(f"      - {f}")
+            else:
+                print(f"      (dossier n'existe pas)")
+            raise RuntimeError(f"Échec de la capture: {filepath} n'a pas été créé")
+        else:
+            file_size = os.path.getsize(filepath)
+            print(f"   ✅ Fichier créé: {filepath} ({file_size} bytes)")
+    else:
+        # PC avec OpenCV (webcam USB)
+        print("   🔄 Ouverture webcam OpenCV...")
+        cap = cv2.VideoCapture(0)
+        if not cap.isOpened():
+            print("   ❌ Impossible d'ouvrir la caméra")
+            raise RuntimeError("Impossible d'ouvrir la caméra")
+        print("   📸 Capture frame...")
+        ret, frame = cap.read()
+        if ret:
+            cv2.imwrite(filepath, frame)
+            print(f"   ✅ Image sauvegardée")
+        else:
+            print("   ❌ Échec de lecture de la frame")
+        cap.release()
         
         # Vérifier que le fichier a bien été créé
         if not os.path.exists(filepath):
             raise RuntimeError(f"Échec de la capture: {filepath} n'a pas été créé")
-    else:
-        # PC avec OpenCV (webcam USB)
-        cap = cv2.VideoCapture(0)
-        if not cap.isOpened():
-            raise RuntimeError("Impossible d'ouvrir la caméra")
-        ret, frame = cap.read()
-        if ret:
-            cv2.imwrite(filepath, frame)
-        cap.release()
     
     print(f"📷 Photo enregistrée: {filepath}")
     return filepath
