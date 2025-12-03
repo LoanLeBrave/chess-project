@@ -69,11 +69,29 @@ PIECES = {
 }
 
 # Détection automatique de l'environnement caméra
-try:
-    from picamera2 import Picamera2
-    USE_PICAMERA = True
-except ImportError:
-    USE_PICAMERA = False
+# Priorité: 1) rpicam-still (CLI), 2) Picamera2, 3) OpenCV
+import subprocess
+import shutil
+
+def _check_rpicam_available():
+    """Vérifie si rpicam-still est disponible"""
+    return shutil.which('rpicam-still') is not None or shutil.which('libcamera-still') is not None
+
+def _check_picamera2_available():
+    """Vérifie si Picamera2 est disponible"""
+    try:
+        from picamera2 import Picamera2
+        return True
+    except ImportError:
+        return False
+
+# Déterminer le mode caméra
+if _check_rpicam_available():
+    CAMERA_MODE = 'rpicam'
+elif _check_picamera2_available():
+    CAMERA_MODE = 'picamera2'
+else:
+    CAMERA_MODE = 'opencv'
 
 
 # ============================================================
@@ -100,66 +118,105 @@ def take_photo(filename=None):
     
     filepath = os.path.join(IMAGES_DIR, filename)
     print(f"   📄 Fichier cible: {filepath}")
-    print(f"   🎥 Mode caméra: {'Picamera2 (Raspberry Pi)' if USE_PICAMERA else 'OpenCV (Webcam)'}")
     
-    if USE_PICAMERA:
-        # Raspberry Pi avec Picamera2
-        import time as cam_time
-        try:
-            print("   🔄 Initialisation Picamera2...")
-            picam2 = Picamera2()
-            config = picam2.create_still_configuration()
-            picam2.configure(config)
-            print("   🔄 Démarrage de la caméra...")
-            picam2.start()
-            print("   ⏳ Attente stabilisation (2s)...")
-            cam_time.sleep(2)
-            print("   📸 Capture en cours...")
-            picam2.capture_file(filepath)
-            print("   🛑 Arrêt de la caméra...")
-            picam2.stop()
-            picam2.close()
-            print("   ✅ Capture terminée")
-        except Exception as e:
-            print(f"   ❌ Erreur Picamera2: {e}")
-            raise RuntimeError(f"Erreur Picamera2: {e}")
-        
-        # Vérifier que le fichier a bien été créé
-        if not os.path.exists(filepath):
-            print(f"   ❌ ERREUR: Le fichier n'existe pas après capture!")
-            # Lister le contenu du dossier pour debug
-            print(f"   📂 Contenu de {IMAGES_DIR}:")
-            if os.path.exists(IMAGES_DIR):
-                for f in os.listdir(IMAGES_DIR):
-                    print(f"      - {f}")
-            else:
-                print(f"      (dossier n'existe pas)")
-            raise RuntimeError(f"Échec de la capture: {filepath} n'a pas été créé")
-        else:
-            file_size = os.path.getsize(filepath)
-            print(f"   ✅ Fichier créé: {filepath} ({file_size} bytes)")
+    if CAMERA_MODE == 'rpicam':
+        print(f"   🎥 Mode caméra: rpicam-still (CLI Raspberry Pi)")
+        _capture_with_rpicam(filepath)
+    elif CAMERA_MODE == 'picamera2':
+        print(f"   🎥 Mode caméra: Picamera2 (Python Raspberry Pi)")
+        _capture_with_picamera2(filepath)
     else:
-        # PC avec OpenCV (webcam USB)
-        print("   🔄 Ouverture webcam OpenCV...")
-        cap = cv2.VideoCapture(0)
-        if not cap.isOpened():
-            print("   ❌ Impossible d'ouvrir la caméra")
-            raise RuntimeError("Impossible d'ouvrir la caméra")
-        print("   📸 Capture frame...")
-        ret, frame = cap.read()
-        if ret:
-            cv2.imwrite(filepath, frame)
-            print(f"   ✅ Image sauvegardée")
+        print(f"   🎥 Mode caméra: OpenCV (Webcam)")
+        _capture_with_opencv(filepath)
+    
+    # Vérifier que le fichier a bien été créé
+    if not os.path.exists(filepath):
+        print(f"   ❌ ERREUR: Le fichier n'existe pas après capture!")
+        # Lister le contenu du dossier pour debug
+        print(f"   📂 Contenu de {IMAGES_DIR}:")
+        if os.path.exists(IMAGES_DIR):
+            for f in os.listdir(IMAGES_DIR):
+                print(f"      - {f}")
         else:
-            print("   ❌ Échec de lecture de la frame")
-        cap.release()
-        
-        # Vérifier que le fichier a bien été créé
-        if not os.path.exists(filepath):
-            raise RuntimeError(f"Échec de la capture: {filepath} n'a pas été créé")
+            print(f"      (dossier n'existe pas)")
+        raise RuntimeError(f"Échec de la capture: {filepath} n'a pas été créé")
+    else:
+        file_size = os.path.getsize(filepath)
+        print(f"   ✅ Fichier créé: {filepath} ({file_size} bytes)")
     
     print(f"📷 Photo enregistrée: {filepath}")
     return filepath
+
+
+def _capture_with_rpicam(filepath):
+    """Capture avec rpicam-still ou libcamera-still (CLI)"""
+    # Déterminer la commande disponible
+    if shutil.which('rpicam-still'):
+        cmd = 'rpicam-still'
+    else:
+        cmd = 'libcamera-still'
+    
+    print(f"   🔄 Exécution de {cmd}...")
+    try:
+        # -n = pas de preview, -o = output, --immediate = pas d'attente
+        result = subprocess.run(
+            [cmd, '-n', '-o', filepath, '--timeout', '2000'],
+            capture_output=True,
+            text=True,
+            timeout=30
+        )
+        if result.returncode != 0:
+            print(f"   ⚠️ Stderr: {result.stderr}")
+            raise RuntimeError(f"{cmd} a échoué: {result.stderr}")
+        print(f"   ✅ Capture terminée avec {cmd}")
+    except subprocess.TimeoutExpired:
+        raise RuntimeError(f"{cmd} timeout après 30 secondes")
+    except FileNotFoundError:
+        raise RuntimeError(f"{cmd} non trouvé")
+
+
+def _capture_with_picamera2(filepath):
+    """Capture avec Picamera2 (Python)"""
+    from picamera2 import Picamera2
+    import time as cam_time
+    
+    try:
+        print("   🔄 Initialisation Picamera2...")
+        picam2 = Picamera2()
+        config = picam2.create_still_configuration()
+        picam2.configure(config)
+        print("   🔄 Démarrage de la caméra...")
+        picam2.start()
+        print("   ⏳ Attente stabilisation (2s)...")
+        cam_time.sleep(2)
+        print("   📸 Capture en cours...")
+        picam2.capture_file(filepath)
+        print("   🛑 Arrêt de la caméra...")
+        picam2.stop()
+        picam2.close()
+        print("   ✅ Capture terminée")
+    except Exception as e:
+        print(f"   ❌ Erreur Picamera2: {e}")
+        raise RuntimeError(f"Erreur Picamera2: {e}")
+
+
+def _capture_with_opencv(filepath):
+    """Capture avec OpenCV (webcam)"""
+    print("   🔄 Ouverture webcam OpenCV...")
+    cap = cv2.VideoCapture(0)
+    if not cap.isOpened():
+        print("   ❌ Impossible d'ouvrir la caméra")
+        raise RuntimeError("Impossible d'ouvrir la caméra")
+    print("   📸 Capture frame...")
+    ret, frame = cap.read()
+    if ret:
+        cv2.imwrite(filepath, frame)
+        print(f"   ✅ Image sauvegardée")
+    else:
+        print("   ❌ Échec de lecture de la frame")
+        cap.release()
+        raise RuntimeError("Échec de lecture de la frame OpenCV")
+    cap.release()
 
 
 # ============================================================
