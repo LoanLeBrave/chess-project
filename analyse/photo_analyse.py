@@ -22,7 +22,9 @@ import json
 # ============================================================
 
 # Dimension maximale des images (pour réduire le temps de traitement)
-MAX_DIMENSION = 1500
+# None = pas de redimensionnement (garde la résolution originale)
+# Recommandé: 1500-2000 pour un bon équilibre détection/vitesse
+MAX_DIMENSION = None  # ou ex: 2000, 2500, 3000
 
 # Dossiers
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -474,7 +476,7 @@ def analyze_game_state(image_path, result_dir, timestamp):
     
     # Redimensionnement si nécessaire
     width, height = original_img.size
-    if max(width, height) > MAX_DIMENSION:
+    if MAX_DIMENSION is not None and max(width, height) > MAX_DIMENSION:
         scale_factor = MAX_DIMENSION / max(width, height)
         new_width = int(width * scale_factor)
         new_height = int(height * scale_factor)
