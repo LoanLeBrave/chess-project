@@ -39,45 +39,52 @@ ARUCO_DICT = cv2.aruco.DICT_4X4_50
 # Ajustez-les selon vos conditions d'éclairage
 
 CAMERA_CONFIG = {
+    # --- Résolution ---
+    # Taille de l'image capturée (largeur, hauteur) en pixels
+    # None = résolution max du capteur (ex: 4608x2592 pour v3, 3280x2464 pour v2)
+    # Recommandé: (1920, 1080) ou (2560, 1440) pour bon équilibre détail/vitesse
+    'width': None,   # None = max, ou ex: 1920
+    'height': None,  # None = max, ou ex: 1080
+    
     # --- Exposition ---
     # Temps d'exposition en microsecondes (None = auto)
     # Plus bas = moins de halos lumineux, mais image plus sombre
     # Recommandé: 5000-20000 pour réduire les halos
-    'shutter': 10000,  # 10ms
+    'shutter': None,  # None = auto
     
     # --- Gain (sensibilité ISO) ---
     # Multiplicateur de gain (1.0 = minimum, plus = plus lumineux mais plus de bruit)
     # None = auto, Recommandé: 1.0-2.0 pour éviter le bruit
-    'gain': 1.5,
+    'gain': None,
     
     # --- Balance des blancs ---
     # Options: 'auto', 'tungsten', 'fluorescent', 'indoor', 'daylight', 'cloudy'
     # None = auto
-    'awb': 'auto',
+    'awb': None,
     
     # --- Luminosité ---
     # Ajustement de luminosité (-1.0 à 1.0, 0 = normal)
     # Valeur négative = plus sombre (réduit les halos)
-    'brightness': 0.0,
+    'brightness': None,
     
     # --- Contraste ---
     # Multiplicateur de contraste (1.0 = normal, >1 = plus de contraste)
     # Recommandé: 1.2-1.5 pour des ArUco plus nets
-    'contrast': 1.2,
+    'contrast': None,
     
     # --- Saturation ---
     # Saturation des couleurs (1.0 = normal, 0 = noir et blanc)
-    'saturation': 1.0,
+    'saturation': None,
     
     # --- Netteté ---
     # Niveau de netteté (1.0 = normal, >1 = plus net)
     # Recommandé: 1.5-2.0 pour des bords ArUco plus définis
-    'sharpness': 1.5,
+    'sharpness': None,
     
     # --- Réduction de bruit ---
     # Options: 'auto', 'off', 'cdn_off', 'cdn_fast', 'cdn_hq'
     # 'off' = désactivé (préserve les détails des ArUco)
-    'denoise': 'off',
+    'denoise': None,
     
     # --- Timeout ---
     # Temps d'attente pour la stabilisation de la caméra (en ms)
@@ -241,6 +248,14 @@ def _capture_with_rpicam(filepath):
     # Timeout
     timeout_ms = CAMERA_CONFIG.get('timeout', 2000)
     args.extend(['--timeout', str(timeout_ms)])
+    
+    # Résolution (largeur x hauteur)
+    if CAMERA_CONFIG.get('width') is not None and CAMERA_CONFIG.get('height') is not None:
+        args.extend(['--width', str(CAMERA_CONFIG['width'])])
+        args.extend(['--height', str(CAMERA_CONFIG['height'])])
+        print(f"   ⚙️  Résolution: {CAMERA_CONFIG['width']}x{CAMERA_CONFIG['height']}")
+    else:
+        print(f"   ⚙️  Résolution: max (capteur)")
     
     # Exposition (shutter speed)
     if CAMERA_CONFIG.get('shutter') is not None:
