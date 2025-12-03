@@ -21,10 +21,11 @@ ACCELERATION_JOINTS = 0.3  # rad/s²
 VITESSE_LINEAIRE = 0.1  # m/s
 ACCELERATION_LINEAIRE = 0.3  # m/s²
 
-# Hauteurs relatives (ajustables)
-HAUTEUR_SECURITE = 0.08  # 8cm au-dessus de la position de prise
-HAUTEUR_APPROCHE = 0.03  # 3cm au-dessus
-HAUTEUR_PRISE = 0.0  # Position de prise
+# Hauteurs relatives PAR DÉFAUT (seront remplacées par celles du JSON)
+# La position enregistrée = hauteur de PRISE
+DELTA_HAUTEUR_SECURITE = 0.08  # 8cm au-dessus de la position de prise
+DELTA_HAUTEUR_APPROCHE = 0.03  # 3cm au-dessus de la position de prise
+DELTA_HAUTEUR_RELACHE = 0.002  # +2mm pour relâcher (évite d'appuyer sur le plexi)
 
 # Gripper - ouverture limitée pour éviter de cogner les pièces voisines
 # Le gripper Hand-E a une course de 50mm, 50% = 25mm
@@ -43,14 +44,16 @@ class ChessRobotPlayer:
             data = json.load(f)
 
         self.cases = data.get("cases", {})
-        self.position_approche = data.get("position_approche")
-        self.hauteur_config = {
-            "securite": data.get("hauteur_securite", HAUTEUR_SECURITE),
-            "approche": data.get("hauteur_approche", HAUTEUR_APPROCHE),
-            "prise": data.get("hauteur_prise", HAUTEUR_PRISE)
-        }
+        self.position_securite_globale = data.get("position_securite_globale")
+
+        # Charger les hauteurs relatives depuis le JSON (ou utiliser les défauts)
+        self.delta_hauteur_securite = data.get("delta_hauteur_securite", DELTA_HAUTEUR_SECURITE)
+        self.delta_hauteur_approche = data.get("delta_hauteur_approche", DELTA_HAUTEUR_APPROCHE)
+        self.delta_hauteur_relache = data.get("delta_hauteur_relache", DELTA_HAUTEUR_RELACHE)
 
         print(f"✓ Mapping chargé: {len(self.cases)} cases")
+        print(
+            f"  Hauteurs: sécurité=+{self.delta_hauteur_securite * 1000:.0f}mm, approche=+{self.delta_hauteur_approche * 1000:.0f}mm, relâche=+{self.delta_hauteur_relache * 1000:.0f}mm")
 
         # Connexion robot
         print("Connexion au robot...")
@@ -86,47 +89,50 @@ class ChessRobotPlayer:
             raise ValueError(f"Case {case} non mappée")
         return self.cases[case]["joints"]
 
-    def position_avec_hauteur(self, tcp, delta_z):
+    def position_avec_delta_z(self, tcp, delta_z):
         """Retourne une position TCP avec un décalage en Z"""
         pos = list(tcp)
         pos[2] += delta_z
         return pos
 
     def aller_position_securite(self):
-        """Va à la position de sécurité au-dessus de l'échiquier"""
-        if self.position_approche:
-            print("↑ Position de sécurité...")
-            self.rtde_c.moveL(self.position_approche, VITESSE_LINEAIRE, ACCELERATION_LINEAIRE)
+        """Va à la position de sécurité globale au-dessus de l'échiquier"""
+        if self.position_securite_globale:
+            print("↑ Position de sécurité globale...")
+            self.rtde_c.moveL(self.position_securite_globale, VITESSE_LINEAIRE, ACCELERATION_LINEAIRE)
         else:
-            # Si pas de position d'approche, on monte juste
+            # Si pas de position de sécurité globale, on monte depuis la position actuelle
             pose = self.rtde_r.getActualTCPPose()
-            pose_haute = list(pose)
-            pose_haute[2] += HAUTEUR_SECURITE
+            pose_haute = self.position_avec_delta_z(pose, self.delta_hauteur_securite)
+            print(f"↑ Montée de {self.delta_hauteur_securite * 1000:.0f}mm...")
             self.rtde_c.moveL(pose_haute, VITESSE_LINEAIRE, ACCELERATION_LINEAIRE)
 
     def aller_case(self, case, hauteur="approche"):
         """
         Déplace le robot vers une case
-        hauteur: "securite", "approche", ou "prise"
+        hauteur: "securite", "approche", "prise", ou "relache"
+        Les hauteurs sont relatives à la position de prise enregistrée
         """
         case = case.lower()
         if case not in self.cases:
             print(f"⚠ Case {case} non mappée!")
             return False
 
-        tcp = self.get_case_position(case)
+        tcp_prise = self.get_case_position(case)  # Position de prise enregistrée
 
-        # Déterminer le delta Z selon la hauteur demandée
+        # Calculer le delta Z selon la hauteur demandée
         if hauteur == "securite":
-            delta_z = self.hauteur_config["securite"]
+            delta_z = self.delta_hauteur_securite
         elif hauteur == "approche":
-            delta_z = self.hauteur_config["approche"]
+            delta_z = self.delta_hauteur_approche
+        elif hauteur == "relache":
+            delta_z = self.delta_hauteur_relache
         else:  # prise
-            delta_z = self.hauteur_config["prise"]
+            delta_z = 0.0
 
-        position_cible = self.position_avec_hauteur(tcp, delta_z)
+        position_cible = self.position_avec_delta_z(tcp_prise, delta_z)
 
-        print(f"→ Case {case.upper()} (hauteur: {hauteur})")
+        print(f"→ Case {case.upper()} (hauteur: {hauteur}, Z={position_cible[2]:.4f})")
         self.rtde_c.moveL(position_cible, VITESSE_LINEAIRE, ACCELERATION_LINEAIRE)
         return True
 
@@ -163,7 +169,7 @@ class ChessRobotPlayer:
     def poser_piece(self, case):
         """
         Pose une pièce sur une case
-        Séquence: approche -> descente -> ouvrir gripper -> remontée
+        Séquence: approche -> descente à hauteur RELACHE (+2mm) -> ouvrir gripper -> remontée
         """
         case = case.lower()
 
@@ -178,12 +184,14 @@ class ChessRobotPlayer:
             return False
         time.sleep(0.2)
 
-        # 2. Descente
-        self.aller_case(case, "prise")
+        # 2. Descente à hauteur de RELÂCHE (+2mm par rapport à prise)
+        # Cela évite que la pièce appuie sur le plexiglas
+        self.aller_case(case, "relache")
         time.sleep(0.3)
 
         # 3. Ouvrir le gripper (ouverture limitée)
-        print(f"✋ Ouverture gripper ({self.gripper_ouverture_max}mm)...")
+        print(
+            f"✋ Ouverture gripper ({self.gripper_ouverture_max}mm) - hauteur relâche +{self.delta_hauteur_relache * 1000:.0f}mm")
         self.gripper.move(self.gripper_ouverture_max)
         time.sleep(0.3)
         self.piece_en_main = False
@@ -318,8 +326,18 @@ class ChessRobotPlayer:
 
         print("║    ├─────────────────────────────┤      ║")
         print("║      a  b  c  d  e  f  g  h             ║")
+        print("╠═══════════════════════════════════════════════════════════════════╣")
+        print(f"║  Total: {len(self.cases)} cases mappées                                      ║")
+        print(
+            f"║  Position sécurité globale: {'✓' if self.position_securite_globale else '✗'}                               ║")
+        print("╠═══════════════════════════════════════════════════════════════════╣")
+        print(f"║  Hauteurs relatives (par rapport à position de prise):           ║")
+        print(
+            f"║    Sécurité: +{self.delta_hauteur_securite * 1000:.0f}mm                                            ║")
+        print(
+            f"║    Approche: +{self.delta_hauteur_approche * 1000:.0f}mm                                            ║")
+        print(f"║    Relâche:  +{self.delta_hauteur_relache * 1000:.0f}mm (pour poser sans appuyer sur plexi)       ║")
         print("╚═══════════════════════════════════════════════════════════════════╝")
-        print(f"\nTotal: {len(self.cases)} cases mappées")
 
     def mode_interactif(self):
         """Mode interactif pour exécuter des coups"""

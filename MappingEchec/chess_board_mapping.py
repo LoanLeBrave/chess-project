@@ -24,9 +24,11 @@ ROBOT_IP = "192.168.0.11"
 COLONNES = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h']
 RANGEES = ['1', '2', '3', '4', '5', '6', '7', '8']
 
-# Hauteurs de travail (à ajuster selon ton setup)
-HAUTEUR_APPROCHE = 0.05  # 5cm au-dessus de la pièce
-HAUTEUR_PRISE = 0.0  # Hauteur de prise de la pièce
+# Hauteurs de travail RELATIVES à la position enregistrée (en mètres)
+# La position enregistrée = hauteur de PRISE (là où le gripper attrape la pièce)
+DELTA_HAUTEUR_SECURITE = 0.08  # 8cm au-dessus de la position de prise
+DELTA_HAUTEUR_APPROCHE = 0.03  # 3cm au-dessus de la position de prise
+DELTA_HAUTEUR_RELACHE = 0.002  # +2mm pour relâcher la pièce (évite d'appuyer sur le plexi)
 
 
 class ChessBoardMapper:
@@ -51,9 +53,12 @@ class ChessBoardMapper:
 
         # Données de mapping
         self.positions = {}  # {"e4": {"tcp": [...], "joints": [...]}, ...}
-        self.position_approche = None  # Position de sécurité au-dessus de l'échiquier
-        self.hauteur_approche = HAUTEUR_APPROCHE
-        self.hauteur_prise = HAUTEUR_PRISE
+        self.position_securite_globale = None  # Position de sécurité haute au-dessus de l'échiquier
+
+        # Hauteurs relatives (sauvegardées dans le JSON pour le script de jeu)
+        self.delta_hauteur_securite = DELTA_HAUTEUR_SECURITE
+        self.delta_hauteur_approche = DELTA_HAUTEUR_APPROCHE
+        self.delta_hauteur_relache = DELTA_HAUTEUR_RELACHE
 
         # Case courante pour navigation rapide
         self.col_index = 0  # a=0, b=1, ..., h=7
@@ -72,9 +77,10 @@ class ChessBoardMapper:
                 with open(self.fichier_mapping, 'r') as f:
                     data = json.load(f)
                     self.positions = data.get("cases", {})
-                    self.position_approche = data.get("position_approche")
-                    self.hauteur_approche = data.get("hauteur_approche", HAUTEUR_APPROCHE)
-                    self.hauteur_prise = data.get("hauteur_prise", HAUTEUR_PRISE)
+                    self.position_securite_globale = data.get("position_securite_globale")
+                    self.delta_hauteur_securite = data.get("delta_hauteur_securite", DELTA_HAUTEUR_SECURITE)
+                    self.delta_hauteur_approche = data.get("delta_hauteur_approche", DELTA_HAUTEUR_APPROCHE)
+                    self.delta_hauteur_relache = data.get("delta_hauteur_relache", DELTA_HAUTEUR_RELACHE)
                 print(f"✓ Mapping chargé: {len(self.positions)} cases")
             except Exception as e:
                 print(f"⚠ Erreur chargement: {e}")
@@ -83,13 +89,15 @@ class ChessBoardMapper:
         """Sauvegarde le mapping dans un fichier JSON"""
         data = {
             "cases": self.positions,
-            "position_approche": self.position_approche,
-            "hauteur_approche": self.hauteur_approche,
-            "hauteur_prise": self.hauteur_prise,
+            "position_securite_globale": self.position_securite_globale,
+            "delta_hauteur_securite": self.delta_hauteur_securite,
+            "delta_hauteur_approche": self.delta_hauteur_approche,
+            "delta_hauteur_relache": self.delta_hauteur_relache,
             "metadata": {
                 "date_creation": datetime.now().isoformat(),
                 "robot_ip": ROBOT_IP,
-                "nb_cases": len(self.positions)
+                "nb_cases": len(self.positions),
+                "description": "Position TCP = hauteur de PRISE. Les hauteurs sont calculées relativement."
             }
         }
 
@@ -102,6 +110,8 @@ class ChessBoardMapper:
             json.dump(data, f, indent=2)
 
         print(f"✓ Sauvegardé: {self.fichier_mapping} (+ backup {backup_name})")
+        print(
+            f"  Hauteurs relatives: sécurité={self.delta_hauteur_securite * 1000:.0f}mm, approche={self.delta_hauteur_approche * 1000:.0f}mm, relâche=+{self.delta_hauteur_relache * 1000:.0f}mm")
 
     def get_case_courante(self):
         """Retourne la notation de la case courante"""
@@ -139,7 +149,7 @@ class ChessBoardMapper:
         return False
 
     def enregistrer_case_courante(self):
-        """Enregistre la position actuelle pour la case courante"""
+        """Enregistre la position actuelle pour la case courante (position de PRISE)"""
         pose = self.rtde_r.getActualTCPPose()
         joints = self.rtde_r.getActualQ()
 
@@ -150,20 +160,24 @@ class ChessBoardMapper:
             "timestamp": datetime.now().isoformat()
         }
 
-        print(f"\n✓ Case {case} enregistrée:")
+        print(f"\n✓ Case {case} enregistrée (position de PRISE):")
         print(f"  TCP: X={pose[0]:.4f} Y={pose[1]:.4f} Z={pose[2]:.4f}")
-        print(f"  Rot: RX={pose[3]:.4f} RY={pose[4]:.4f} RZ={pose[5]:.4f}")
+        print(
+            f"  → Approche sera à Z={pose[2] + self.delta_hauteur_approche:.4f} (+{self.delta_hauteur_approche * 1000:.0f}mm)")
+        print(
+            f"  → Relâche sera à Z={pose[2] + self.delta_hauteur_relache:.4f} (+{self.delta_hauteur_relache * 1000:.0f}mm)")
 
         # Auto-avance à la case suivante
         self.case_suivante()
         print(f"  → Prochaine case: {self.get_case_courante()}")
 
-    def enregistrer_position_approche(self):
-        """Enregistre la position de sécurité au-dessus de l'échiquier"""
+    def enregistrer_position_securite(self):
+        """Enregistre la position de sécurité globale au-dessus de l'échiquier"""
         pose = self.rtde_r.getActualTCPPose()
-        self.position_approche = list(pose)
-        print(f"\n✓ Position d'approche enregistrée:")
+        self.position_securite_globale = list(pose)
+        print(f"\n✓ Position de sécurité globale enregistrée:")
         print(f"  TCP: X={pose[0]:.4f} Y={pose[1]:.4f} Z={pose[2]:.4f}")
+        print(f"  (Position haute pour les déplacements entre cases)")
 
     def toggle_freedrive(self):
         """Active/désactive le mode freedrive"""
@@ -222,7 +236,12 @@ class ChessBoardMapper:
         print("╠═══════════════════════════════════════════════════════════════════╣")
         print(f"║  Cases enregistrées: {len(self.positions)}/64                                   ║")
         print(f"║  Case courante: {self.get_case_courante()}                                          ║")
-        print(f"║  Position approche: {'✓' if self.position_approche else '✗'}                                       ║")
+        print(
+            f"║  Position sécurité globale: {'✓' if self.position_securite_globale else '✗'}                               ║")
+        print("╠═══════════════════════════════════════════════════════════════════╣")
+        print(f"║  Hauteurs relatives:                                              ║")
+        print(
+            f"║    Sécurité: +{self.delta_hauteur_securite * 1000:.0f}mm | Approche: +{self.delta_hauteur_approche * 1000:.0f}mm | Relâche: +{self.delta_hauteur_relache * 1000:.0f}mm   ║")
         print("╚═══════════════════════════════════════════════════════════════════╝")
 
     def get_key_non_blocking(self):
@@ -259,6 +278,9 @@ class ChessBoardMapper:
 ╔═══════════════════════════════════════════════════════════════════╗
 ║         MAPPING ÉCHIQUIER - UR5e + Hand-E                         ║
 ╠═══════════════════════════════════════════════════════════════════╣
+║  IMPORTANT: Enregistrer la position de PRISE (gripper sur pièce)  ║
+║  Les hauteurs d'approche/relâche sont calculées automatiquement   ║
+╠═══════════════════════════════════════════════════════════════════╣
 ║  MODE FREEDRIVE:                                                  ║
 ║    f         : Activer/Désactiver freedrive                       ║
 ║                                                                   ║
@@ -266,7 +288,7 @@ class ChessBoardMapper:
 ║    ESPACE    : Enregistrer case courante + passer à suivante      ║
 ║    ENTRÉE    : Enregistrer case courante (sans avancer)           ║
 ║    n         : Saisir une case spécifique (ex: e4)               ║
-║    p         : Enregistrer position d'approche (sécurité)         ║
+║    p         : Enregistrer position de sécurité GLOBALE          ║
 ║                                                                   ║
 ║  NAVIGATION:                                                      ║
 ║    →/←       : Case suivante/précédente                           ║
@@ -275,6 +297,11 @@ class ChessBoardMapper:
 ║  GRIPPER:                                                         ║
 ║    g         : Ouvrir/Fermer gripper                              ║
 ║    t         : Tester préhension (ferme puis ouvre)               ║
+║                                                                   ║
+║  HAUTEURS (modifiables):                                          ║
+║    1         : Ajuster delta sécurité (+/- avec +/-)              ║
+║    2         : Ajuster delta approche                             ║
+║    3         : Ajuster delta relâche                              ║
 ║                                                                   ║
 ║  AFFICHAGE:                                                       ║
 ║    m         : Afficher la grille de progression                  ║
@@ -358,9 +385,9 @@ class ChessBoardMapper:
                         self.rtde_c.freedriveMode()
                         self.freedrive_actif = True
 
-                # Position d'approche
+                # Position de sécurité globale
                 elif key == 'p':
-                    self.enregistrer_position_approche()
+                    self.enregistrer_position_securite()
 
                 # Navigation
                 elif key == '\x1b[C':  # Droite
@@ -391,6 +418,11 @@ class ChessBoardMapper:
                     print(f"Rot: RX={pose[3]:.4f} RY={pose[4]:.4f} RZ={pose[5]:.4f}")
                     print(f"Case courante: {self.get_case_courante()}")
                     print(f"Freedrive: {'OUI' if self.freedrive_actif else 'NON'}")
+                    print(f"Cette position = hauteur de PRISE")
+                    print(
+                        f"  → Approche: Z={pose[2] + self.delta_hauteur_approche:.4f} (+{self.delta_hauteur_approche * 1000:.0f}mm)")
+                    print(
+                        f"  → Relâche:  Z={pose[2] + self.delta_hauteur_relache:.4f} (+{self.delta_hauteur_relache * 1000:.0f}mm)")
                 elif key == 'h':
                     self.print_help()
 
