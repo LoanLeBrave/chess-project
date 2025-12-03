@@ -445,9 +445,9 @@ def analyze_game_state(image_path, result_dir, timestamp):
             'nom': det['piece']['nom'],
             'couleur': det['piece']['couleur'],
             'symbole': det['piece']['symbole'],
-            'center_x': det['center'][0],
-            'center_y': det['center'][1],
-            'corners': det['position']
+            'center_x': float(det['center'][0]),
+            'center_y': float(det['center'][1]),
+            'corners': [[float(c[0]), float(c[1])] for c in det['position']]
         })
     
     # Ajouter les pièces manquantes
