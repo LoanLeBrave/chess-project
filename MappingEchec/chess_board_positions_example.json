@@ -1,0 +1,24 @@
+{
+  "cases": {
+    "a1": {
+      "tcp": [-0.300, 0.200, 0.150, 2.22, -2.22, 0.0],
+      "joints": [-1.57, -1.57, 1.57, -1.57, -1.57, 0.0],
+      "timestamp": "2024-01-01T12:00:00"
+    },
+    "a2": {
+      "tcp": [-0.300, 0.250, 0.150, 2.22, -2.22, 0.0],
+      "joints": [-1.57, -1.57, 1.57, -1.57, -1.57, 0.0],
+      "timestamp": "2024-01-01T12:00:00"
+    }
+  },
+  "position_approche": [-0.200, 0.300, 0.350, 2.22, -2.22, 0.0],
+  "hauteur_securite": 0.08,
+  "hauteur_approche": 0.03,
+  "hauteur_prise": 0.0,
+  "metadata": {
+    "date_creation": "2024-01-01T12:00:00",
+    "robot_ip": "192.168.0.11",
+    "nb_cases": 2,
+    "notes": "Exemple de structure - remplacer par les vraies positions"
+  }
+}
