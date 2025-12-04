@@ -43,10 +43,10 @@ CUSTOM_ARUCO_PARAMS = {
     'adaptiveThreshWinSizeMin': 3,
     'adaptiveThreshWinSizeMax': 50,        # ↑ Augmente (au lieu de 40)
     'adaptiveThreshWinSizeStep': 1,        # ↓ Diminue (au lieu de 5) - teste plus finement
-    'adaptiveThreshConstant': 5,           # ↓ Diminue (au lieu de 5) - plus tolérant
+    'adaptiveThreshConstant': 1,           # ↓ Diminue (au lieu de 5) - plus tolérant
     'minMarkerPerimeterRate': 0.01,        # Garde
     'maxMarkerPerimeterRate': 4.0,
-    'polygonalApproxAccuracyRate': 0.15,   # ↑ Augmente (au lieu de 0.05) - plus tolérant aux formes imparfaites
+    'polygonalApproxAccuracyRate': 0.5,   # ↑ Augmente (au lieu de 0.05) - plus tolérant aux formes imparfaites
     'minCornerDistanceRate': 0.002,         # ↓ Diminue (au lieu de 0.05) - accepte des coins plus proches
     'minDistanceToBorder': 1,              # ↓ Diminue (au lieu de 3)
     'minMarkerDistanceRate': 0.02,         # ↓ Diminue (au lieu de 0.05)
