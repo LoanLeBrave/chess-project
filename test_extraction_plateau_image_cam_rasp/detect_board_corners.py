@@ -639,6 +639,126 @@ def extract_board(img_np, board_corners):
     return board_img
 
 
+def draw_chess_grid(board_img, grid_color=(0, 255, 0), line_thickness=2):
+    """
+    Dessine une grille 8x8 sur l'image du plateau extrait.
+    
+    Args:
+        board_img: Image numpy du plateau extrait (carré)
+        grid_color: Couleur des lignes (BGR), par défaut vert
+        line_thickness: Épaisseur des lignes
+    
+    Returns:
+        Image numpy avec la grille dessinée
+    """
+    if board_img is None:
+        return None
+    
+    img_with_grid = board_img.copy()
+    h, w = img_with_grid.shape[:2]
+    
+    # Taille d'une case
+    cell_width = w / 8
+    cell_height = h / 8
+    
+    # Dessiner les lignes verticales (9 lignes pour 8 colonnes)
+    for i in range(9):
+        x = int(i * cell_width)
+        cv2.line(img_with_grid, (x, 0), (x, h), grid_color, line_thickness)
+    
+    # Dessiner les lignes horizontales (9 lignes pour 8 rangées)
+    for i in range(9):
+        y = int(i * cell_height)
+        cv2.line(img_with_grid, (0, y), (w, y), grid_color, line_thickness)
+    
+    # Ajouter les labels des colonnes (a-h) en bas
+    font = cv2.FONT_HERSHEY_SIMPLEX
+    font_scale = cell_width / 100  # Adapter la taille au plateau
+    font_thickness = max(1, int(font_scale * 2))
+    
+    columns = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h']
+    for i, col in enumerate(columns):
+        x = int((i + 0.5) * cell_width)
+        y = h - 5
+        # Fond pour meilleure lisibilité
+        cv2.putText(img_with_grid, col, (x - 8, y), font, font_scale, (0, 0, 0), font_thickness + 2)
+        cv2.putText(img_with_grid, col, (x - 8, y), font, font_scale, (255, 255, 255), font_thickness)
+    
+    # Ajouter les labels des rangées (1-8) à gauche
+    rows = ['8', '7', '6', '5', '4', '3', '2', '1']  # 8 en haut, 1 en bas
+    for i, row in enumerate(rows):
+        x = 5
+        y = int((i + 0.5) * cell_height) + 5
+        cv2.putText(img_with_grid, row, (x, y), font, font_scale, (0, 0, 0), font_thickness + 2)
+        cv2.putText(img_with_grid, row, (x, y), font, font_scale, (255, 255, 255), font_thickness)
+    
+    return img_with_grid
+
+
+def get_cell_coordinates(board_size=EXTRACTED_BOARD_SIZE):
+    """
+    Retourne les coordonnées de chaque case de l'échiquier.
+    
+    Args:
+        board_size: Taille de l'image du plateau extrait
+    
+    Returns:
+        dict: {case: {'x': (x_min, x_max), 'y': (y_min, y_max), 'center': (cx, cy)}}
+              où case est une notation d'échecs (ex: 'a1', 'e4')
+    """
+    cell_size = board_size / 8
+    cells = {}
+    
+    columns = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h']
+    rows = ['8', '7', '6', '5', '4', '3', '2', '1']  # 8 en haut (y=0), 1 en bas
+    
+    for col_idx, col in enumerate(columns):
+        for row_idx, row in enumerate(rows):
+            case = f"{col}{row}"
+            x_min = int(col_idx * cell_size)
+            x_max = int((col_idx + 1) * cell_size)
+            y_min = int(row_idx * cell_size)
+            y_max = int((row_idx + 1) * cell_size)
+            center_x = int((col_idx + 0.5) * cell_size)
+            center_y = int((row_idx + 0.5) * cell_size)
+            
+            cells[case] = {
+                'x': (x_min, x_max),
+                'y': (y_min, y_max),
+                'center': (center_x, center_y),
+                'col_idx': col_idx,
+                'row_idx': row_idx
+            }
+    
+    return cells
+
+
+def get_cell_at_position(x, y, board_size=EXTRACTED_BOARD_SIZE):
+    """
+    Retourne la case d'échecs correspondant à une position en pixels.
+    
+    Args:
+        x, y: Coordonnées en pixels dans l'image du plateau extrait
+        board_size: Taille de l'image du plateau
+    
+    Returns:
+        str: Notation de la case (ex: 'e4') ou None si hors plateau
+    """
+    if x < 0 or x >= board_size or y < 0 or y >= board_size:
+        return None
+    
+    cell_size = board_size / 8
+    col_idx = int(x / cell_size)
+    row_idx = int(y / cell_size)
+    
+    columns = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h']
+    rows = ['8', '7', '6', '5', '4', '3', '2', '1']
+    
+    if 0 <= col_idx < 8 and 0 <= row_idx < 8:
+        return f"{columns[col_idx]}{rows[row_idx]}"
+    return None
+
+
 def draw_info_panel(img_np, calibration_markers, board_corners, estimated_codes):
     """
     Ajoute un panneau d'information sur l'image
@@ -756,16 +876,34 @@ def process_image(image_path):
     
     # Extraire et sauvegarder l'image du plateau (si 4 coins disponibles)
     board_extracted_path = None
+    board_grid_path = None
     board_img = None
+    board_img_with_grid = None
+    cell_coords = None
+    
     if len(board_corners) == 4:
         print(f"\n🔲 Extraction du plateau...")
         board_img = extract_board(img_np, board_corners)
         if board_img is not None:
+            # Sauvegarder le plateau extrait (sans grille)
             board_extracted_filename = f"board_extracted_{timestamp}.jpg"
             board_extracted_path = os.path.join(OUTPUT_DIR, board_extracted_filename)
             cv2.imwrite(board_extracted_path, board_img)
             print(f"   💾 Plateau extrait sauvegardé: {board_extracted_path}")
             print(f"   📐 Dimensions: {EXTRACTED_BOARD_SIZE}x{EXTRACTED_BOARD_SIZE} pixels")
+            
+            # Dessiner la grille 8x8 et sauvegarder
+            print(f"\n📊 Création de la grille 8x8...")
+            board_img_with_grid = draw_chess_grid(board_img)
+            board_grid_filename = f"board_grid_{timestamp}.jpg"
+            board_grid_path = os.path.join(OUTPUT_DIR, board_grid_filename)
+            cv2.imwrite(board_grid_path, board_img_with_grid)
+            print(f"   💾 Plateau avec grille sauvegardé: {board_grid_path}")
+            
+            # Calculer les coordonnées des cases
+            cell_coords = get_cell_coordinates()
+            print(f"   ✅ 64 cases calculées (a1 à h8)")
+            print(f"   📐 Taille d'une case: {EXTRACTED_BOARD_SIZE // 8}x{EXTRACTED_BOARD_SIZE // 8} pixels")
     
     # Résumé
     print(f"\n{'='*60}")
@@ -785,6 +923,8 @@ def process_image(image_path):
                 print(f"      {code.replace('CAL_', '')}: ({board_corners[code][0]:.1f}, {board_corners[code][1]:.1f}){suffix}")
         if board_extracted_path:
             print(f"\n   🔲 Image plateau extraite: {board_extracted_path}")
+        if board_grid_path:
+            print(f"   📊 Image avec grille: {board_grid_path}")
     else:
         print(f"\n   ⚠️  Plateau incomplet - ajustez les ArUcos ou les paramètres")
     
@@ -794,7 +934,10 @@ def process_image(image_path):
         'estimated_codes': estimated_codes,
         'output_path': output_path,
         'board_extracted_path': board_extracted_path,
-        'board_image': board_img
+        'board_grid_path': board_grid_path,
+        'board_image': board_img,
+        'board_image_with_grid': board_img_with_grid,
+        'cell_coordinates': cell_coords
     }
 
 
