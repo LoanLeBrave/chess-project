@@ -23,7 +23,7 @@ VITESSE = 0.1
 ACCELERATION = 0.3
 GRIPPER_OUVERTURE = 25
 DELTA_APPROCHE = 0.08  # 8cm au-dessus (était 3cm, +10mm)
-DELTA_RELACHE = 0.008  # 8mm au-dessus pour poser (était 2mm, +2mm)
+DELTA_RELACHE = 0.010  # 8mm au-dessus pour poser (était 2mm, +2mm)
 
 
 # ============================================================================
