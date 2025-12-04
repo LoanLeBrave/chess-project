@@ -42,12 +42,12 @@ ARUCO_DICT = cv2.aruco.DICT_4X4_50
 CUSTOM_ARUCO_PARAMS = {
     'adaptiveThreshWinSizeMin': 3,
     'adaptiveThreshWinSizeMax': 50,        # ↑ Augmente (au lieu de 40)
-    'adaptiveThreshWinSizeStep': 3,        # ↓ Diminue (au lieu de 5) - teste plus finement
-    'adaptiveThreshConstant': 3,           # ↓ Diminue (au lieu de 5) - plus tolérant
+    'adaptiveThreshWinSizeStep': 1,        # ↓ Diminue (au lieu de 5) - teste plus finement
+    'adaptiveThreshConstant': 5,           # ↓ Diminue (au lieu de 5) - plus tolérant
     'minMarkerPerimeterRate': 0.01,        # Garde
     'maxMarkerPerimeterRate': 4.0,
     'polygonalApproxAccuracyRate': 0.08,   # ↑ Augmente (au lieu de 0.05) - plus tolérant aux formes imparfaites
-    'minCornerDistanceRate': 0.02,         # ↓ Diminue (au lieu de 0.05) - accepte des coins plus proches
+    'minCornerDistanceRate': 0.002,         # ↓ Diminue (au lieu de 0.05) - accepte des coins plus proches
     'minDistanceToBorder': 1,              # ↓ Diminue (au lieu de 3)
     'minMarkerDistanceRate': 0.02,         # ↓ Diminue (au lieu de 0.05)
     'cornerRefinementMethod': cv2.aruco.CORNER_REFINE_CONTOUR,  # Utilise CONTOUR au lieu de SUBPIX
