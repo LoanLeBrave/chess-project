@@ -39,22 +39,22 @@ USE_DEFAULT_ARUCO_PARAMS = False
 ARUCO_DICT = cv2.aruco.DICT_4X4_50
 
 # Paramètres personnalisés de détection ArUco (utilisés si USE_DEFAULT_ARUCO_PARAMS = False)
-# TRÈS TOLÉRANT mais dans les limites OpenCV (min 3 pour adaptiveThreshWinSize)
+# TOLÉRANT: détecte beaucoup, on rafinera si trop de faux positifs
 CUSTOM_ARUCO_PARAMS = {
-    'adaptiveThreshWinSizeMin': 3,         # Min obligatoire OpenCV = 3
-    'adaptiveThreshWinSizeMax': 150,       # Grand mais raisonnable (évite surcharge mémoire)
-    'adaptiveThreshWinSizeStep': 4,        # Pas de 4 = rapide mais teste bien
-    'adaptiveThreshConstant': 3,           # Très tolérant
-    'minMarkerPerimeterRate': 0.005,       # Très petit - petits marqueurs OK
-    'maxMarkerPerimeterRate': 8.0,         # Grand - gros marqueurs OK
-    'polygonalApproxAccuracyRate': 0.2,    # Très tolérant à la forme
+    'adaptiveThreshWinSizeMin': 3,         # Min obligatoire OpenCV
+    'adaptiveThreshWinSizeMax': 200,       # TRÈS grand - teste plein de tailles
+    'adaptiveThreshWinSizeStep': 2,        # Teste finement
+    'adaptiveThreshConstant': 5,           # Très tolérant
+    'minMarkerPerimeterRate': 0.01,        # Très petit - détecte les petits
+    'maxMarkerPerimeterRate': 5.0,         # Grand - accepte les gros
+    'polygonalApproxAccuracyRate': 0.1,    # Très tolérant à la forme
     'minCornerDistanceRate': 0.01,         # Coins proches OK
     'minDistanceToBorder': 0,              # Au bord OK
     'minMarkerDistanceRate': 0.01,         # Marqueurs proches OK
-    'cornerRefinementMethod': cv2.aruco.CORNER_REFINE_CONTOUR,  # Plus tolérant
+    'cornerRefinementMethod': cv2.aruco.CORNER_REFINE_CONTOUR,  # Tolérant
     'cornerRefinementWinSize': 3,
-    'cornerRefinementMaxIterations': 10,
-    'cornerRefinementMinAccuracy': 0.01,
+    'cornerRefinementMaxIterations': 20,   # Itère bien
+    'cornerRefinementMinAccuracy': 0.05,   # Pas trop strict
 }
 
 # ============================================================
