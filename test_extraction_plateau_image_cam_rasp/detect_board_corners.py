@@ -95,11 +95,16 @@ CALIBRATION_IDS = {
 #         ↗                  ↖
 #     [ArUco BL]          [ArUco BR]
 #
+# OFFSETS: pour faire converger les coins vers l'intérieur (plateau plus petit que les ArUcos)
+#   - CAL_TL (top-left):     +x (droite), +y (bas)
+#   - CAL_TR (top-right):    -x (gauche), +y (bas)
+#   - CAL_BL (bottom-left):  +x (droite), -y (haut)
+#   - CAL_BR (bottom-right): -x (gauche), -y (haut)
 OFFSETS = {
-    "top_left": (50, 50),      # +x vers droite, +y vers bas
-    "top_right": (-50, 50),    # -x vers gauche, +y vers bas
-    "bottom_left": (50, -50),  # +x vers droite, -y vers haut
-    "bottom_right": (-50, -50) # -x vers gauche, -y vers haut
+    "CAL_TL": {"offset_x": 50, "offset_y": 50},      # +x vers droite, +y vers bas
+    "CAL_TR": {"offset_x": -50, "offset_y": 50},     # -x vers gauche, +y vers bas
+    "CAL_BL": {"offset_x": 50, "offset_y": -50},     # +x vers droite, -y vers haut
+    "CAL_BR": {"offset_x": -50, "offset_y": -50}     # -x vers gauche, -y vers haut
 }
 
 # Couleurs pour la visualisation (BGR pour OpenCV)
