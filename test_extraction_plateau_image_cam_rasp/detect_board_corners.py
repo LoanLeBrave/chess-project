@@ -95,11 +95,11 @@ CALIBRATION_IDS = {
 OFFSETS = {
     # Top-Left: ArUco en haut à gauche du plateau
     # → décaler vers droite (+x) et vers bas (+y) pour atteindre le coin
-    'CAL_TL': {'offset_x': 300, 'offset_y': 50},
+    'CAL_TL': {'offset_x': 50, 'offset_y': 50},
     
     # Top-Right: ArUco en haut à droite du plateau
     # → décaler vers gauche (-x) et vers bas (+y) pour atteindre le coin
-    'CAL_TR': {'offset_x': -300, 'offset_y': 50},
+    'CAL_TR': {'offset_x': -50, 'offset_y': 50},
     
     # Bottom-Left: ArUco en bas à gauche du plateau
     # → décaler vers droite (+x) et vers haut (-y) pour atteindre le coin
