@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """
-Script de DIAGNOSTIC v2 - Test du robot étape par étape
+Test simple : déplacer UNE pièce de e2 à e4
+Pour vérifier que le script de jeu fonctionne
 """
 
 import json
@@ -10,214 +11,165 @@ import os
 ROBOT_IP = "192.168.0.11"
 MAPPING_FILE = "chess_board_positions.json"
 
-print("=" * 60)
-print("   DIAGNOSTIC ROBOT UR5e - CHESS")
-print("=" * 60)
+# Paramètres de mouvement
+VITESSE = 0.1
+ACCELERATION = 0.3
+GRIPPER_OUVERTURE = 25
 
-# =========================================
-# TEST 1: Import des modules
-# =========================================
-print("\n[TEST 1] Import des modules...")
-try:
-    from rtde_control import RTDEControlInterface
-    from rtde_receive import RTDEReceiveInterface
-    from robotiq_gripper_control import RobotiqGripper
+# Hauteurs
+DELTA_APPROCHE = 0.03  # 3cm au-dessus
+DELTA_RELACHE = 0.002  # 2mm au-dessus pour poser
 
-    print("✅ Modules importés OK")
-except Exception as e:
-    print(f"❌ Erreur import: {e}")
+print("="*60)
+print("   TEST: Déplacer une pièce de e2 à e4")
+print("="*60)
+
+# Import
+from rtde_control import RTDEControlInterface
+from rtde_receive import RTDEReceiveInterface
+from robotiq_gripper_control import RobotiqGripper
+
+# Connexion
+print("\n[1] Connexion au robot...")
+rtde_c = RTDEControlInterface(ROBOT_IP)
+rtde_r = RTDEReceiveInterface(ROBOT_IP)
+print(f"    ✅ Connecté")
+
+# Gripper
+print("\n[2] Activation gripper...")
+gripper = RobotiqGripper(rtde_c)
+gripper.activate()
+gripper.set_force(40)
+gripper.set_speed(150)
+gripper.move(GRIPPER_OUVERTURE)
+print(f"    ✅ Gripper ouvert à {GRIPPER_OUVERTURE}mm")
+
+# Charger mapping
+print(f"\n[3] Chargement mapping...")
+with open(MAPPING_FILE, 'r') as f:
+    data = json.load(f)
+cases = data["cases"]
+print(f"    ✅ {len(cases)} cases chargées")
+
+# Vérifier e2 et e4
+if "e2" not in cases:
+    print("    ❌ Case e2 non mappée!")
+    exit(1)
+if "e4" not in cases:
+    print("    ❌ Case e4 non mappée!")
     exit(1)
 
-# =========================================
-# TEST 2: Connexion RTDE Control
-# =========================================
-print(f"\n[TEST 2] Connexion RTDE Control à {ROBOT_IP}...")
-try:
-    rtde_c = RTDEControlInterface(ROBOT_IP)
-    if rtde_c is None:
-        print("❌ rtde_c est None!")
-        exit(1)
-    print(f"✅ RTDE Control connecté")
-    print(f"   isConnected: {rtde_c.isConnected()}")
-except Exception as e:
-    print(f"❌ Erreur connexion Control: {e}")
-    import traceback
+tcp_e2 = cases["e2"]["tcp"]
+tcp_e4 = cases["e4"]["tcp"]
 
-    traceback.print_exc()
-    exit(1)
+print(f"    e2: X={tcp_e2[0]:.4f} Y={tcp_e2[1]:.4f} Z={tcp_e2[2]:.4f}")
+print(f"    e4: X={tcp_e4[0]:.4f} Y={tcp_e4[1]:.4f} Z={tcp_e4[2]:.4f}")
 
-# =========================================
-# TEST 3: Connexion RTDE Receive
-# =========================================
-print(f"\n[TEST 3] Connexion RTDE Receive à {ROBOT_IP}...")
-try:
-    rtde_r = RTDEReceiveInterface(ROBOT_IP)
-    if rtde_r is None:
-        print("❌ rtde_r est None!")
-        exit(1)
-    print(f"✅ RTDE Receive connecté")
-except Exception as e:
-    print(f"❌ Erreur connexion Receive: {e}")
-    import traceback
+# Confirmation
+print("\n" + "="*60)
+print("   ⚠️  Le robot va déplacer une pièce de e2 à e4")
+print("   Assurez-vous qu'il y a une pièce sur e2!")
+print("="*60)
+reponse = input("\nContinuer? (o/n): ").strip().lower()
+if reponse not in ['o', 'oui', 'y']:
+    print("Annulé")
+    exit(0)
 
-    traceback.print_exc()
-    exit(1)
+# Fonction helper
+def position_avec_delta_z(tcp, delta):
+    pos = list(tcp)
+    pos[2] += delta
+    return pos
 
-# =========================================
-# TEST 4: Lecture position actuelle
-# =========================================
-print("\n[TEST 4] Lecture position TCP...")
-try:
-    pose = rtde_r.getActualTCPPose()
-    print(f"✅ Position TCP actuelle:")
-    print(f"   X={pose[0]:.4f}  Y={pose[1]:.4f}  Z={pose[2]:.4f}")
-    print(f"   RX={pose[3]:.4f} RY={pose[4]:.4f} RZ={pose[5]:.4f}")
-except Exception as e:
-    print(f"❌ Erreur lecture position: {e}")
-    import traceback
+# =============================================
+# SÉQUENCE DE MOUVEMENT
+# =============================================
 
-    traceback.print_exc()
-    exit(1)
+print("\n" + "-"*60)
+print("ÉTAPE 1: Aller au-dessus de e2 (approche)")
+print("-"*60)
+pos_e2_approche = position_avec_delta_z(tcp_e2, DELTA_APPROCHE)
+print(f"  Destination: Z={pos_e2_approche[2]:.4f}")
+input("  [ENTRÉE pour exécuter...]")
+result = rtde_c.moveL(pos_e2_approche, VITESSE, ACCELERATION)
+print(f"  moveL retour: {result}")
+time.sleep(0.5)
 
-# =========================================
-# TEST 5: Mode robot
-# =========================================
-print("\n[TEST 5] Vérification mode robot...")
-try:
-    mode = rtde_r.getRobotMode()
-    safety = rtde_r.getSafetyMode()
+print("\n" + "-"*60)
+print("ÉTAPE 2: Descendre sur e2 (prise)")
+print("-"*60)
+print(f"  Destination: Z={tcp_e2[2]:.4f}")
+input("  [ENTRÉE pour exécuter...]")
+result = rtde_c.moveL(tcp_e2, VITESSE, ACCELERATION)
+print(f"  moveL retour: {result}")
+time.sleep(0.5)
 
-    modes = {0: "DISCONNECTED", 1: "CONFIRM_SAFETY", 2: "BOOTING",
-             3: "POWER_OFF", 4: "POWER_ON", 5: "IDLE", 6: "BACKDRIVE",
-             7: "RUNNING"}
+print("\n" + "-"*60)
+print("ÉTAPE 3: Fermer le gripper")
+print("-"*60)
+input("  [ENTRÉE pour exécuter...]")
+gripper.close()
+print("  ✅ Gripper fermé")
+time.sleep(0.5)
 
-    safety_modes = {0: "NORMAL", 1: "REDUCED", 2: "PROTECTIVE_STOP",
-                    3: "RECOVERY", 4: "SAFEGUARD_STOP", 5: "SYSTEM_EMERGENCY_STOP",
-                    6: "ROBOT_EMERGENCY_STOP", 7: "VIOLATION", 8: "FAULT"}
+print("\n" + "-"*60)
+print("ÉTAPE 4: Remonter (avec la pièce)")
+print("-"*60)
+print(f"  Destination: Z={pos_e2_approche[2]:.4f}")
+input("  [ENTRÉE pour exécuter...]")
+result = rtde_c.moveL(pos_e2_approche, VITESSE, ACCELERATION)
+print(f"  moveL retour: {result}")
+time.sleep(0.5)
 
-    print(f"   Robot Mode: {mode} ({modes.get(mode, 'UNKNOWN')})")
-    print(f"   Safety Mode: {safety} ({safety_modes.get(safety, 'UNKNOWN')})")
+print("\n" + "-"*60)
+print("ÉTAPE 5: Aller au-dessus de e4")
+print("-"*60)
+pos_e4_approche = position_avec_delta_z(tcp_e4, DELTA_APPROCHE)
+print(f"  Destination: X={pos_e4_approche[0]:.4f} Y={pos_e4_approche[1]:.4f} Z={pos_e4_approche[2]:.4f}")
+input("  [ENTRÉE pour exécuter...]")
+result = rtde_c.moveL(pos_e4_approche, VITESSE, ACCELERATION)
+print(f"  moveL retour: {result}")
+time.sleep(0.5)
 
-    if mode != 7:
-        print(f"   ⚠️ Robot PAS en mode RUNNING!")
-    else:
-        print(f"   ✅ Robot en mode RUNNING")
+print("\n" + "-"*60)
+print("ÉTAPE 6: Descendre sur e4 (relâche)")
+print("-"*60)
+pos_e4_relache = position_avec_delta_z(tcp_e4, DELTA_RELACHE)
+print(f"  Destination: Z={pos_e4_relache[2]:.4f}")
+input("  [ENTRÉE pour exécuter...]")
+result = rtde_c.moveL(pos_e4_relache, VITESSE, ACCELERATION)
+print(f"  moveL retour: {result}")
+time.sleep(0.5)
 
-    if safety != 0:
-        print(f"   ⚠️ Safety PAS en mode NORMAL!")
-    else:
-        print(f"   ✅ Safety en mode NORMAL")
+print("\n" + "-"*60)
+print("ÉTAPE 7: Ouvrir le gripper")
+print("-"*60)
+input("  [ENTRÉE pour exécuter...]")
+gripper.move(GRIPPER_OUVERTURE)
+print(f"  ✅ Gripper ouvert à {GRIPPER_OUVERTURE}mm")
+time.sleep(0.5)
 
-except Exception as e:
-    print(f"❌ Erreur mode robot: {e}")
+print("\n" + "-"*60)
+print("ÉTAPE 8: Remonter")
+print("-"*60)
+print(f"  Destination: Z={pos_e4_approche[2]:.4f}")
+input("  [ENTRÉE pour exécuter...]")
+result = rtde_c.moveL(pos_e4_approche, VITESSE, ACCELERATION)
+print(f"  moveL retour: {result}")
+time.sleep(0.5)
 
-# =========================================
-# TEST 6: Vérifier isProgramRunning
-# =========================================
-print("\n[TEST 6] État du programme...")
-try:
-    is_connected = rtde_c.isConnected()
-    is_running = rtde_c.isProgramRunning()
-    print(f"   isConnected: {is_connected}")
-    print(f"   isProgramRunning: {is_running}")
+# =============================================
+# FIN
+# =============================================
+print("\n" + "="*60)
+print("   ✅ MOUVEMENT e2 → e4 TERMINÉ!")
+print("="*60)
 
-    if is_running:
-        print("   ⚠️ Un programme tourne! Cela peut bloquer les commandes externes.")
-except Exception as e:
-    print(f"❌ Erreur: {e}")
-
-# =========================================
-# TEST 7: Charger le mapping
-# =========================================
-print(f"\n[TEST 7] Chargement mapping ({MAPPING_FILE})...")
-try:
-    if not os.path.exists(MAPPING_FILE):
-        print(f"❌ Fichier {MAPPING_FILE} non trouvé!")
-        print(f"   Répertoire actuel: {os.getcwd()}")
-        print(f"   Fichiers présents: {os.listdir('.')}")
-    else:
-        with open(MAPPING_FILE, 'r') as f:
-            mapping_data = json.load(f)
-
-        cases = mapping_data.get("cases", {})
-        print(f"✅ Mapping chargé: {len(cases)} cases")
-
-        if "e2" in cases:
-            tcp = cases["e2"]["tcp"]
-            print(f"   Position e2: X={tcp[0]:.4f} Y={tcp[1]:.4f} Z={tcp[2]:.4f}")
-except Exception as e:
-    print(f"❌ Erreur mapping: {e}")
-
-# =========================================
-# TEST 8: Test mouvement réel
-# =========================================
-print("\n[TEST 8] Test mouvement réel...")
-print("   ⚠️ Le robot va monter de 2cm!")
-reponse = input("   Continuer? (o/n): ").strip().lower()
-
-if reponse in ['o', 'oui', 'y', 'yes']:
-    try:
-        # Position actuelle
-        pose_avant = rtde_r.getActualTCPPose()
-        print(f"   Position AVANT: Z={pose_avant[2]:.4f}")
-
-        # Nouvelle position (+2cm en Z)
-        nouvelle_pose = list(pose_avant)
-        nouvelle_pose[2] += 0.02  # +2cm
-
-        print(f"   Envoi commande moveL vers Z={nouvelle_pose[2]:.4f}...")
-        print(f"   Vitesse: 0.1 m/s, Accélération: 0.3 m/s²")
-
-        # Exécuter le mouvement
-        result = rtde_c.moveL(nouvelle_pose, 0.1, 0.3)
-        print(f"   Retour moveL: {result}")
-
-        # Attendre
-        print("   Attente 2 secondes...")
-        time.sleep(2)
-
-        # Vérifier
-        pose_apres = rtde_r.getActualTCPPose()
-        print(f"   Position APRÈS: Z={pose_apres[2]:.4f}")
-
-        delta = (pose_apres[2] - pose_avant[2]) * 1000  # en mm
-        print(f"   Déplacement réel: {delta:.2f} mm")
-
-        if abs(delta) < 1:
-            print("\n   ❌ LE ROBOT N'A PAS BOUGÉ!")
-            print("\n   Vérifications sur le PENDANT:")
-            print("   1. Remote Control activé? (Menu → Settings → System → Remote Control)")
-            print("   2. Freedrive désactivé?")
-            print("   3. Pas de Protective Stop?")
-            print("   4. Pas de programme en cours?")
-        else:
-            print(f"\n   ✅ LE ROBOT A BOUGÉ DE {delta:.1f} mm!")
-
-            # Revenir
-            print("\n   Retour à la position initiale...")
-            rtde_c.moveL(pose_avant, 0.1, 0.3)
-            time.sleep(2)
-            print("   ✅ Retour effectué")
-
-    except Exception as e:
-        print(f"❌ Erreur mouvement: {e}")
-        import traceback
-
-        traceback.print_exc()
-else:
-    print("   Test mouvement annulé")
-
-# =========================================
-# RÉSUMÉ
-# =========================================
-print("\n" + "=" * 60)
-print("   FIN DU DIAGNOSTIC")
-print("=" * 60)
+# Vérifier position finale
+pose_finale = rtde_r.getActualTCPPose()
+print(f"\nPosition finale: X={pose_finale[0]:.4f} Y={pose_finale[1]:.4f} Z={pose_finale[2]:.4f}")
 
 # Fermeture
-print("\nFermeture des connexions...")
-try:
-    rtde_c.stopScript()
-    print("✅ Connexions fermées")
-except:
-    pass
+print("\nFermeture...")
+rtde_c.stopScript()
+print("✅ Terminé")
