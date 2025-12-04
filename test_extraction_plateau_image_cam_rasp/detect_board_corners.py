@@ -562,37 +562,33 @@ def draw_visualization(img_np, calibration_markers, board_corners, offset_lines,
         cv2.putText(img_annotated, label, (bx_int + 10, by_int - 10),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1)
     
-    # 4. Dessiner le contour du plateau selon le nombre de coins disponibles
-    if len(board_corners) >= 2:
-        # Ordre des coins pour former un quadrilatère: TL → TR → BR → BL
-        corner_order = ['CAL_TL', 'CAL_TR', 'CAL_BR', 'CAL_BL']
-        available_corners = [(c, board_corners[c]) for c in corner_order if c in board_corners]
-        
-        if len(available_corners) == 2:
-            # Avec 2 coins: dessiner une ligne entre eux
-            pt1 = (int(available_corners[0][1][0]), int(available_corners[0][1][1]))
-            pt2 = (int(available_corners[1][1][0]), int(available_corners[1][1][1]))
-            cv2.line(img_annotated, pt1, pt2, COLORS['board_outline'], 3, cv2.LINE_AA)
-        elif len(available_corners) >= 3:
-            # Avec 3+ coins: dessiner le polygone
-            pts = np.array([[int(c[1][0]), int(c[1][1])] for c in available_corners], np.int32)
-            pts = pts.reshape((-1, 1, 2))
-            cv2.polylines(img_annotated, [pts], True, COLORS['board_outline'], 3, cv2.LINE_AA)
+    # 4. Dessiner le contour du plateau
+    # On dessine TOUJOURS les lignes entre les coins adjacents disponibles
+    corner_order = ['CAL_TL', 'CAL_TR', 'CAL_BR', 'CAL_BL']
+    adjacencies = [
+        ('CAL_TL', 'CAL_TR'),  # Haut
+        ('CAL_TR', 'CAL_BR'),  # Droite
+        ('CAL_BR', 'CAL_BL'),  # Bas
+        ('CAL_BL', 'CAL_TL'),  # Gauche
+    ]
     
-    # 5. Dessiner le quadrilatère complet du plateau si on a les 4 coins
+    for c1, c2 in adjacencies:
+        if c1 in board_corners and c2 in board_corners:
+            pt1 = (int(board_corners[c1][0]), int(board_corners[c1][1]))
+            pt2 = (int(board_corners[c2][0]), int(board_corners[c2][1]))
+            cv2.line(img_annotated, pt1, pt2, COLORS['board_outline'], 3, cv2.LINE_AA)
+    
+    # 5. Si on a les 4 coins, ajouter l'overlay semi-transparent
     if len(board_corners) == 4:
         corner_order = ['CAL_TL', 'CAL_TR', 'CAL_BR', 'CAL_BL']
         pts = np.array([[int(board_corners[c][0]), int(board_corners[c][1])] 
                        for c in corner_order], np.int32)
         pts = pts.reshape((-1, 1, 2))
         
-        # Contour épais orange
-        cv2.polylines(img_annotated, [pts], True, COLORS['board_outline'], 4, cv2.LINE_AA)
-        
         # Overlay semi-transparent du plateau
         overlay = img_annotated.copy()
         cv2.fillPoly(overlay, [pts], (255, 200, 100))
-        cv2.addWeighted(overlay, 0.1, img_annotated, 0.9, 0, img_annotated)
+        cv2.addWeighted(overlay, 0.15, img_annotated, 0.85, 0, img_annotated)
     
     return img_annotated
 
