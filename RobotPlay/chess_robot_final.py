@@ -22,8 +22,8 @@ ROBOT_IP = "192.168.0.11"
 VITESSE = 0.1
 ACCELERATION = 0.3
 GRIPPER_OUVERTURE = 25
-DELTA_APPROCHE = 0.03
-DELTA_RELACHE = 0.002
+DELTA_APPROCHE = 0.04  # 4cm au-dessus (était 3cm, +10mm)
+DELTA_RELACHE = 0.004  # 4mm au-dessus pour poser (était 2mm, +2mm)
 
 
 # ============================================================================
