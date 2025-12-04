@@ -1,0 +1,538 @@
+#!/usr/bin/env python3
+"""
+Détection des 4 coins du plateau d'échecs via ArUcos de calibration
+et visualisation du plateau avec offsets configurables.
+
+Les ArUcos de calibration sont placés à l'extérieur du plateau,
+donc on applique des offsets pour définir les vrais coins du plateau.
+
+Usage:
+    python detect_board_corners.py [chemin_image]
+    
+Si aucune image n'est fournie, le script cherche dans ../analyse/images/
+"""
+
+import cv2
+import numpy as np
+from PIL import Image, ImageDraw, ImageFont
+import os
+import sys
+from datetime import datetime
+
+# ============================================================
+# CONFIGURATION
+# ============================================================
+
+# Dossiers
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+DEFAULT_IMAGES_DIR = os.path.join(SCRIPT_DIR, "..", "analyse", "images")
+OUTPUT_DIR = os.path.join(SCRIPT_DIR, "output")
+
+# Dictionnaire ArUco (doit correspondre à celui utilisé pour la génération)
+ARUCO_DICT = cv2.aruco.DICT_4X4_50
+
+# IDs des marqueurs de calibration
+CALIBRATION_IDS = {
+    32: 'CAL_TL',  # Top-Left (Haut-Gauche)
+    33: 'CAL_TR',  # Top-Right (Haut-Droite)
+    34: 'CAL_BL',  # Bottom-Left (Bas-Gauche)
+    35: 'CAL_BR',  # Bottom-Right (Bas-Droite)
+}
+
+# ============================================================
+# OFFSETS DE CALIBRATION
+# ============================================================
+# Les ArUcos sont à l'EXTÉRIEUR du plateau.
+# Ces offsets définissent la distance entre le CENTRE de l'ArUco
+# et le COIN RÉEL du plateau.
+#
+# Unité: pixels (à ajuster selon votre image)
+#
+# Convention:
+#   - offset_x positif = décaler vers la DROITE
+#   - offset_x négatif = décaler vers la GAUCHE
+#   - offset_y positif = décaler vers le BAS
+#   - offset_y négatif = décaler vers le HAUT
+#
+# Schéma (vue de dessus, caméra en dessous regardant vers le haut):
+#
+#     [ArUco TL]          [ArUco TR]
+#         ↘                  ↙
+#         +------------------+
+#         |                  |
+#         |    PLATEAU       |
+#         |    D'ÉCHECS      |
+#         |                  |
+#         +------------------+
+#         ↗                  ↖
+#     [ArUco BL]          [ArUco BR]
+#
+
+OFFSETS = {
+    # Top-Left: ArUco en haut à gauche du plateau
+    # → décaler vers droite (+x) et vers bas (+y) pour atteindre le coin
+    'CAL_TL': {'offset_x': 50, 'offset_y': 50},
+    
+    # Top-Right: ArUco en haut à droite du plateau
+    # → décaler vers gauche (-x) et vers bas (+y) pour atteindre le coin
+    'CAL_TR': {'offset_x': -50, 'offset_y': 50},
+    
+    # Bottom-Left: ArUco en bas à gauche du plateau
+    # → décaler vers droite (+x) et vers haut (-y) pour atteindre le coin
+    'CAL_BL': {'offset_x': 50, 'offset_y': -50},
+    
+    # Bottom-Right: ArUco en bas à droite du plateau
+    # → décaler vers gauche (-x) et vers haut (-y) pour atteindre le coin
+    'CAL_BR': {'offset_x': -50, 'offset_y': -50},
+}
+
+# Couleurs pour la visualisation (BGR pour OpenCV)
+COLORS = {
+    'aruco_marker': (0, 255, 0),      # Vert - contour des ArUcos détectés
+    'aruco_center': (0, 0, 255),      # Rouge - centre des ArUcos
+    'board_corner': (255, 0, 255),    # Magenta - coins calculés du plateau
+    'board_outline': (255, 165, 0),   # Orange - contour du plateau
+    'offset_line': (255, 255, 0),     # Cyan - ligne ArUco → coin plateau
+    'text_bg': (255, 255, 255),       # Blanc - fond du texte
+}
+
+
+# ============================================================
+# DÉTECTION ARUCO
+# ============================================================
+def detect_calibration_markers(img_np):
+    """
+    Détecte les marqueurs ArUco de calibration (IDs 32-35).
+    
+    Args:
+        img_np: Image numpy (BGR ou RGB)
+    
+    Returns:
+        dict: {id: {'center': (x, y), 'corners': [...], 'code': 'CAL_XX'}}
+    """
+    # Conversion en niveaux de gris
+    if len(img_np.shape) == 3:
+        gray = cv2.cvtColor(img_np, cv2.COLOR_BGR2GRAY)
+    else:
+        gray = img_np
+    
+    # Charger le dictionnaire ArUco
+    aruco_dict = cv2.aruco.getPredefinedDictionary(ARUCO_DICT)
+    
+    # Paramètres de détection optimisés
+    parameters = cv2.aruco.DetectorParameters()
+    parameters.adaptiveThreshWinSizeMin = 3
+    parameters.adaptiveThreshWinSizeMax = 50
+    parameters.adaptiveThreshWinSizeStep = 2
+    parameters.minMarkerPerimeterRate = 0.01
+    parameters.maxMarkerPerimeterRate = 4.0
+    parameters.polygonalApproxAccuracyRate = 0.01
+    parameters.cornerRefinementMethod = cv2.aruco.CORNER_REFINE_CONTOUR
+    
+    # Créer le détecteur
+    detector = cv2.aruco.ArucoDetector(aruco_dict, parameters)
+    
+    # Détecter les marqueurs
+    corners, ids, rejected = detector.detectMarkers(gray)
+    
+    calibration_markers = {}
+    
+    if ids is not None:
+        for i, marker_id in enumerate(ids.flatten()):
+            if marker_id in CALIBRATION_IDS:
+                marker_corners = corners[i][0]
+                
+                # Centre du marqueur
+                center_x = sum(c[0] for c in marker_corners) / 4
+                center_y = sum(c[1] for c in marker_corners) / 4
+                
+                calibration_markers[marker_id] = {
+                    'center': (center_x, center_y),
+                    'corners': marker_corners,
+                    'code': CALIBRATION_IDS[marker_id]
+                }
+    
+    return calibration_markers
+
+
+def calculate_board_corners(calibration_markers):
+    """
+    Calcule les coins du plateau en appliquant les offsets aux ArUcos détectés.
+    
+    Args:
+        calibration_markers: dict des marqueurs de calibration détectés
+    
+    Returns:
+        dict: {code: (x, y)} pour chaque coin du plateau
+        dict: {code: (aruco_center, board_corner)} pour visualiser les offsets
+    """
+    board_corners = {}
+    offset_lines = {}
+    
+    for marker_id, marker_data in calibration_markers.items():
+        code = marker_data['code']
+        center = marker_data['center']
+        
+        # Appliquer l'offset
+        offset = OFFSETS[code]
+        board_x = center[0] + offset['offset_x']
+        board_y = center[1] + offset['offset_y']
+        
+        board_corners[code] = (board_x, board_y)
+        offset_lines[code] = (center, (board_x, board_y))
+    
+    return board_corners, offset_lines
+
+
+def estimate_missing_corners(board_corners):
+    """
+    Estime les coins manquants si seulement 2 ou 3 ArUcos sont détectés.
+    Utilise la géométrie du plateau (supposé rectangulaire).
+    
+    Args:
+        board_corners: dict des coins déjà calculés
+    
+    Returns:
+        dict: coins complétés (estimés si nécessaire)
+    """
+    codes = ['CAL_TL', 'CAL_TR', 'CAL_BL', 'CAL_BR']
+    detected = list(board_corners.keys())
+    missing = [c for c in codes if c not in detected]
+    
+    if len(missing) == 0:
+        return board_corners, []
+    
+    estimated_corners = board_corners.copy()
+    estimated_codes = []
+    
+    # Cas avec 3 coins détectés: on peut estimer le 4ème
+    if len(missing) == 1:
+        m = missing[0]
+        if m == 'CAL_TL' and all(c in detected for c in ['CAL_TR', 'CAL_BL', 'CAL_BR']):
+            # TL = TR + BL - BR
+            tr, bl, br = board_corners['CAL_TR'], board_corners['CAL_BL'], board_corners['CAL_BR']
+            estimated_corners['CAL_TL'] = (tr[0] + bl[0] - br[0], tr[1] + bl[1] - br[1])
+            estimated_codes.append('CAL_TL')
+        elif m == 'CAL_TR' and all(c in detected for c in ['CAL_TL', 'CAL_BL', 'CAL_BR']):
+            tl, bl, br = board_corners['CAL_TL'], board_corners['CAL_BL'], board_corners['CAL_BR']
+            estimated_corners['CAL_TR'] = (tl[0] + br[0] - bl[0], tl[1] + br[1] - bl[1])
+            estimated_codes.append('CAL_TR')
+        elif m == 'CAL_BL' and all(c in detected for c in ['CAL_TL', 'CAL_TR', 'CAL_BR']):
+            tl, tr, br = board_corners['CAL_TL'], board_corners['CAL_TR'], board_corners['CAL_BR']
+            estimated_corners['CAL_BL'] = (tl[0] + br[0] - tr[0], tl[1] + br[1] - tr[1])
+            estimated_codes.append('CAL_BL')
+        elif m == 'CAL_BR' and all(c in detected for c in ['CAL_TL', 'CAL_TR', 'CAL_BL']):
+            tl, tr, bl = board_corners['CAL_TL'], board_corners['CAL_TR'], board_corners['CAL_BL']
+            estimated_corners['CAL_BR'] = (tr[0] + bl[0] - tl[0], tr[1] + bl[1] - tl[1])
+            estimated_codes.append('CAL_BR')
+    
+    # Cas avec 2 coins détectés sur une diagonale: on peut estimer si on a des infos supplémentaires
+    # Pour l'instant, on ne gère que le cas 3 coins
+    
+    return estimated_corners, estimated_codes
+
+
+# ============================================================
+# VISUALISATION
+# ============================================================
+def draw_visualization(img_np, calibration_markers, board_corners, offset_lines, estimated_codes=None):
+    """
+    Dessine la visualisation sur l'image:
+    - Contours des ArUcos détectés
+    - Centres des ArUcos
+    - Lignes d'offset (ArUco → coin plateau)
+    - Coins du plateau
+    - Contour du plateau
+    
+    Args:
+        img_np: Image numpy (BGR)
+        calibration_markers: dict des marqueurs détectés
+        board_corners: dict des coins du plateau
+        offset_lines: dict des lignes d'offset
+        estimated_codes: liste des codes estimés (non détectés)
+    
+    Returns:
+        Image annotée
+    """
+    if estimated_codes is None:
+        estimated_codes = []
+    
+    img_annotated = img_np.copy()
+    
+    # 1. Dessiner les contours des ArUcos détectés
+    for marker_id, marker_data in calibration_markers.items():
+        corners = marker_data['corners']
+        pts = corners.astype(np.int32).reshape((-1, 1, 2))
+        cv2.polylines(img_annotated, [pts], True, COLORS['aruco_marker'], 2)
+        
+        # Centre de l'ArUco
+        cx, cy = int(marker_data['center'][0]), int(marker_data['center'][1])
+        cv2.circle(img_annotated, (cx, cy), 8, COLORS['aruco_center'], -1)
+        cv2.circle(img_annotated, (cx, cy), 10, COLORS['aruco_center'], 2)
+        
+        # Label ArUco
+        label = f"ID:{marker_id} ({marker_data['code']})"
+        cv2.putText(img_annotated, label, (cx - 60, cy - 20),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, COLORS['text_bg'], 3)
+        cv2.putText(img_annotated, label, (cx - 60, cy - 20),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, COLORS['aruco_marker'], 2)
+    
+    # 2. Dessiner les lignes d'offset (ArUco → coin plateau)
+    for code, (aruco_center, board_corner) in offset_lines.items():
+        pt1 = (int(aruco_center[0]), int(aruco_center[1]))
+        pt2 = (int(board_corner[0]), int(board_corner[1]))
+        cv2.line(img_annotated, pt1, pt2, COLORS['offset_line'], 2, cv2.LINE_AA)
+    
+    # 3. Dessiner les coins du plateau
+    for code, (bx, by) in board_corners.items():
+        bx_int, by_int = int(bx), int(by)
+        
+        # Couleur différente pour les coins estimés
+        if code in estimated_codes:
+            color = (128, 128, 255)  # Rose clair pour estimé
+            label_suffix = " (estimé)"
+        else:
+            color = COLORS['board_corner']
+            label_suffix = ""
+        
+        # Croix au coin du plateau
+        size = 15
+        cv2.line(img_annotated, (bx_int - size, by_int), (bx_int + size, by_int), color, 3)
+        cv2.line(img_annotated, (bx_int, by_int - size), (bx_int, by_int + size), color, 3)
+        cv2.circle(img_annotated, (bx_int, by_int), 5, color, -1)
+        
+        # Label coin plateau
+        label = f"Coin {code.replace('CAL_', '')}{label_suffix}"
+        cv2.putText(img_annotated, label, (bx_int + 10, by_int - 10),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, COLORS['text_bg'], 2)
+        cv2.putText(img_annotated, label, (bx_int + 10, by_int - 10),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1)
+    
+    # 4. Dessiner le contour du plateau si on a au moins 3 coins
+    if len(board_corners) >= 3:
+        # Ordre des coins: TL → TR → BR → BL
+        corner_order = ['CAL_TL', 'CAL_TR', 'CAL_BR', 'CAL_BL']
+        available_corners = [board_corners.get(c) for c in corner_order if c in board_corners]
+        
+        if len(available_corners) >= 3:
+            pts = np.array([[int(c[0]), int(c[1])] for c in available_corners], np.int32)
+            pts = pts.reshape((-1, 1, 2))
+            cv2.polylines(img_annotated, [pts], True, COLORS['board_outline'], 3, cv2.LINE_AA)
+    
+    # 5. Dessiner le quadrilatère du plateau si on a les 4 coins
+    if len(board_corners) == 4:
+        corner_order = ['CAL_TL', 'CAL_TR', 'CAL_BR', 'CAL_BL']
+        pts = np.array([[int(board_corners[c][0]), int(board_corners[c][1])] 
+                       for c in corner_order], np.int32)
+        pts = pts.reshape((-1, 1, 2))
+        
+        # Contour épais orange
+        cv2.polylines(img_annotated, [pts], True, COLORS['board_outline'], 4, cv2.LINE_AA)
+        
+        # Overlay semi-transparent du plateau
+        overlay = img_annotated.copy()
+        cv2.fillPoly(overlay, [pts], (255, 200, 100))
+        cv2.addWeighted(overlay, 0.1, img_annotated, 0.9, 0, img_annotated)
+    
+    return img_annotated
+
+
+def draw_info_panel(img_np, calibration_markers, board_corners, estimated_codes):
+    """
+    Ajoute un panneau d'information sur l'image
+    """
+    h, w = img_np.shape[:2]
+    
+    # Créer un panneau en haut
+    panel_height = 120
+    panel = np.ones((panel_height, w, 3), dtype=np.uint8) * 40  # Gris foncé
+    
+    # Titre
+    cv2.putText(panel, "DETECTION DES COINS DU PLATEAU", (20, 30),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2)
+    
+    # Statut des ArUcos
+    y_pos = 60
+    detected_ids = list(calibration_markers.keys())
+    for marker_id, code in CALIBRATION_IDS.items():
+        status = "OK" if marker_id in detected_ids else "NON DETECTE"
+        color = (0, 255, 0) if marker_id in detected_ids else (0, 0, 255)
+        text = f"ArUco {marker_id} ({code}): {status}"
+        cv2.putText(panel, text, (20 + (marker_id - 32) * 280, y_pos),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1)
+    
+    # Offsets actuels
+    y_pos = 90
+    cv2.putText(panel, f"Offsets: TL({OFFSETS['CAL_TL']['offset_x']},{OFFSETS['CAL_TL']['offset_y']}) "
+                f"TR({OFFSETS['CAL_TR']['offset_x']},{OFFSETS['CAL_TR']['offset_y']}) "
+                f"BL({OFFSETS['CAL_BL']['offset_x']},{OFFSETS['CAL_BL']['offset_y']}) "
+                f"BR({OFFSETS['CAL_BR']['offset_x']},{OFFSETS['CAL_BR']['offset_y']})",
+                (20, y_pos), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (200, 200, 200), 1)
+    
+    # Résumé
+    cv2.putText(panel, f"Detectes: {len(calibration_markers)}/4 | "
+                f"Coins plateau: {len(board_corners)}/4 | "
+                f"Estimes: {len(estimated_codes)}",
+                (20, 110), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 200, 100), 1)
+    
+    # Combiner le panneau avec l'image
+    result = np.vstack([panel, img_np])
+    
+    return result
+
+
+# ============================================================
+# FONCTIONS PRINCIPALES
+# ============================================================
+def process_image(image_path):
+    """
+    Traite une image: détection des coins et visualisation.
+    
+    Args:
+        image_path: Chemin vers l'image
+    
+    Returns:
+        dict avec les résultats
+    """
+    print(f"\n{'='*60}")
+    print(f"📸 Traitement de: {os.path.basename(image_path)}")
+    print(f"{'='*60}")
+    
+    # Charger l'image
+    img_np = cv2.imread(image_path)
+    if img_np is None:
+        print(f"❌ Impossible de charger l'image: {image_path}")
+        return None
+    
+    h, w = img_np.shape[:2]
+    print(f"   📐 Dimensions: {w}x{h}")
+    
+    # Détecter les marqueurs de calibration
+    print(f"\n🎯 Détection des ArUcos de calibration...")
+    calibration_markers = detect_calibration_markers(img_np)
+    
+    print(f"   ✅ Marqueurs détectés: {len(calibration_markers)}/4")
+    for marker_id, data in calibration_markers.items():
+        print(f"      ID {marker_id} ({data['code']}): centre = ({data['center'][0]:.1f}, {data['center'][1]:.1f})")
+    
+    # Vérifier qu'on a au moins 2 marqueurs
+    if len(calibration_markers) < 2:
+        print(f"\n❌ ERREUR: Besoin d'au moins 2 ArUcos de calibration (détectés: {len(calibration_markers)})")
+        return None
+    
+    # Calculer les coins du plateau avec offsets
+    print(f"\n📐 Calcul des coins du plateau (avec offsets)...")
+    board_corners, offset_lines = calculate_board_corners(calibration_markers)
+    
+    for code, corner in board_corners.items():
+        offset = OFFSETS[code]
+        print(f"   {code}: ArUco → offset ({offset['offset_x']:+d}, {offset['offset_y']:+d}) → coin plateau ({corner[0]:.1f}, {corner[1]:.1f})")
+    
+    # Estimer les coins manquants si possible
+    estimated_codes = []
+    if len(board_corners) < 4:
+        print(f"\n🔮 Estimation des coins manquants...")
+        board_corners, estimated_codes = estimate_missing_corners(board_corners)
+        if estimated_codes:
+            for code in estimated_codes:
+                print(f"   ⚠️  {code} estimé: ({board_corners[code][0]:.1f}, {board_corners[code][1]:.1f})")
+        else:
+            print(f"   ⚠️  Impossible d'estimer (besoin d'au moins 3 coins)")
+    
+    # Créer la visualisation
+    print(f"\n🎨 Création de la visualisation...")
+    img_annotated = draw_visualization(img_np, calibration_markers, board_corners, offset_lines, estimated_codes)
+    img_with_panel = draw_info_panel(img_annotated, calibration_markers, board_corners, estimated_codes)
+    
+    # Sauvegarder le résultat
+    os.makedirs(OUTPUT_DIR, exist_ok=True)
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    output_filename = f"board_detection_{timestamp}.jpg"
+    output_path = os.path.join(OUTPUT_DIR, output_filename)
+    cv2.imwrite(output_path, img_with_panel)
+    print(f"\n💾 Résultat sauvegardé: {output_path}")
+    
+    # Résumé
+    print(f"\n{'='*60}")
+    print(f"📋 RÉSUMÉ")
+    print(f"{'='*60}")
+    print(f"   ArUcos détectés: {len(calibration_markers)}/4")
+    print(f"   Coins du plateau: {len(board_corners)}/4")
+    if estimated_codes:
+        print(f"   Coins estimés: {', '.join(estimated_codes)}")
+    
+    if len(board_corners) == 4:
+        print(f"\n   ✅ Plateau complet détecté!")
+        print(f"\n   📍 Coins du plateau (en pixels):")
+        for code in ['CAL_TL', 'CAL_TR', 'CAL_BL', 'CAL_BR']:
+            if code in board_corners:
+                suffix = " (estimé)" if code in estimated_codes else ""
+                print(f"      {code.replace('CAL_', '')}: ({board_corners[code][0]:.1f}, {board_corners[code][1]:.1f}){suffix}")
+    else:
+        print(f"\n   ⚠️  Plateau incomplet - ajustez les ArUcos ou les paramètres")
+    
+    return {
+        'calibration_markers': calibration_markers,
+        'board_corners': board_corners,
+        'estimated_codes': estimated_codes,
+        'output_path': output_path
+    }
+
+
+def select_image():
+    """Sélectionne une image à traiter"""
+    import glob
+    
+    # Chercher les images
+    images = []
+    for ext in ['*.jpg', '*.jpeg', '*.png']:
+        images.extend(glob.glob(os.path.join(DEFAULT_IMAGES_DIR, ext)))
+        images.extend(glob.glob(os.path.join(SCRIPT_DIR, ext)))
+    
+    images = sorted(set(images))
+    
+    if not images:
+        print("❌ Aucune image trouvée.")
+        return None
+    
+    print("\n📷 Images disponibles:")
+    print("-" * 40)
+    for i, img_path in enumerate(images, 1):
+        print(f"  {i}. {os.path.basename(img_path)}")
+    print("-" * 40)
+    
+    while True:
+        try:
+            choice = input("\nNuméro de l'image (ou 'q' pour quitter): ").strip()
+            if choice.lower() == 'q':
+                return None
+            choice_num = int(choice)
+            if 1 <= choice_num <= len(images):
+                return images[choice_num - 1]
+        except ValueError:
+            pass
+        print(f"⚠️  Entrez un numéro entre 1 et {len(images)}")
+
+
+# ============================================================
+# POINT D'ENTRÉE
+# ============================================================
+if __name__ == "__main__":
+    print("=" * 60)
+    print("🎯 DÉTECTION DES COINS DU PLATEAU D'ÉCHECS")
+    print("   via ArUcos de calibration (IDs 32-35)")
+    print("=" * 60)
+    
+    # Vérifier si une image est passée en argument
+    if len(sys.argv) > 1:
+        image_path = sys.argv[1]
+    else:
+        image_path = select_image()
+    
+    if image_path and os.path.exists(image_path):
+        result = process_image(image_path)
+        if result:
+            print(f"\n✅ Traitement terminé!")
+            print(f"\n💡 Pour ajuster les offsets, modifiez la section OFFSETS en haut du script.")
+    else:
+        print("❌ Image non trouvée ou non sélectionnée.")
