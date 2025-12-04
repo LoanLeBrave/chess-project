@@ -31,6 +31,10 @@ DEFAULT_IMAGES_DIR = os.path.join(SCRIPT_DIR, "..", "analyse", "images")
 IMAGES_DIR = os.path.join(SCRIPT_DIR, "images")
 OUTPUT_DIR = os.path.join(SCRIPT_DIR, "output")
 
+# Taille de l'image extraite du plateau (en pixels)
+# L'image sera un carré de cette dimension
+EXTRACTED_BOARD_SIZE = 800
+
 # ============================================================
 # CONFIGURATION CAMÉRA RASPBERRY PI
 # ============================================================
@@ -593,6 +597,55 @@ def draw_visualization(img_np, calibration_markers, board_corners, offset_lines,
     return img_annotated
 
 
+# ============================================================
+# EXTRACTION DU PLATEAU
+# ============================================================
+def extract_board(img_np, board_corners):
+    """
+    Extrait et redresse l'image du plateau en utilisant une transformation de perspective.
+    
+    Les 4 coins du plateau (définis par les ArUcos + offsets) sont mappés vers
+    les 4 coins d'une image carrée.
+    
+    Args:
+        img_np: Image numpy (BGR)
+        board_corners: dict {code: (x, y)} avec les 4 coins du plateau
+    
+    Returns:
+        Image numpy du plateau extrait et redressé, ou None si pas assez de coins
+    """
+    if len(board_corners) < 4:
+        print("   ⚠️  Impossible d'extraire le plateau: besoin de 4 coins")
+        return None
+    
+    # Points source (coins du plateau dans l'image originale)
+    # Ordre: TL, TR, BR, BL (sens horaire)
+    src_points = np.array([
+        [board_corners['CAL_TL'][0], board_corners['CAL_TL'][1]],
+        [board_corners['CAL_TR'][0], board_corners['CAL_TR'][1]],
+        [board_corners['CAL_BR'][0], board_corners['CAL_BR'][1]],
+        [board_corners['CAL_BL'][0], board_corners['CAL_BL'][1]],
+    ], dtype=np.float32)
+    
+    # Points destination (coins de l'image carrée de sortie)
+    # L'image de sortie sera un carré de EXTRACTED_BOARD_SIZE x EXTRACTED_BOARD_SIZE
+    size = EXTRACTED_BOARD_SIZE
+    dst_points = np.array([
+        [0, 0],           # TL -> coin haut-gauche
+        [size - 1, 0],    # TR -> coin haut-droite
+        [size - 1, size - 1],  # BR -> coin bas-droite
+        [0, size - 1],    # BL -> coin bas-gauche
+    ], dtype=np.float32)
+    
+    # Calculer la matrice de transformation perspective
+    matrix = cv2.getPerspectiveTransform(src_points, dst_points)
+    
+    # Appliquer la transformation
+    board_img = cv2.warpPerspective(img_np, matrix, (size, size))
+    
+    return board_img
+
+
 def draw_info_panel(img_np, calibration_markers, board_corners, estimated_codes):
     """
     Ajoute un panneau d'information sur l'image
@@ -700,13 +753,26 @@ def process_image(image_path):
     img_annotated = draw_visualization(img_np, calibration_markers, board_corners, offset_lines, estimated_codes)
     img_with_panel = draw_info_panel(img_annotated, calibration_markers, board_corners, estimated_codes)
     
-    # Sauvegarder le résultat
+    # Sauvegarder le résultat annoté
     os.makedirs(OUTPUT_DIR, exist_ok=True)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     output_filename = f"board_detection_{timestamp}.jpg"
     output_path = os.path.join(OUTPUT_DIR, output_filename)
     cv2.imwrite(output_path, img_with_panel)
-    print(f"\n💾 Résultat sauvegardé: {output_path}")
+    print(f"\n💾 Résultat annoté sauvegardé: {output_path}")
+    
+    # Extraire et sauvegarder l'image du plateau (si 4 coins disponibles)
+    board_extracted_path = None
+    board_img = None
+    if len(board_corners) == 4:
+        print(f"\n🔲 Extraction du plateau...")
+        board_img = extract_board(img_np, board_corners)
+        if board_img is not None:
+            board_extracted_filename = f"board_extracted_{timestamp}.jpg"
+            board_extracted_path = os.path.join(OUTPUT_DIR, board_extracted_filename)
+            cv2.imwrite(board_extracted_path, board_img)
+            print(f"   💾 Plateau extrait sauvegardé: {board_extracted_path}")
+            print(f"   📐 Dimensions: {EXTRACTED_BOARD_SIZE}x{EXTRACTED_BOARD_SIZE} pixels")
     
     # Résumé
     print(f"\n{'='*60}")
@@ -724,6 +790,8 @@ def process_image(image_path):
             if code in board_corners:
                 suffix = " (estimé)" if code in estimated_codes else ""
                 print(f"      {code.replace('CAL_', '')}: ({board_corners[code][0]:.1f}, {board_corners[code][1]:.1f}){suffix}")
+        if board_extracted_path:
+            print(f"\n   🔲 Image plateau extraite: {board_extracted_path}")
     else:
         print(f"\n   ⚠️  Plateau incomplet - ajustez les ArUcos ou les paramètres")
     
@@ -731,7 +799,9 @@ def process_image(image_path):
         'calibration_markers': calibration_markers,
         'board_corners': board_corners,
         'estimated_codes': estimated_codes,
-        'output_path': output_path
+        'output_path': output_path,
+        'board_extracted_path': board_extracted_path,
+        'board_image': board_img
     }
 
 
