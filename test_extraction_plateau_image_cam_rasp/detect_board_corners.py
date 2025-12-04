@@ -95,23 +95,11 @@ CALIBRATION_IDS = {
 #         ↗                  ↖
 #     [ArUco BL]          [ArUco BR]
 #
-
 OFFSETS = {
-    # Top-Left: ArUco en haut à gauche du plateau
-    # → décaler vers droite (+x) et vers bas (+y) pour atteindre le coin
-    'CAL_TL': {'offset_x': 0, 'offset_y': 0},
-    
-    # Top-Right: ArUco en haut à droite du plateau
-    # → décaler vers gauche (-x) et vers bas (+y) pour atteindre le coin
-    'CAL_TR': {'offset_x': -0, 'offset_y': 0},
-    
-    # Bottom-Left: ArUco en bas à gauche du plateau
-    # → décaler vers droite (+x) et vers haut (-y) pour atteindre le coin
-    'CAL_BL': {'offset_x': 0, 'offset_y': -0},
-    
-    # Bottom-Right: ArUco en bas à droite du plateau
-    # → décaler vers gauche (-x) et vers haut (-y) pour atteindre le coin
-    'CAL_BR': {'offset_x': -0, 'offset_y': -0},
+    "top_left": (50, 50),      # +x vers droite, +y vers bas
+    "top_right": (-50, 50),    # -x vers gauche, +y vers bas
+    "bottom_left": (50, -50),  # +x vers droite, -y vers haut
+    "bottom_right": (-50, -50) # -x vers gauche, -y vers haut
 }
 
 # Couleurs pour la visualisation (BGR pour OpenCV)
