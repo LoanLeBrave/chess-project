@@ -41,19 +41,19 @@ ARUCO_DICT = cv2.aruco.DICT_4X4_50
 # Paramètres personnalisés de détection ArUco (utilisés si USE_DEFAULT_ARUCO_PARAMS = False)
 CUSTOM_ARUCO_PARAMS = {
     'adaptiveThreshWinSizeMin': 3,
-    'adaptiveThreshWinSizeMax': 40,
-    'adaptiveThreshWinSizeStep': 5,
-    'adaptiveThreshConstant': 5,
-    'minMarkerPerimeterRate': 0.01,
+    'adaptiveThreshWinSizeMax': 50,        # ↑ Augmente (au lieu de 40)
+    'adaptiveThreshWinSizeStep': 3,        # ↓ Diminue (au lieu de 5) - teste plus finement
+    'adaptiveThreshConstant': 3,           # ↓ Diminue (au lieu de 5) - plus tolérant
+    'minMarkerPerimeterRate': 0.01,        # Garde
     'maxMarkerPerimeterRate': 4.0,
-    'polygonalApproxAccuracyRate': 0.05,
-    'minCornerDistanceRate': 0.05,
-    'minDistanceToBorder': 3,
-    'minMarkerDistanceRate': 0.05,
-    'cornerRefinementMethod': cv2.aruco.CORNER_REFINE_SUBPIX,
-    'cornerRefinementWinSize': 5,
-    'cornerRefinementMaxIterations': 30,
-    'cornerRefinementMinAccuracy': 0.1,
+    'polygonalApproxAccuracyRate': 0.08,   # ↑ Augmente (au lieu de 0.05) - plus tolérant aux formes imparfaites
+    'minCornerDistanceRate': 0.02,         # ↓ Diminue (au lieu de 0.05) - accepte des coins plus proches
+    'minDistanceToBorder': 1,              # ↓ Diminue (au lieu de 3)
+    'minMarkerDistanceRate': 0.02,         # ↓ Diminue (au lieu de 0.05)
+    'cornerRefinementMethod': cv2.aruco.CORNER_REFINE_CONTOUR,  # Utilise CONTOUR au lieu de SUBPIX
+    'cornerRefinementWinSize': 3,          # ↓ Diminue (au lieu de 5)
+    'cornerRefinementMaxIterations': 20,   # ↓ Diminue (au lieu de 30)
+    'cornerRefinementMinAccuracy': 0.05,   # ↓ Diminue (au lieu de 0.1)
 }
 
 # ============================================================
