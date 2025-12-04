@@ -33,7 +33,7 @@ RESULTS_DIR = os.path.join(SCRIPT_DIR, "results")
 
 # True = utilise les paramètres par défaut d'OpenCV pour la détection ArUco
 # False = utilise nos paramètres personnalisés ci-dessous
-USE_DEFAULT_ARUCO_PARAMS = True
+USE_DEFAULT_ARUCO_PARAMS = False
 
 # Dictionnaire ArUco (doit correspondre à celui utilisé pour la génération)
 ARUCO_DICT = cv2.aruco.DICT_4X4_50
@@ -41,12 +41,12 @@ ARUCO_DICT = cv2.aruco.DICT_4X4_50
 # Paramètres personnalisés de détection ArUco (utilisés si USE_DEFAULT_ARUCO_PARAMS = False)
 CUSTOM_ARUCO_PARAMS = {
     'adaptiveThreshWinSizeMin': 3,
-    'adaptiveThreshWinSizeMax': 23,
-    'adaptiveThreshWinSizeStep': 10,
-    'adaptiveThreshConstant': 7,
-    'minMarkerPerimeterRate': 0.03,
+    'adaptiveThreshWinSizeMax': 40,
+    'adaptiveThreshWinSizeStep': 5,
+    'adaptiveThreshConstant': 5,
+    'minMarkerPerimeterRate': 0.01,
     'maxMarkerPerimeterRate': 4.0,
-    'polygonalApproxAccuracyRate': 0.03,
+    'polygonalApproxAccuracyRate': 0.05,
     'minCornerDistanceRate': 0.05,
     'minDistanceToBorder': 3,
     'minMarkerDistanceRate': 0.05,
@@ -61,6 +61,10 @@ CUSTOM_ARUCO_PARAMS = {
 # ============================================================
 # Ces paramètres sont utilisés avec rpicam-still sur Raspberry Pi
 # Ajustez-les selon vos conditions d'éclairage
+
+# True = utilise les paramètres par défaut de la caméra (auto pour tout)
+# False = utilise nos paramètres personnalisés ci-dessous
+USE_DEFAULT_CAMERA_PARAMS = True
 
 CAMERA_CONFIG = {
     # --- Résolution ---
@@ -276,57 +280,63 @@ def _capture_with_rpicam(filepath):
     # Construire la commande avec les paramètres de configuration
     args = [cmd, '-n', '-o', filepath]
     
-    # Timeout
+    # Timeout (toujours appliqué)
     timeout_ms = CAMERA_CONFIG.get('timeout', 2000)
     args.extend(['--timeout', str(timeout_ms)])
     
-    # Résolution (largeur x hauteur)
-    if CAMERA_CONFIG.get('width') is not None and CAMERA_CONFIG.get('height') is not None:
-        args.extend(['--width', str(CAMERA_CONFIG['width'])])
-        args.extend(['--height', str(CAMERA_CONFIG['height'])])
-        print(f"   ⚙️  Résolution: {CAMERA_CONFIG['width']}x{CAMERA_CONFIG['height']}")
+    # Si USE_DEFAULT_CAMERA_PARAMS = True, on utilise les paramètres par défaut (auto)
+    if USE_DEFAULT_CAMERA_PARAMS:
+        print("   ⚙️  Utilisation des paramètres caméra par défaut (auto)")
     else:
-        print(f"   ⚙️  Résolution: max (capteur)")
-    
-    # Exposition (shutter speed)
-    if CAMERA_CONFIG.get('shutter') is not None:
-        args.extend(['--shutter', str(CAMERA_CONFIG['shutter'])])
-        print(f"   ⚙️  Exposition: {CAMERA_CONFIG['shutter']}µs")
-    
-    # Gain (sensibilité)
-    if CAMERA_CONFIG.get('gain') is not None:
-        args.extend(['--gain', str(CAMERA_CONFIG['gain'])])
-        print(f"   ⚙️  Gain: {CAMERA_CONFIG['gain']}")
-    
-    # Balance des blancs
-    if CAMERA_CONFIG.get('awb') is not None:
-        args.extend(['--awb', str(CAMERA_CONFIG['awb'])])
-        print(f"   ⚙️  Balance blancs: {CAMERA_CONFIG['awb']}")
-    
-    # Luminosité
-    if CAMERA_CONFIG.get('brightness') is not None:
-        args.extend(['--brightness', str(CAMERA_CONFIG['brightness'])])
-        print(f"   ⚙️  Luminosité: {CAMERA_CONFIG['brightness']}")
-    
-    # Contraste
-    if CAMERA_CONFIG.get('contrast') is not None:
-        args.extend(['--contrast', str(CAMERA_CONFIG['contrast'])])
-        print(f"   ⚙️  Contraste: {CAMERA_CONFIG['contrast']}")
-    
-    # Saturation
-    if CAMERA_CONFIG.get('saturation') is not None:
-        args.extend(['--saturation', str(CAMERA_CONFIG['saturation'])])
-        print(f"   ⚙️  Saturation: {CAMERA_CONFIG['saturation']}")
-    
-    # Netteté
-    if CAMERA_CONFIG.get('sharpness') is not None:
-        args.extend(['--sharpness', str(CAMERA_CONFIG['sharpness'])])
-        print(f"   ⚙️  Netteté: {CAMERA_CONFIG['sharpness']}")
-    
-    # Réduction de bruit
-    if CAMERA_CONFIG.get('denoise') is not None:
-        args.extend(['--denoise', str(CAMERA_CONFIG['denoise'])])
-        print(f"   ⚙️  Débruitage: {CAMERA_CONFIG['denoise']}")
+        print("   ⚙️  Utilisation des paramètres caméra personnalisés")
+        
+        # Résolution (largeur x hauteur)
+        if CAMERA_CONFIG.get('width') is not None and CAMERA_CONFIG.get('height') is not None:
+            args.extend(['--width', str(CAMERA_CONFIG['width'])])
+            args.extend(['--height', str(CAMERA_CONFIG['height'])])
+            print(f"   ⚙️  Résolution: {CAMERA_CONFIG['width']}x{CAMERA_CONFIG['height']}")
+        else:
+            print(f"   ⚙️  Résolution: max (capteur)")
+        
+        # Exposition (shutter speed)
+        if CAMERA_CONFIG.get('shutter') is not None:
+            args.extend(['--shutter', str(CAMERA_CONFIG['shutter'])])
+            print(f"   ⚙️  Exposition: {CAMERA_CONFIG['shutter']}µs")
+        
+        # Gain (sensibilité)
+        if CAMERA_CONFIG.get('gain') is not None:
+            args.extend(['--gain', str(CAMERA_CONFIG['gain'])])
+            print(f"   ⚙️  Gain: {CAMERA_CONFIG['gain']}")
+        
+        # Balance des blancs
+        if CAMERA_CONFIG.get('awb') is not None:
+            args.extend(['--awb', str(CAMERA_CONFIG['awb'])])
+            print(f"   ⚙️  Balance blancs: {CAMERA_CONFIG['awb']}")
+        
+        # Luminosité
+        if CAMERA_CONFIG.get('brightness') is not None:
+            args.extend(['--brightness', str(CAMERA_CONFIG['brightness'])])
+            print(f"   ⚙️  Luminosité: {CAMERA_CONFIG['brightness']}")
+        
+        # Contraste
+        if CAMERA_CONFIG.get('contrast') is not None:
+            args.extend(['--contrast', str(CAMERA_CONFIG['contrast'])])
+            print(f"   ⚙️  Contraste: {CAMERA_CONFIG['contrast']}")
+        
+        # Saturation
+        if CAMERA_CONFIG.get('saturation') is not None:
+            args.extend(['--saturation', str(CAMERA_CONFIG['saturation'])])
+            print(f"   ⚙️  Saturation: {CAMERA_CONFIG['saturation']}")
+        
+        # Netteté
+        if CAMERA_CONFIG.get('sharpness') is not None:
+            args.extend(['--sharpness', str(CAMERA_CONFIG['sharpness'])])
+            print(f"   ⚙️  Netteté: {CAMERA_CONFIG['sharpness']}")
+        
+        # Réduction de bruit
+        if CAMERA_CONFIG.get('denoise') is not None:
+            args.extend(['--denoise', str(CAMERA_CONFIG['denoise'])])
+            print(f"   ⚙️  Débruitage: {CAMERA_CONFIG['denoise']}")
     
     print(f"   🔄 Exécution de {cmd}...")
     print(f"   📝 Commande: {' '.join(args)}")
