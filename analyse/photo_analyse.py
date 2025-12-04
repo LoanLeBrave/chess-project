@@ -31,8 +31,30 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 IMAGES_DIR = os.path.join(SCRIPT_DIR, "images")
 RESULTS_DIR = os.path.join(SCRIPT_DIR, "results")
 
+# True = utilise les paramètres par défaut d'OpenCV pour la détection ArUco
+# False = utilise nos paramètres personnalisés ci-dessous
+USE_DEFAULT_ARUCO_PARAMS = True
+
 # Dictionnaire ArUco (doit correspondre à celui utilisé pour la génération)
 ARUCO_DICT = cv2.aruco.DICT_4X4_50
+
+# Paramètres personnalisés de détection ArUco (utilisés si USE_DEFAULT_ARUCO_PARAMS = False)
+CUSTOM_ARUCO_PARAMS = {
+    'adaptiveThreshWinSizeMin': 3,
+    'adaptiveThreshWinSizeMax': 23,
+    'adaptiveThreshWinSizeStep': 10,
+    'adaptiveThreshConstant': 7,
+    'minMarkerPerimeterRate': 0.03,
+    'maxMarkerPerimeterRate': 4.0,
+    'polygonalApproxAccuracyRate': 0.03,
+    'minCornerDistanceRate': 0.05,
+    'minDistanceToBorder': 3,
+    'minMarkerDistanceRate': 0.05,
+    'cornerRefinementMethod': cv2.aruco.CORNER_REFINE_SUBPIX,
+    'cornerRefinementWinSize': 5,
+    'cornerRefinementMaxIterations': 30,
+    'cornerRefinementMinAccuracy': 0.1,
+}
 
 # ============================================================
 # CONFIGURATION CAMÉRA RASPBERRY PI
@@ -152,6 +174,13 @@ PIECES = {
     29: {'code': 'BP6', 'nom': 'Pion 6', 'couleur': 'Noir', 'symbole': '♟'},
     30: {'code': 'BP7', 'nom': 'Pion 7', 'couleur': 'Noir', 'symbole': '♟'},
     31: {'code': 'BP8', 'nom': 'Pion 8', 'couleur': 'Noir', 'symbole': '♟'},
+    # Calibration (IDs 32-35)
+    32: {'code': 'CAL_TL', 'nom': 'Calibration Haut-Gauche', 'couleur': 'Calibration', 'symbole': '📍'},
+    33: {'code': 'CAL_TR', 'nom': 'Calibration Haut-Droite', 'couleur': 'Calibration', 'symbole': '📍'},
+    34: {'code': 'CAL_BL', 'nom': 'Calibration Bas-Gauche', 'couleur': 'Calibration', 'symbole': '📍'},
+    35: {'code': 'CAL_BR', 'nom': 'Calibration Bas-Droite', 'couleur': 'Calibration', 'symbole': '📍'},
+    # Robot (ID 36)
+    36: {'code': 'ROBOT', 'nom': 'Centre Pince Robot', 'couleur': 'Robot', 'symbole': '🤖'},
 }
 
 # ============================================================
@@ -416,8 +445,28 @@ def detect_aruco_markers(img_np):
     # Charger le dictionnaire ArUco
     aruco_dict = cv2.aruco.getPredefinedDictionary(ARUCO_DICT)
     
-    # Paramètres de détection (optimisés)
+    # Paramètres de détection
     parameters = cv2.aruco.DetectorParameters()
+    
+    # Appliquer les paramètres personnalisés si USE_DEFAULT_ARUCO_PARAMS = False
+    if not USE_DEFAULT_ARUCO_PARAMS:
+        print("   ⚙️  Utilisation des paramètres ArUco personnalisés")
+        parameters.adaptiveThreshWinSizeMin = CUSTOM_ARUCO_PARAMS['adaptiveThreshWinSizeMin']
+        parameters.adaptiveThreshWinSizeMax = CUSTOM_ARUCO_PARAMS['adaptiveThreshWinSizeMax']
+        parameters.adaptiveThreshWinSizeStep = CUSTOM_ARUCO_PARAMS['adaptiveThreshWinSizeStep']
+        parameters.adaptiveThreshConstant = CUSTOM_ARUCO_PARAMS['adaptiveThreshConstant']
+        parameters.minMarkerPerimeterRate = CUSTOM_ARUCO_PARAMS['minMarkerPerimeterRate']
+        parameters.maxMarkerPerimeterRate = CUSTOM_ARUCO_PARAMS['maxMarkerPerimeterRate']
+        parameters.polygonalApproxAccuracyRate = CUSTOM_ARUCO_PARAMS['polygonalApproxAccuracyRate']
+        parameters.minCornerDistanceRate = CUSTOM_ARUCO_PARAMS['minCornerDistanceRate']
+        parameters.minDistanceToBorder = CUSTOM_ARUCO_PARAMS['minDistanceToBorder']
+        parameters.minMarkerDistanceRate = CUSTOM_ARUCO_PARAMS['minMarkerDistanceRate']
+        parameters.cornerRefinementMethod = CUSTOM_ARUCO_PARAMS['cornerRefinementMethod']
+        parameters.cornerRefinementWinSize = CUSTOM_ARUCO_PARAMS['cornerRefinementWinSize']
+        parameters.cornerRefinementMaxIterations = CUSTOM_ARUCO_PARAMS['cornerRefinementMaxIterations']
+        parameters.cornerRefinementMinAccuracy = CUSTOM_ARUCO_PARAMS['cornerRefinementMinAccuracy']
+    else:
+        print("   ⚙️  Utilisation des paramètres ArUco par défaut OpenCV")
     
     # Créer le détecteur
     detector = cv2.aruco.ArucoDetector(aruco_dict, parameters)
