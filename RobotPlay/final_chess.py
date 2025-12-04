@@ -22,8 +22,9 @@ ROBOT_IP = "192.168.0.11"
 VITESSE = 0.1
 ACCELERATION = 0.3
 GRIPPER_OUVERTURE = 25
-DELTA_APPROCHE = 0.08  # 8cm au-dessus (était 3cm, +10mm)
-DELTA_RELACHE = 0.008  # 8mm au-dessus pour poser (était 2mm, +2mm)
+DELTA_APPROCHE = 0.03  # 3cm au-dessus pour approche/remontée locale
+DELTA_TRANSIT = 0.08  # 8cm au-dessus pour le trajet entre cases
+DELTA_RELACHE = 0.004  # 4mm au-dessus pour poser
 
 
 # ============================================================================
@@ -202,8 +203,12 @@ class ChessRobotGame:
         self.gripper.close()
         time.sleep(0.3)
 
-        print(f"      → Remontée...")
+        print(f"      → Remontée locale...")
         self.rtde_c.moveL(self._pos_avec_z(tcp, self.delta_approche), VITESSE, ACCELERATION)
+        time.sleep(0.1)
+
+        print(f"      → Montée transit...")
+        self.rtde_c.moveL(self._pos_avec_z(tcp, DELTA_TRANSIT), VITESSE, ACCELERATION)
         time.sleep(0.2)
 
         return True
@@ -217,11 +222,15 @@ class ChessRobotGame:
 
         tcp = self.cases[case]["tcp"]
 
-        print(f"      → Approche {case.upper()}...")
-        self.rtde_c.moveL(self._pos_avec_z(tcp, self.delta_approche), VITESSE, ACCELERATION)
+        print(f"      → Transit vers {case.upper()}...")
+        self.rtde_c.moveL(self._pos_avec_z(tcp, DELTA_TRANSIT), VITESSE, ACCELERATION)
         time.sleep(0.2)
 
-        print(f"      → Descente (relâche)...")
+        print(f"      → Descente approche...")
+        self.rtde_c.moveL(self._pos_avec_z(tcp, self.delta_approche), VITESSE, ACCELERATION)
+        time.sleep(0.1)
+
+        print(f"      → Descente relâche...")
         self.rtde_c.moveL(self._pos_avec_z(tcp, self.delta_relache), VITESSE, ACCELERATION)
         time.sleep(0.2)
 
