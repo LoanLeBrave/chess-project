@@ -46,14 +46,14 @@ CUSTOM_ARUCO_PARAMS = {
     'adaptiveThreshConstant': 0.5,           # ↓ Diminue (au lieu de 5) - plus tolérant - MARCHE VRAIMENT PLUS BAS MIEUX
     'minMarkerPerimeterRate': 0.01,        # Garde
     'maxMarkerPerimeterRate': 4.0,
-    'polygonalApproxAccuracyRate': 0.001,   # ↑ Augmente (au lieu de 0.05) - LE PLUS BAS POSSIBLE
+    'polygonalApproxAccuracyRate': 0.01,   # ↑ Augmente (au lieu de 0.05) - LE PLUS BAS POSSIBLE
     'minCornerDistanceRate': 0.002,         # ↓ Diminue (au lieu de 0.05) - accepte des coins plus proches
     'minDistanceToBorder': 1,              # ↓ Diminue (au lieu de 3)
     'minMarkerDistanceRate': 0.02,         # ↓ Diminue (au lieu de 0.05)
     'cornerRefinementMethod': cv2.aruco.CORNER_REFINE_CONTOUR,  # Utilise CONTOUR au lieu de SUBPIX
     'cornerRefinementWinSize': 3,          # ↓ Diminue (au lieu de 5)
     'cornerRefinementMaxIterations': 20,   # ↓ Diminue (au lieu de 30)
-    'cornerRefinementMinAccuracy': 0.05,   # ↓ Diminue (au lieu de 0.1)
+    'cornerRefinementMinAccuracy': 0.01,   # ↓ Diminue (au lieu de 0.1)
 }
 
 # ============================================================
