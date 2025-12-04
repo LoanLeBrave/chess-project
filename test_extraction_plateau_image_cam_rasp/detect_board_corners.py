@@ -103,7 +103,7 @@ CALIBRATION_IDS = {
 OFFSETS = {
     "CAL_TL": {"offset_x": 90, "offset_y": 90},      # +x vers droite, +y vers bas
     "CAL_TR": {"offset_x": -100, "offset_y": 100},     # -x vers gauche, +y vers bas
-    "CAL_BL": {"offset_x": 100, "offset_y": -110},     # +x vers droite, -y vers haut
+    "CAL_BL": {"offset_x": 80, "offset_y": -115},     # +x vers droite, -y vers haut
     "CAL_BR": {"offset_x": -100, "offset_y": -120}     # -x vers gauche, -y vers haut
 }
 
