@@ -13,6 +13,27 @@ import os
 # CONFIGURATION DES PIÈCES
 # ============================================================
 
+# ============================================================
+# MARQUEURS DE CALIBRATION (Coins)
+# ============================================================
+
+# IDs réservés pour calibration (32-35)
+CALIBRATION_MARKERS = {
+    32: {'code': 'CAL_TL', 'nom': 'Calibration Haut-Gauche', 'position': 'top-left', 'symbole': '📍'},
+    33: {'code': 'CAL_TR', 'nom': 'Calibration Haut-Droite', 'position': 'top-right', 'symbole': '📍'},
+    34: {'code': 'CAL_BL', 'nom': 'Calibration Bas-Gauche', 'position': 'bottom-left', 'symbole': '📍'},
+    35: {'code': 'CAL_BR', 'nom': 'Calibration Bas-Droite', 'position': 'bottom-right', 'symbole': '📍'},
+}
+
+# ============================================================
+# MARQUEUR ROBOT
+# ============================================================
+
+# ID réservé pour robot (36)
+ROBOT_MARKER = {
+    36: {'code': 'ROBOT', 'nom': 'Centre Pince Robot', 'symbole': '🤖'},
+}
+
 # Mapping ID ArUco -> Pièce (IDs 0-31 pour 32 pièces)
 PIECES = {
     # Pièces blanches (IDs 0-15)
@@ -101,7 +122,7 @@ def generate_aruco_marker(marker_id, size):
 
 
 def create_aruco_sheet():
-    """Crée une feuille A4 avec tous les marqueurs ArUco"""
+    """Crée une feuille A4 avec tous les marqueurs ArUco + calibration aux 4 coins"""
     
     # Créer l'image blanche A4
     sheet = Image.new('RGB', (A4_WIDTH_PX, A4_HEIGHT_PX), 'white')
@@ -115,11 +136,13 @@ def create_aruco_sheet():
         font_label = ImageFont.load_default()
         font_id = ImageFont.load_default()
     
-    print(f"📐 Génération de {len(PIECES)} marqueurs ArUco...")
+    print(f"📐 Génération de {len(PIECES)} marqueurs ArUco + 4 marqueurs de calibration + 1 marqueur robot...")
     print(f"   Format: A4 ({A4_WIDTH_MM}x{A4_HEIGHT_MM}mm) @ {DPI} DPI")
     print(f"   Grille: {COLS} colonnes x {ROWS} lignes")
     print(f"   Dictionnaire: DICT_4X4_50 (le plus compact)")
     print(f"   Taille marqueur: ~{MARKER_SIZE_PX * 25.4 / DPI:.1f}mm")
+    print(f"   Calibration: 4 marqueurs aux coins (IDs 32-35)")
+    print(f"   Robot: 1 marqueur au centre (ID 36)")
     
     for marker_id, piece in PIECES.items():
         # Position dans la grille
@@ -170,22 +193,110 @@ def create_aruco_sheet():
         
         print(f"  ✓ ID {marker_id:2}: {piece['symbole']} {piece['code']:4} - {piece['couleur']} {piece['nom']}")
     
+    # Ajouter les marqueurs de calibration aux 4 coins
+    print(f"\n  🔷 Ajout des marqueurs de calibration:")
+    calibration_size = 150  # Taille des marqueurs de calibration
+    
+    for marker_id, calib in CALIBRATION_MARKERS.items():
+        # Générer le marqueur
+        marker_img = generate_aruco_marker(marker_id, calibration_size)
+        
+        # Positionner selon la position
+        if calib['position'] == 'top-left':
+            pos_x = MARGIN_PX
+            pos_y = MARGIN_PX
+        elif calib['position'] == 'top-right':
+            pos_x = A4_WIDTH_PX - MARGIN_PX - calibration_size
+            pos_y = MARGIN_PX
+        elif calib['position'] == 'bottom-left':
+            pos_x = MARGIN_PX
+            pos_y = A4_HEIGHT_PX - MARGIN_PX - calibration_size
+        else:  # bottom-right
+            pos_x = A4_WIDTH_PX - MARGIN_PX - calibration_size
+            pos_y = A4_HEIGHT_PX - MARGIN_PX - calibration_size
+        
+        # Coller le marqueur
+        sheet.paste(marker_img, (pos_x, pos_y))
+        
+        # Ajouter un label avec l'ID
+        label = f"{calib['code']} (ID: {marker_id})"
+        
+        # Positionner le texte intelligemment selon le coin
+        if calib['position'] == 'top-left':
+            text_x = pos_x
+            text_y = pos_y + calibration_size + 5
+        elif calib['position'] == 'top-right':
+            text_bbox = draw.textbbox((0, 0), label, font=font_id)
+            text_width = text_bbox[2] - text_bbox[0]
+            text_x = pos_x + calibration_size - text_width
+            text_y = pos_y + calibration_size + 5
+        elif calib['position'] == 'bottom-left':
+            text_x = pos_x
+            text_y = pos_y - 30
+        else:  # bottom-right
+            text_bbox = draw.textbbox((0, 0), label, font=font_id)
+            text_width = text_bbox[2] - text_bbox[0]
+            text_x = pos_x + calibration_size - text_width
+            text_y = pos_y - 30
+        
+        draw.text((text_x, text_y), label, fill='darkred', font=font_id)
+        
+        print(f"    ✓ ID {marker_id}: {calib['code']} ({calib['nom']})")
+    
+    # Ajouter le marqueur robot au centre
+    print(f"\n  🤖 Ajout du marqueur robot:")
+    robot_marker_id = 36
+    robot_marker = ROBOT_MARKER[robot_marker_id]
+    robot_size = 150
+    
+    # Calculer la position du centre de la feuille
+    center_page_x = A4_WIDTH_PX // 2 - robot_size // 2
+    center_page_y = A4_HEIGHT_PX // 2 - robot_size // 2
+    
+    # Générer et coller le marqueur robot
+    robot_img = generate_aruco_marker(robot_marker_id, robot_size)
+    sheet.paste(robot_img, (center_page_x, center_page_y))
+    
+    # Ajouter un label au-dessus
+    robot_label = f"{robot_marker['code']} (ID: {robot_marker_id})"
+    robot_label_bbox = draw.textbbox((0, 0), robot_label, font=font_label)
+    robot_label_width = robot_label_bbox[2] - robot_label_bbox[0]
+    robot_text_x = center_page_x + robot_size // 2 - robot_label_width // 2
+    robot_text_y = center_page_y - 40
+    draw.text((robot_text_x, robot_text_y), robot_label, fill='darkgreen', font=font_label)
+    
+    print(f"    ✓ ID {robot_marker_id}: {robot_marker['code']} ({robot_marker['nom']})")
+    
     return sheet
 
 
 def save_individual_markers(output_dir):
-    """Sauvegarde chaque marqueur individuellement"""
+    """Sauvegarde chaque marqueur individuellement (pièces + calibration + robot)"""
     individual_dir = os.path.join(output_dir, "aruco_individuels")
     os.makedirs(individual_dir, exist_ok=True)
     
     print(f"\n💾 Sauvegarde des marqueurs individuels...")
     
+    # Pièces d'échecs
     for marker_id, piece in PIECES.items():
         marker_img = generate_aruco_marker(marker_id, 200)
         filepath = os.path.join(individual_dir, f"{marker_id:02d}_{piece['code']}.png")
         marker_img.save(filepath)
     
-    print(f"  ✓ {len(PIECES)} marqueurs individuels sauvegardés")
+    # Marqueurs de calibration
+    for marker_id, calib in CALIBRATION_MARKERS.items():
+        marker_img = generate_aruco_marker(marker_id, 200)
+        filepath = os.path.join(individual_dir, f"{marker_id:02d}_{calib['code']}.png")
+        marker_img.save(filepath)
+    
+    # Marqueur robot
+    for marker_id, robot in ROBOT_MARKER.items():
+        marker_img = generate_aruco_marker(marker_id, 200)
+        filepath = os.path.join(individual_dir, f"{marker_id:02d}_{robot['code']}.png")
+        marker_img.save(filepath)
+    
+    total_markers = len(PIECES) + len(CALIBRATION_MARKERS) + len(ROBOT_MARKER)
+    print(f"  ✓ {total_markers} marqueurs individuels sauvegardés")
 
 
 def main():
@@ -229,6 +340,14 @@ def main():
     for id, piece in PIECES.items():
         if id >= 16:
             print(f"   ID {id:2} = {piece['symbole']} {piece['code']:4} ({piece['nom']})")
+    
+    print("\n🔷 MARQUEURS DE CALIBRATION (IDs 32-35):")
+    for id, calib in CALIBRATION_MARKERS.items():
+        print(f"   ID {id:2} = {calib['code']:8} ({calib['nom']})")
+    
+    print("\n🤖 MARQUEUR ROBOT (ID 36):")
+    for id, robot in ROBOT_MARKER.items():
+        print(f"   ID {id:2} = {robot['code']:8} ({robot['nom']})")
     
     print("\n" + "=" * 60)
     print("📊 COMPARAISON TAILLE")
