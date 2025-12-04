@@ -39,22 +39,21 @@ USE_DEFAULT_ARUCO_PARAMS = False
 ARUCO_DICT = cv2.aruco.DICT_4X4_50
 
 # Paramètres personnalisés de détection ArUco (utilisés si USE_DEFAULT_ARUCO_PARAMS = False)
-# TOLÉRANT: détecte beaucoup, on rafinera si trop de faux positifs
 CUSTOM_ARUCO_PARAMS = {
-    'adaptiveThreshWinSizeMin': 3,         # Min obligatoire OpenCV
-    'adaptiveThreshWinSizeMax': 200,       # TRÈS grand - teste plein de tailles
-    'adaptiveThreshWinSizeStep': 2,        # Teste finement
-    'adaptiveThreshConstant': 5,           # Très tolérant
-    'minMarkerPerimeterRate': 0.01,        # Très petit - détecte les petits
-    'maxMarkerPerimeterRate': 5.0,         # Grand - accepte les gros
-    'polygonalApproxAccuracyRate': 0.1,    # Très tolérant à la forme
-    'minCornerDistanceRate': 0.01,         # Coins proches OK
-    'minDistanceToBorder': 0,              # Au bord OK
-    'minMarkerDistanceRate': 0.01,         # Marqueurs proches OK
-    'cornerRefinementMethod': cv2.aruco.CORNER_REFINE_CONTOUR,  # Tolérant
-    'cornerRefinementWinSize': 3,
-    'cornerRefinementMaxIterations': 20,   # Itère bien
-    'cornerRefinementMinAccuracy': 0.05,   # Pas trop strict
+    'adaptiveThreshWinSizeMin': 3,
+    'adaptiveThreshWinSizeMax': 50,        # ↑ Augmente (au lieu de 40)
+    'adaptiveThreshWinSizeStep': 3,        # ↓ Diminue (au lieu de 5) - teste plus finement
+    'adaptiveThreshConstant': 3,           # ↓ Diminue (au lieu de 5) - plus tolérant
+    'minMarkerPerimeterRate': 0.01,        # Garde
+    'maxMarkerPerimeterRate': 4.0,
+    'polygonalApproxAccuracyRate': 0.08,   # ↑ Augmente (au lieu de 0.05) - plus tolérant aux formes imparfaites
+    'minCornerDistanceRate': 0.02,         # ↓ Diminue (au lieu de 0.05) - accepte des coins plus proches
+    'minDistanceToBorder': 1,              # ↓ Diminue (au lieu de 3)
+    'minMarkerDistanceRate': 0.02,         # ↓ Diminue (au lieu de 0.05)
+    'cornerRefinementMethod': cv2.aruco.CORNER_REFINE_CONTOUR,  # Utilise CONTOUR au lieu de SUBPIX
+    'cornerRefinementWinSize': 3,          # ↓ Diminue (au lieu de 5)
+    'cornerRefinementMaxIterations': 20,   # ↓ Diminue (au lieu de 30)
+    'cornerRefinementMinAccuracy': 0.05,   # ↓ Diminue (au lieu de 0.1)
 }
 
 # ============================================================
