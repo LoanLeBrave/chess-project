@@ -396,6 +396,7 @@ def estimate_missing_corners(board_corners):
     
     Returns:
         dict: coins complétés (estimés si nécessaire)
+        list: codes des coins estimés
     """
     codes = ['CAL_TL', 'CAL_TR', 'CAL_BL', 'CAL_BR']
     detected = list(board_corners.keys())
@@ -428,8 +429,59 @@ def estimate_missing_corners(board_corners):
             estimated_corners['CAL_BR'] = (tr[0] + bl[0] - tl[0], tr[1] + bl[1] - tl[1])
             estimated_codes.append('CAL_BR')
     
-    # Cas avec 2 coins détectés sur une diagonale: on peut estimer si on a des infos supplémentaires
-    # Pour l'instant, on ne gère que le cas 3 coins
+    # Cas avec 2 coins détectés: on peut estimer si on a une paire adjacente ou diagonale
+    elif len(missing) == 2 and len(detected) == 2:
+        # Diagonale TL-BR détectée
+        if 'CAL_TL' in detected and 'CAL_BR' in detected:
+            tl, br = board_corners['CAL_TL'], board_corners['CAL_BR']
+            # Estimer TR et BL en supposant un rectangle
+            estimated_corners['CAL_TR'] = (br[0], tl[1])
+            estimated_corners['CAL_BL'] = (tl[0], br[1])
+            estimated_codes.extend(['CAL_TR', 'CAL_BL'])
+        
+        # Diagonale TR-BL détectée
+        elif 'CAL_TR' in detected and 'CAL_BL' in detected:
+            tr, bl = board_corners['CAL_TR'], board_corners['CAL_BL']
+            # Estimer TL et BR en supposant un rectangle
+            estimated_corners['CAL_TL'] = (bl[0], tr[1])
+            estimated_corners['CAL_BR'] = (tr[0], bl[1])
+            estimated_codes.extend(['CAL_TL', 'CAL_BR'])
+        
+        # Ligne du haut TL-TR détectée
+        elif 'CAL_TL' in detected and 'CAL_TR' in detected:
+            tl, tr = board_corners['CAL_TL'], board_corners['CAL_TR']
+            # Estimer BL et BR en supposant un carré (hauteur = largeur)
+            width = tr[0] - tl[0]
+            estimated_corners['CAL_BL'] = (tl[0], tl[1] + abs(width))
+            estimated_corners['CAL_BR'] = (tr[0], tr[1] + abs(width))
+            estimated_codes.extend(['CAL_BL', 'CAL_BR'])
+        
+        # Ligne du bas BL-BR détectée
+        elif 'CAL_BL' in detected and 'CAL_BR' in detected:
+            bl, br = board_corners['CAL_BL'], board_corners['CAL_BR']
+            # Estimer TL et TR en supposant un carré
+            width = br[0] - bl[0]
+            estimated_corners['CAL_TL'] = (bl[0], bl[1] - abs(width))
+            estimated_corners['CAL_TR'] = (br[0], br[1] - abs(width))
+            estimated_codes.extend(['CAL_TL', 'CAL_TR'])
+        
+        # Ligne gauche TL-BL détectée
+        elif 'CAL_TL' in detected and 'CAL_BL' in detected:
+            tl, bl = board_corners['CAL_TL'], board_corners['CAL_BL']
+            # Estimer TR et BR en supposant un carré
+            height = bl[1] - tl[1]
+            estimated_corners['CAL_TR'] = (tl[0] + abs(height), tl[1])
+            estimated_corners['CAL_BR'] = (bl[0] + abs(height), bl[1])
+            estimated_codes.extend(['CAL_TR', 'CAL_BR'])
+        
+        # Ligne droite TR-BR détectée
+        elif 'CAL_TR' in detected and 'CAL_BR' in detected:
+            tr, br = board_corners['CAL_TR'], board_corners['CAL_BR']
+            # Estimer TL et BL en supposant un carré
+            height = br[1] - tr[1]
+            estimated_corners['CAL_TL'] = (tr[0] - abs(height), tr[1])
+            estimated_corners['CAL_BL'] = (br[0] - abs(height), br[1])
+            estimated_codes.extend(['CAL_TL', 'CAL_BL'])
     
     return estimated_corners, estimated_codes
 
@@ -510,18 +562,24 @@ def draw_visualization(img_np, calibration_markers, board_corners, offset_lines,
         cv2.putText(img_annotated, label, (bx_int + 10, by_int - 10),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1)
     
-    # 4. Dessiner le contour du plateau si on a au moins 3 coins
-    if len(board_corners) >= 3:
-        # Ordre des coins: TL → TR → BR → BL
+    # 4. Dessiner le contour du plateau selon le nombre de coins disponibles
+    if len(board_corners) >= 2:
+        # Ordre des coins pour former un quadrilatère: TL → TR → BR → BL
         corner_order = ['CAL_TL', 'CAL_TR', 'CAL_BR', 'CAL_BL']
-        available_corners = [board_corners.get(c) for c in corner_order if c in board_corners]
+        available_corners = [(c, board_corners[c]) for c in corner_order if c in board_corners]
         
-        if len(available_corners) >= 3:
-            pts = np.array([[int(c[0]), int(c[1])] for c in available_corners], np.int32)
+        if len(available_corners) == 2:
+            # Avec 2 coins: dessiner une ligne entre eux
+            pt1 = (int(available_corners[0][1][0]), int(available_corners[0][1][1]))
+            pt2 = (int(available_corners[1][1][0]), int(available_corners[1][1][1]))
+            cv2.line(img_annotated, pt1, pt2, COLORS['board_outline'], 3, cv2.LINE_AA)
+        elif len(available_corners) >= 3:
+            # Avec 3+ coins: dessiner le polygone
+            pts = np.array([[int(c[1][0]), int(c[1][1])] for c in available_corners], np.int32)
             pts = pts.reshape((-1, 1, 2))
             cv2.polylines(img_annotated, [pts], True, COLORS['board_outline'], 3, cv2.LINE_AA)
     
-    # 5. Dessiner le quadrilatère du plateau si on a les 4 coins
+    # 5. Dessiner le quadrilatère complet du plateau si on a les 4 coins
     if len(board_corners) == 4:
         corner_order = ['CAL_TL', 'CAL_TR', 'CAL_BR', 'CAL_BL']
         pts = np.array([[int(board_corners[c][0]), int(board_corners[c][1])] 
