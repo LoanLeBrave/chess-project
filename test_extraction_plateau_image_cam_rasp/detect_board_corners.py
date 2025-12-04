@@ -7,9 +7,9 @@ Les ArUcos de calibration sont placés à l'extérieur du plateau,
 donc on applique des offsets pour définir les vrais coins du plateau.
 
 Usage:
-    python detect_board_corners.py [chemin_image]
-    
-Si aucune image n'est fournie, le script cherche dans ../analyse/images/
+    python detect_board_corners.py                # Mode interactif (photo ou image existante)
+    python detect_board_corners.py [chemin_image] # Analyser une image existante
+    python detect_board_corners.py --photo        # Prendre une photo et analyser
 """
 
 import cv2
@@ -17,6 +17,8 @@ import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 import os
 import sys
+import subprocess
+import shutil
 from datetime import datetime
 
 # ============================================================
@@ -26,7 +28,29 @@ from datetime import datetime
 # Dossiers
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_IMAGES_DIR = os.path.join(SCRIPT_DIR, "..", "analyse", "images")
+IMAGES_DIR = os.path.join(SCRIPT_DIR, "images")
 OUTPUT_DIR = os.path.join(SCRIPT_DIR, "output")
+
+# ============================================================
+# CONFIGURATION CAMÉRA RASPBERRY PI
+# ============================================================
+# True = utilise les paramètres par défaut de la caméra (auto pour tout)
+# False = utilise nos paramètres personnalisés ci-dessous
+USE_DEFAULT_CAMERA_PARAMS = True
+
+CAMERA_CONFIG = {
+    'width': None,       # None = max, ou ex: 1920
+    'height': None,      # None = max, ou ex: 1080
+    'shutter': None,     # Temps d'exposition en µs (None = auto)
+    'gain': None,        # Gain (1.0 = minimum)
+    'awb': None,         # Balance blancs: 'auto', 'tungsten', 'daylight', etc.
+    'brightness': None,  # -1.0 à 1.0
+    'contrast': None,    # 1.0 = normal
+    'saturation': None,  # 1.0 = normal
+    'sharpness': None,   # 1.0 = normal
+    'denoise': None,     # 'auto', 'off', 'cdn_off', 'cdn_fast', 'cdn_hq'
+    'timeout': 2000,     # Temps stabilisation caméra (ms)
+}
 
 # Dictionnaire ArUco (doit correspondre à celui utilisé pour la génération)
 ARUCO_DICT = cv2.aruco.DICT_4X4_50
@@ -95,6 +119,184 @@ COLORS = {
     'offset_line': (255, 255, 0),     # Cyan - ligne ArUco → coin plateau
     'text_bg': (255, 255, 255),       # Blanc - fond du texte
 }
+
+
+# ============================================================
+# DÉTECTION AUTOMATIQUE DE L'ENVIRONNEMENT CAMÉRA
+# ============================================================
+def _check_rpicam_available():
+    """Vérifie si rpicam-still est disponible"""
+    return shutil.which('rpicam-still') is not None or shutil.which('libcamera-still') is not None
+
+def _check_picamera2_available():
+    """Vérifie si Picamera2 est disponible"""
+    try:
+        from picamera2 import Picamera2
+        return True
+    except ImportError:
+        return False
+
+# Déterminer le mode caméra
+if _check_rpicam_available():
+    CAMERA_MODE = 'rpicam'
+elif _check_picamera2_available():
+    CAMERA_MODE = 'picamera2'
+else:
+    CAMERA_MODE = 'opencv'
+
+
+# ============================================================
+# PRISE DE PHOTO
+# ============================================================
+def take_photo(filename=None):
+    """
+    Prend une photo et l'enregistre dans le dossier images/
+    
+    Args:
+        filename: Nom du fichier (optionnel). Si non spécifié, utilise un timestamp.
+    
+    Returns:
+        str: Chemin complet du fichier enregistré
+    """
+    # Créer le dossier images s'il n'existe pas
+    os.makedirs(IMAGES_DIR, exist_ok=True)
+    print(f"   📁 Dossier images: {IMAGES_DIR}")
+    
+    # Générer un nom de fichier si non spécifié
+    if filename is None:
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"photo_{timestamp}.jpg"
+    
+    filepath = os.path.join(IMAGES_DIR, filename)
+    print(f"   📄 Fichier cible: {filepath}")
+    
+    if CAMERA_MODE == 'rpicam':
+        print(f"   🎥 Mode caméra: rpicam-still (CLI Raspberry Pi)")
+        _capture_with_rpicam(filepath)
+    elif CAMERA_MODE == 'picamera2':
+        print(f"   🎥 Mode caméra: Picamera2 (Python Raspberry Pi)")
+        _capture_with_picamera2(filepath)
+    else:
+        print(f"   🎥 Mode caméra: OpenCV (Webcam)")
+        _capture_with_opencv(filepath)
+    
+    # Vérifier que le fichier a bien été créé
+    if not os.path.exists(filepath):
+        print(f"   ❌ ERREUR: Le fichier n'existe pas après capture!")
+        raise RuntimeError(f"Échec de la capture: {filepath} n'a pas été créé")
+    else:
+        file_size = os.path.getsize(filepath)
+        print(f"   ✅ Fichier créé: {filepath} ({file_size} bytes)")
+    
+    print(f"📷 Photo enregistrée: {filepath}")
+    return filepath
+
+
+def _capture_with_rpicam(filepath):
+    """Capture avec rpicam-still ou libcamera-still (CLI)"""
+    # Déterminer la commande disponible
+    if shutil.which('rpicam-still'):
+        cmd = 'rpicam-still'
+    else:
+        cmd = 'libcamera-still'
+    
+    # Construire la commande avec les paramètres de configuration
+    args = [cmd, '-n', '-o', filepath]
+    
+    # Timeout (toujours appliqué)
+    timeout_ms = CAMERA_CONFIG.get('timeout', 2000)
+    args.extend(['--timeout', str(timeout_ms)])
+    
+    # Si USE_DEFAULT_CAMERA_PARAMS = True, on utilise les paramètres par défaut (auto)
+    if USE_DEFAULT_CAMERA_PARAMS:
+        print("   ⚙️  Paramètres caméra: par défaut (auto)")
+    else:
+        print("   ⚙️  Paramètres caméra: personnalisés")
+        
+        if CAMERA_CONFIG.get('width') and CAMERA_CONFIG.get('height'):
+            args.extend(['--width', str(CAMERA_CONFIG['width'])])
+            args.extend(['--height', str(CAMERA_CONFIG['height'])])
+        
+        if CAMERA_CONFIG.get('shutter'):
+            args.extend(['--shutter', str(CAMERA_CONFIG['shutter'])])
+        
+        if CAMERA_CONFIG.get('gain'):
+            args.extend(['--gain', str(CAMERA_CONFIG['gain'])])
+        
+        if CAMERA_CONFIG.get('awb'):
+            args.extend(['--awb', str(CAMERA_CONFIG['awb'])])
+        
+        if CAMERA_CONFIG.get('brightness'):
+            args.extend(['--brightness', str(CAMERA_CONFIG['brightness'])])
+        
+        if CAMERA_CONFIG.get('contrast'):
+            args.extend(['--contrast', str(CAMERA_CONFIG['contrast'])])
+        
+        if CAMERA_CONFIG.get('saturation'):
+            args.extend(['--saturation', str(CAMERA_CONFIG['saturation'])])
+        
+        if CAMERA_CONFIG.get('sharpness'):
+            args.extend(['--sharpness', str(CAMERA_CONFIG['sharpness'])])
+        
+        if CAMERA_CONFIG.get('denoise'):
+            args.extend(['--denoise', str(CAMERA_CONFIG['denoise'])])
+    
+    print(f"   🔄 Exécution: {' '.join(args)}")
+    
+    try:
+        result = subprocess.run(args, capture_output=True, text=True, timeout=30)
+        if result.returncode != 0:
+            print(f"   ⚠️ Stderr: {result.stderr}")
+            raise RuntimeError(f"{cmd} a échoué: {result.stderr}")
+        print(f"   ✅ Capture terminée")
+    except subprocess.TimeoutExpired:
+        raise RuntimeError(f"{cmd} timeout après 30 secondes")
+    except FileNotFoundError:
+        raise RuntimeError(f"{cmd} non trouvé")
+
+
+def _capture_with_picamera2(filepath):
+    """Capture avec Picamera2 (Python)"""
+    from picamera2 import Picamera2
+    import time as cam_time
+    
+    try:
+        print("   🔄 Initialisation Picamera2...")
+        picam2 = Picamera2()
+        config = picam2.create_still_configuration()
+        picam2.configure(config)
+        print("   🔄 Démarrage de la caméra...")
+        picam2.start()
+        print("   ⏳ Attente stabilisation (2s)...")
+        cam_time.sleep(2)
+        print("   📸 Capture en cours...")
+        picam2.capture_file(filepath)
+        print("   🛑 Arrêt de la caméra...")
+        picam2.stop()
+        picam2.close()
+        print("   ✅ Capture terminée")
+    except Exception as e:
+        print(f"   ❌ Erreur Picamera2: {e}")
+        raise RuntimeError(f"Erreur Picamera2: {e}")
+
+
+def _capture_with_opencv(filepath):
+    """Capture avec OpenCV (webcam)"""
+    print("   🔄 Ouverture webcam OpenCV...")
+    cap = cv2.VideoCapture(0)
+    if not cap.isOpened():
+        print("   ❌ Impossible d'ouvrir la caméra")
+        raise RuntimeError("Impossible d'ouvrir la caméra")
+    print("   📸 Capture frame...")
+    ret, frame = cap.read()
+    if ret:
+        cv2.imwrite(filepath, frame)
+        print(f"   ✅ Image sauvegardée")
+    else:
+        print("   ❌ Échec de lecture de la frame")
+        cap.release()
+        raise RuntimeError("Échec de lecture de la frame OpenCV")
+    cap.release()
 
 
 # ============================================================
@@ -487,6 +689,7 @@ def select_image():
     images = []
     for ext in ['*.jpg', '*.jpeg', '*.png']:
         images.extend(glob.glob(os.path.join(DEFAULT_IMAGES_DIR, ext)))
+        images.extend(glob.glob(os.path.join(IMAGES_DIR, ext)))
         images.extend(glob.glob(os.path.join(SCRIPT_DIR, ext)))
     
     images = sorted(set(images))
@@ -514,6 +717,35 @@ def select_image():
         print(f"⚠️  Entrez un numéro entre 1 et {len(images)}")
 
 
+def photo_and_detect():
+    """
+    Fonction principale: prend une photo et détecte les coins du plateau
+    
+    Returns:
+        dict: Résultats de la détection
+    """
+    print("\n" + "-" * 60)
+    print("📷 ÉTAPE 1: Prise de photo")
+    print("-" * 60)
+    
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    photo_filename = f"photo_{timestamp}.jpg"
+    
+    try:
+        image_path = take_photo(photo_filename)
+    except RuntimeError as e:
+        print(f"❌ Erreur lors de la capture: {e}")
+        return None
+    
+    print("\n" + "-" * 60)
+    print("🔍 ÉTAPE 2: Détection des coins du plateau")
+    print("-" * 60)
+    
+    result = process_image(image_path)
+    
+    return result
+
+
 # ============================================================
 # POINT D'ENTRÉE
 # ============================================================
@@ -521,18 +753,51 @@ if __name__ == "__main__":
     print("=" * 60)
     print("🎯 DÉTECTION DES COINS DU PLATEAU D'ÉCHECS")
     print("   via ArUcos de calibration (IDs 32-35)")
+    print(f"   Mode caméra: {CAMERA_MODE}")
     print("=" * 60)
     
-    # Vérifier si une image est passée en argument
+    # Vérifier les arguments
     if len(sys.argv) > 1:
-        image_path = sys.argv[1]
+        arg = sys.argv[1]
+        
+        if arg == '--photo' or arg == '-p':
+            # Mode: prendre une photo et analyser
+            result = photo_and_detect()
+            if result:
+                print(f"\n✅ Traitement terminé!")
+                print(f"\n💡 Pour ajuster les offsets, modifiez la section OFFSETS en haut du script.")
+        elif os.path.exists(arg):
+            # Mode: analyser une image existante passée en argument
+            result = process_image(arg)
+            if result:
+                print(f"\n✅ Traitement terminé!")
+                print(f"\n💡 Pour ajuster les offsets, modifiez la section OFFSETS en haut du script.")
+        else:
+            print(f"❌ Image non trouvée: {arg}")
     else:
-        image_path = select_image()
-    
-    if image_path and os.path.exists(image_path):
-        result = process_image(image_path)
-        if result:
-            print(f"\n✅ Traitement terminé!")
-            print(f"\n💡 Pour ajuster les offsets, modifiez la section OFFSETS en haut du script.")
-    else:
-        print("❌ Image non trouvée ou non sélectionnée.")
+        # Mode interactif
+        print("\nChoisissez une option:")
+        print("  1. Prendre une photo et analyser")
+        print("  2. Analyser une image existante")
+        print("  q. Quitter")
+        
+        choice = input("\nVotre choix: ").strip()
+        
+        if choice == '1':
+            result = photo_and_detect()
+            if result:
+                print(f"\n✅ Traitement terminé!")
+                print(f"\n💡 Pour ajuster les offsets, modifiez la section OFFSETS en haut du script.")
+        elif choice == '2':
+            image_path = select_image()
+            if image_path and os.path.exists(image_path):
+                result = process_image(image_path)
+                if result:
+                    print(f"\n✅ Traitement terminé!")
+                    print(f"\n💡 Pour ajuster les offsets, modifiez la section OFFSETS en haut du script.")
+            else:
+                print("❌ Image non trouvée ou non sélectionnée.")
+        elif choice.lower() == 'q':
+            print("Au revoir!")
+        else:
+            print("Option invalide. Au revoir!")
