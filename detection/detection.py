@@ -9,7 +9,7 @@ import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 import os
 import glob
-import time
+import time58
 
 # ============================================================
 # CONFIGURATION
