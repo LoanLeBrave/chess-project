@@ -38,11 +38,12 @@ CALIBRATION_IDS = {
 }
 
 # Offsets des coins (à ajuster selon votre configuration)
+# Mêmes valeurs que dans detect_board_corners.py
 OFFSETS = {
-    'TL': {'x': 72, 'y': 70},
-    'TR': {'x': -68, 'y': 72},
-    'BL': {'x': 70, 'y': -68},
-    'BR': {'x': -68, 'y': -68},
+    'TL': {'x': 0, 'y': 0},
+    'TR': {'x': 54, 'y': -86},
+    'BL': {'x': -90, 'y': 112},
+    'BR': {'x': 53, 'y': 86},
 }
 
 # Configuration des pièces (IDs 0-31)
@@ -100,8 +101,10 @@ def analyze_board(image_path=None, image_np=None):
     corners, ids, _ = detector.detectMarkers(gray)
     
     if ids is None:
-        print("❌ Aucun ArUco détecté")
+        print("❌ Aucun ArUco détecté sur l'image originale")
         return None
+    
+    print(f"   🔍 ArUcos détectés sur image originale: {len(ids)} (IDs: {sorted(ids.flatten().tolist())})")
     
     # Extraire les coins de calibration
     cal_markers = {}
@@ -144,6 +147,12 @@ def analyze_board(image_path=None, image_np=None):
     # 4. Détecter les pièces sur le plateau extrait
     gray_board = cv2.cvtColor(board_img, cv2.COLOR_BGR2GRAY)
     corners_pieces, ids_pieces, _ = detector.detectMarkers(gray_board)
+    
+    # Debug: afficher ce qui est détecté sur le plateau extrait
+    if ids_pieces is not None:
+        print(f"   🔍 ArUcos détectés sur plateau extrait: {len(ids_pieces)} (IDs: {sorted(ids_pieces.flatten().tolist())})")
+    else:
+        print("   ⚠️  Aucun ArUco détecté sur le plateau extrait")
     
     pieces = []
     pieces_on_board = {}  # Pour board_state.json
