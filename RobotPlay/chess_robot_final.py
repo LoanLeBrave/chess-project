@@ -23,7 +23,7 @@ VITESSE = 0.1
 ACCELERATION = 0.3
 GRIPPER_OUVERTURE = 50
 DELTA_APPROCHE = 0.03  # 3cm au-dessus pour approche/remontée locale
-DELTA_TRANSIT = 0.20  # 20cm au-dessus pour le trajet entre cases
+DELTA_TRANSIT = 0.40  # 20cm au-dessus pour le trajet entre cases
 DELTA_RELACHE_BASE = 0.004  # 4mm minimum au-dessus pour poser
 
 # Hauteur de dépose par type de pièce (en mètres)
