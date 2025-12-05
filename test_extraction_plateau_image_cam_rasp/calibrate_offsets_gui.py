@@ -1,20 +1,16 @@
 #!/usr/bin/env python3
 """
-Interface graphique pour calibrer les offsets des coins du plateau.
+Interface graphique moderne pour calibrer les offsets des coins du plateau.
 
-Permet de déplacer les coins du plateau en drag-and-drop pour ajuster
-visuellement les offsets, puis affiche le code Python à copier-coller.
+Utilise Tkinter pour une interface propre avec:
+- Canvas pour l'image avec drag & drop des coins
+- Panneau latéral avec les valeurs et bouton "Copier"
+- Prévisualisation de la grille 8x8
 
 Usage:
     python calibrate_offsets_gui.py                # Mode interactif
     python calibrate_offsets_gui.py [chemin_image] # Avec une image existante
     python calibrate_offsets_gui.py --photo        # Prendre une photo d'abord
-
-Contrôles:
-    - Clic gauche + drag: Déplacer un coin du plateau
-    - Touche 'r': Reset les offsets à zéro
-    - Touche 's': Sauvegarder l'image avec grille
-    - Touche 'q' ou Echap: Quitter
 """
 
 import cv2
@@ -23,6 +19,9 @@ import os
 import sys
 import subprocess
 import shutil
+import tkinter as tk
+from tkinter import ttk, filedialog, messagebox
+from PIL import Image, ImageTk
 from datetime import datetime
 
 # ============================================================
@@ -34,20 +33,9 @@ DEFAULT_IMAGES_DIR = os.path.join(SCRIPT_DIR, "..", "analyse", "images")
 IMAGES_DIR = os.path.join(SCRIPT_DIR, "images")
 OUTPUT_DIR = os.path.join(SCRIPT_DIR, "output")
 
-# Taille de l'image extraite du plateau
 EXTRACTED_BOARD_SIZE = 800
-
-# Taille de la fenêtre d'affichage (sera redimensionné si l'image est trop grande)
-MAX_DISPLAY_WIDTH = 1200
-MAX_DISPLAY_HEIGHT = 800
-
-# Rayon de détection pour le drag-and-drop (en pixels sur l'image affichée)
-DRAG_RADIUS = 20
-
-# Dictionnaire ArUco
 ARUCO_DICT = cv2.aruco.DICT_4X4_50
 
-# IDs des marqueurs de calibration
 CALIBRATION_IDS = {
     32: 'CAL_TL',
     33: 'CAL_TR',
@@ -55,33 +43,29 @@ CALIBRATION_IDS = {
     35: 'CAL_BR',
 }
 
-# Offsets initiaux (seront modifiés interactivement)
-OFFSETS = {
-    "CAL_TL": {"offset_x": 0, "offset_y": 0},
-    "CAL_TR": {"offset_x": 0, "offset_y": 0},
-    "CAL_BL": {"offset_x": 0, "offset_y": 0},
-    "CAL_BR": {"offset_x": 0, "offset_y": 0}
-}
-
-# Couleurs
+# Couleurs (RGB pour Tkinter)
 COLORS = {
-    'aruco_marker': (0, 255, 0),
-    'aruco_center': (0, 0, 255),
-    'board_corner': (255, 0, 255),
-    'board_corner_hover': (0, 255, 255),
-    'board_outline': (255, 165, 0),
-    'offset_line': (255, 255, 0),
-    'grid_line': (0, 255, 0),
-    'text': (255, 255, 255),
-    'panel_bg': (40, 40, 40),
+    'bg': '#1e1e1e',
+    'panel_bg': '#252526',
+    'text': '#ffffff',
+    'text_dim': '#888888',
+    'accent': '#007acc',
+    'success': '#4ec9b0',
+    'warning': '#dcdcaa',
+    'error': '#f44747',
+    'aruco': '#00ff00',
+    'corner': '#ff00ff',
+    'corner_hover': '#ffff00',
+    'corner_drag': '#00ffff',
+    'corner_estimated': '#ff8888',
+    'outline': '#ffa500',
+    'offset_line': '#ffff00',
+    'grid': '#00ff00',
 }
 
 # ============================================================
 # CONFIGURATION CAMÉRA
 # ============================================================
-USE_DEFAULT_CAMERA_PARAMS = True
-CAMERA_CONFIG = {'timeout': 2000}
-
 def _check_rpicam_available():
     return shutil.which('rpicam-still') is not None or shutil.which('libcamera-still') is not None
 
@@ -168,10 +152,15 @@ def detect_calibration_markers(img_np):
 
 
 # ============================================================
-# CLASSE PRINCIPALE: CALIBRATEUR INTERACTIF
+# APPLICATION PRINCIPALE
 # ============================================================
-class OffsetCalibrator:
-    def __init__(self, image_path):
+class CalibrationApp:
+    def __init__(self, root, image_path):
+        self.root = root
+        self.root.title("🎯 Calibration des Offsets - Chess Board")
+        self.root.configure(bg=COLORS['bg'])
+        
+        # Charger l'image
         self.image_path = image_path
         self.img_original = cv2.imread(image_path)
         if self.img_original is None:
@@ -179,49 +168,192 @@ class OffsetCalibrator:
         
         self.img_h, self.img_w = self.img_original.shape[:2]
         
-        # Calculer le facteur d'échelle pour l'affichage
-        self.scale = min(MAX_DISPLAY_WIDTH / self.img_w, MAX_DISPLAY_HEIGHT / self.img_h, 1.0)
-        self.display_w = int(self.img_w * self.scale)
-        self.display_h = int(self.img_h * self.scale)
-        
-        # Largeur du panneau latéral
-        self.panel_width = 400
+        # Calculer l'échelle d'affichage
+        max_canvas_w, max_canvas_h = 900, 700
+        self.scale = min(max_canvas_w / self.img_w, max_canvas_h / self.img_h, 1.0)
+        self.canvas_w = int(self.img_w * self.scale)
+        self.canvas_h = int(self.img_h * self.scale)
         
         # Détecter les ArUcos
         self.calibration_markers = detect_calibration_markers(self.img_original)
         
         # Initialiser les offsets
         self.offsets = {
-            "CAL_TL": {"offset_x": 0, "offset_y": 0},
-            "CAL_TR": {"offset_x": 0, "offset_y": 0},
-            "CAL_BL": {"offset_x": 0, "offset_y": 0},
-            "CAL_BR": {"offset_x": 0, "offset_y": 0}
+            "CAL_TL": {"offset_x": tk.IntVar(value=0), "offset_y": tk.IntVar(value=0)},
+            "CAL_TR": {"offset_x": tk.IntVar(value=0), "offset_y": tk.IntVar(value=0)},
+            "CAL_BL": {"offset_x": tk.IntVar(value=0), "offset_y": tk.IntVar(value=0)},
+            "CAL_BR": {"offset_x": tk.IntVar(value=0), "offset_y": tk.IntVar(value=0)},
         }
         
-        # État du drag-and-drop
-        self.dragging = None  # Code du coin en cours de déplacement
-        self.hover = None     # Code du coin survolé
+        # État du drag
+        self.dragging = None
+        self.hover = None
+        self.corner_items = {}
         
-        # Calculer les coins du plateau
+        # Coins du plateau
         self.board_corners = {}
-        self.update_board_corners()
+        self.estimated_codes = []
         
-        # Nom de la fenêtre
-        self.window_name = "Calibration des Offsets - Drag & Drop"
+        # Construire l'interface
+        self.build_ui()
+        
+        # Calculer les coins initiaux
+        self.update_board_corners()
+        self.draw_canvas()
+    
+    def build_ui(self):
+        """Construit l'interface utilisateur"""
+        # Frame principal
+        main_frame = ttk.Frame(self.root)
+        main_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        
+        # Style
+        style = ttk.Style()
+        style.theme_use('clam')
+        style.configure('TFrame', background=COLORS['bg'])
+        style.configure('TLabel', background=COLORS['bg'], foreground=COLORS['text'])
+        style.configure('TButton', padding=6)
+        style.configure('Header.TLabel', font=('Segoe UI', 14, 'bold'), foreground=COLORS['accent'])
+        style.configure('SubHeader.TLabel', font=('Segoe UI', 11, 'bold'), foreground=COLORS['warning'])
+        style.configure('Code.TLabel', font=('Consolas', 10), foreground=COLORS['success'])
+        style.configure('Status.TLabel', font=('Segoe UI', 10))
+        
+        # === Colonne gauche: Canvas ===
+        left_frame = ttk.Frame(main_frame)
+        left_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        
+        # Titre
+        ttk.Label(left_frame, text="📷 Image avec Coins Ajustables", style='Header.TLabel').pack(anchor='w', pady=(0, 5))
+        
+        # Canvas pour l'image
+        self.canvas = tk.Canvas(left_frame, width=self.canvas_w, height=self.canvas_h, 
+                                bg='black', highlightthickness=2, highlightbackground=COLORS['accent'])
+        self.canvas.pack(pady=5)
+        
+        # Bindings souris
+        self.canvas.bind('<Motion>', self.on_mouse_move)
+        self.canvas.bind('<Button-1>', self.on_mouse_down)
+        self.canvas.bind('<B1-Motion>', self.on_mouse_drag)
+        self.canvas.bind('<ButtonRelease-1>', self.on_mouse_up)
+        
+        # Instructions
+        instructions = ttk.Label(left_frame, text="🖱️ Glissez-déposez les coins magenta pour ajuster les offsets", 
+                                 style='Status.TLabel', foreground=COLORS['text_dim'])
+        instructions.pack(anchor='w', pady=5)
+        
+        # Boutons d'action
+        btn_frame = ttk.Frame(left_frame)
+        btn_frame.pack(fill=tk.X, pady=10)
+        
+        ttk.Button(btn_frame, text="🔄 Reset Offsets", command=self.reset_offsets).pack(side=tk.LEFT, padx=5)
+        ttk.Button(btn_frame, text="📊 Voir Grille 8x8", command=self.show_grid_preview).pack(side=tk.LEFT, padx=5)
+        ttk.Button(btn_frame, text="💾 Sauvegarder Image", command=self.save_image).pack(side=tk.LEFT, padx=5)
+        ttk.Button(btn_frame, text="📂 Ouvrir Image", command=self.open_image).pack(side=tk.LEFT, padx=5)
+        
+        # === Colonne droite: Panneau de contrôle ===
+        right_frame = ttk.Frame(main_frame, width=380)
+        right_frame.pack(side=tk.RIGHT, fill=tk.Y, padx=(20, 0))
+        right_frame.pack_propagate(False)
+        
+        # Statut ArUcos
+        ttk.Label(right_frame, text="🎯 Statut des ArUcos", style='Header.TLabel').pack(anchor='w', pady=(0, 10))
+        
+        self.aruco_status_frame = ttk.Frame(right_frame)
+        self.aruco_status_frame.pack(fill=tk.X, pady=(0, 15))
+        
+        self.aruco_labels = {}
+        for marker_id in [32, 33, 34, 35]:
+            code = CALIBRATION_IDS[marker_id]
+            frame = ttk.Frame(self.aruco_status_frame)
+            frame.pack(fill=tk.X, pady=2)
+            
+            detected = marker_id in self.calibration_markers
+            status_text = "✅" if detected else "❌"
+            status_color = COLORS['success'] if detected else COLORS['error']
+            
+            lbl = ttk.Label(frame, text=f"{status_text} ArUco {marker_id} ({code})", 
+                           foreground=status_color, font=('Segoe UI', 10))
+            lbl.pack(side=tk.LEFT)
+            self.aruco_labels[marker_id] = lbl
+        
+        # Séparateur
+        ttk.Separator(right_frame, orient='horizontal').pack(fill=tk.X, pady=15)
+        
+        # Valeurs des offsets
+        ttk.Label(right_frame, text="📐 Valeurs des Offsets", style='Header.TLabel').pack(anchor='w', pady=(0, 10))
+        
+        self.offset_entries = {}
+        for code in ['CAL_TL', 'CAL_TR', 'CAL_BL', 'CAL_BR']:
+            frame = ttk.Frame(right_frame)
+            frame.pack(fill=tk.X, pady=5)
+            
+            # Label du coin
+            short = code.replace('CAL_', '')
+            ttk.Label(frame, text=f"{short}:", font=('Segoe UI', 10, 'bold'), width=5).pack(side=tk.LEFT)
+            
+            # X
+            ttk.Label(frame, text="X:", font=('Segoe UI', 9)).pack(side=tk.LEFT, padx=(10, 2))
+            entry_x = ttk.Spinbox(frame, from_=-500, to=500, width=6, 
+                                  textvariable=self.offsets[code]['offset_x'],
+                                  command=lambda c=code: self.on_spinbox_change(c))
+            entry_x.pack(side=tk.LEFT)
+            entry_x.bind('<Return>', lambda e, c=code: self.on_spinbox_change(c))
+            entry_x.bind('<FocusOut>', lambda e, c=code: self.on_spinbox_change(c))
+            
+            # Y
+            ttk.Label(frame, text="Y:", font=('Segoe UI', 9)).pack(side=tk.LEFT, padx=(15, 2))
+            entry_y = ttk.Spinbox(frame, from_=-500, to=500, width=6,
+                                  textvariable=self.offsets[code]['offset_y'],
+                                  command=lambda c=code: self.on_spinbox_change(c))
+            entry_y.pack(side=tk.LEFT)
+            entry_y.bind('<Return>', lambda e, c=code: self.on_spinbox_change(c))
+            entry_y.bind('<FocusOut>', lambda e, c=code: self.on_spinbox_change(c))
+            
+            self.offset_entries[code] = {'x': entry_x, 'y': entry_y}
+        
+        # Séparateur
+        ttk.Separator(right_frame, orient='horizontal').pack(fill=tk.X, pady=15)
+        
+        # Code à copier
+        ttk.Label(right_frame, text="📋 Code Python à Copier", style='Header.TLabel').pack(anchor='w', pady=(0, 10))
+        
+        # Zone de texte pour le code
+        code_frame = ttk.Frame(right_frame)
+        code_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 10))
+        
+        self.code_text = tk.Text(code_frame, height=12, width=45, font=('Consolas', 9),
+                                 bg='#1e1e1e', fg=COLORS['success'], insertbackground='white',
+                                 relief='flat', padx=10, pady=10)
+        self.code_text.pack(fill=tk.BOTH, expand=True)
+        
+        # Bouton Copier
+        copy_btn = ttk.Button(right_frame, text="📋 Copier le Code", command=self.copy_code)
+        copy_btn.pack(fill=tk.X, pady=(0, 10))
+        
+        # Label de confirmation
+        self.copy_label = ttk.Label(right_frame, text="", foreground=COLORS['success'])
+        self.copy_label.pack()
+        
+        # Mettre à jour le code initial
+        self.update_code_text()
+    
+    def on_spinbox_change(self, code):
+        """Appelé quand une spinbox change"""
+        self.update_board_corners()
+        self.draw_canvas()
+        self.update_code_text()
     
     def update_board_corners(self):
-        """Met à jour les coins du plateau avec les offsets actuels"""
+        """Met à jour les coins du plateau"""
         self.board_corners = {}
         for marker_id, marker_data in self.calibration_markers.items():
             code = marker_data['code']
             center = marker_data['center']
-            offset = self.offsets[code]
             self.board_corners[code] = (
-                center[0] + offset['offset_x'],
-                center[1] + offset['offset_y']
+                center[0] + self.offsets[code]['offset_x'].get(),
+                center[1] + self.offsets[code]['offset_y'].get()
             )
         
-        # Estimer les coins manquants
         self.estimate_missing_corners()
     
     def estimate_missing_corners(self):
@@ -251,235 +383,176 @@ class OffsetCalibrator:
                 self.board_corners['CAL_BR'] = (tr[0] + bl[0] - tl[0], tr[1] + bl[1] - tl[1])
                 self.estimated_codes.append('CAL_BR')
     
-    def get_corner_at_pos(self, x, y):
-        """Retourne le code du coin proche de la position (x, y) en coordonnées affichage"""
-        # Convertir en coordonnées image originale
-        img_x = x / self.scale
-        img_y = y / self.scale
+    def draw_canvas(self):
+        """Dessine l'image et les annotations sur le canvas"""
+        # Redimensionner l'image
+        img_rgb = cv2.cvtColor(self.img_original, cv2.COLOR_BGR2RGB)
+        img_resized = cv2.resize(img_rgb, (self.canvas_w, self.canvas_h))
         
-        # Chercher le coin le plus proche (parmi ceux qui ont un ArUco détecté)
-        for marker_id, marker_data in self.calibration_markers.items():
-            code = marker_data['code']
-            if code in self.board_corners:
-                corner = self.board_corners[code]
-                dist = np.sqrt((corner[0] - img_x)**2 + (corner[1] - img_y)**2)
-                if dist * self.scale < DRAG_RADIUS:
-                    return code
-        return None
-    
-    def mouse_callback(self, event, x, y, flags, param):
-        """Callback pour les événements souris"""
-        if event == cv2.EVENT_MOUSEMOVE:
-            if self.dragging:
-                # Déplacer le coin
-                img_x = x / self.scale
-                img_y = y / self.scale
-                
-                # Trouver le centre ArUco correspondant
-                for marker_id, marker_data in self.calibration_markers.items():
-                    if marker_data['code'] == self.dragging:
-                        center = marker_data['center']
-                        self.offsets[self.dragging]['offset_x'] = int(img_x - center[0])
-                        self.offsets[self.dragging]['offset_y'] = int(img_y - center[1])
-                        self.update_board_corners()
-                        break
-            else:
-                # Mettre à jour le survol
-                self.hover = self.get_corner_at_pos(x, y)
+        # Convertir en ImageTk
+        self.photo = ImageTk.PhotoImage(Image.fromarray(img_resized))
         
-        elif event == cv2.EVENT_LBUTTONDOWN:
-            corner = self.get_corner_at_pos(x, y)
-            if corner and corner not in self.estimated_codes:
-                self.dragging = corner
+        # Effacer le canvas
+        self.canvas.delete('all')
         
-        elif event == cv2.EVENT_LBUTTONUP:
-            self.dragging = None
-    
-    def draw_frame(self):
-        """Dessine l'image avec les annotations et le panneau latéral"""
-        # Redimensionner l'image pour l'affichage
-        img_display = cv2.resize(self.img_original, (self.display_w, self.display_h))
+        # Afficher l'image
+        self.canvas.create_image(0, 0, anchor='nw', image=self.photo)
         
-        # Dessiner les ArUcos détectés
+        # Dessiner les ArUcos
         for marker_id, marker_data in self.calibration_markers.items():
             corners = marker_data['corners'] * self.scale
-            pts = corners.astype(np.int32).reshape((-1, 1, 2))
-            cv2.polylines(img_display, [pts], True, COLORS['aruco_marker'], 2)
+            pts = [(int(c[0]), int(c[1])) for c in corners]
+            self.canvas.create_polygon(pts, outline=COLORS['aruco'], fill='', width=2)
             
             cx = int(marker_data['center'][0] * self.scale)
             cy = int(marker_data['center'][1] * self.scale)
-            cv2.circle(img_display, (cx, cy), 6, COLORS['aruco_center'], -1)
-            
-            label = f"ID:{marker_id}"
-            cv2.putText(img_display, label, (cx - 20, cy - 15),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, COLORS['text'], 1)
+            self.canvas.create_oval(cx-5, cy-5, cx+5, cy+5, fill=COLORS['error'], outline='')
+            self.canvas.create_text(cx, cy-20, text=f"ID:{marker_id}", fill=COLORS['text'], font=('Segoe UI', 9))
         
         # Dessiner les lignes d'offset
         for marker_id, marker_data in self.calibration_markers.items():
             code = marker_data['code']
             if code in self.board_corners:
-                aruco_center = marker_data['center']
-                board_corner = self.board_corners[code]
-                pt1 = (int(aruco_center[0] * self.scale), int(aruco_center[1] * self.scale))
-                pt2 = (int(board_corner[0] * self.scale), int(board_corner[1] * self.scale))
-                cv2.line(img_display, pt1, pt2, COLORS['offset_line'], 2)
-        
-        # Dessiner les coins du plateau
-        for code, corner in self.board_corners.items():
-            cx = int(corner[0] * self.scale)
-            cy = int(corner[1] * self.scale)
-            
-            # Couleur selon l'état
-            if code == self.dragging:
-                color = (0, 255, 255)  # Jaune si en cours de déplacement
-                radius = 15
-            elif code == self.hover:
-                color = COLORS['board_corner_hover']
-                radius = 12
-            elif code in self.estimated_codes:
-                color = (128, 128, 255)  # Rose si estimé
-                radius = 8
-            else:
-                color = COLORS['board_corner']
-                radius = 10
-            
-            # Dessiner le coin (croix + cercle)
-            cv2.line(img_display, (cx - 12, cy), (cx + 12, cy), color, 2)
-            cv2.line(img_display, (cx, cy - 12), (cx, cy + 12), color, 2)
-            cv2.circle(img_display, (cx, cy), radius, color, 2)
-            
-            # Label
-            label = code.replace('CAL_', '')
-            if code in self.estimated_codes:
-                label += " (est.)"
-            cv2.putText(img_display, label, (cx + 15, cy - 5),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1)
+                ax = int(marker_data['center'][0] * self.scale)
+                ay = int(marker_data['center'][1] * self.scale)
+                bx = int(self.board_corners[code][0] * self.scale)
+                by = int(self.board_corners[code][1] * self.scale)
+                self.canvas.create_line(ax, ay, bx, by, fill=COLORS['offset_line'], width=2, dash=(4, 4))
         
         # Dessiner le contour du plateau
-        if len(self.board_corners) == 4:
+        if len(self.board_corners) >= 2:
             adjacencies = [('CAL_TL', 'CAL_TR'), ('CAL_TR', 'CAL_BR'),
                           ('CAL_BR', 'CAL_BL'), ('CAL_BL', 'CAL_TL')]
             for c1, c2 in adjacencies:
                 if c1 in self.board_corners and c2 in self.board_corners:
-                    pt1 = (int(self.board_corners[c1][0] * self.scale),
-                           int(self.board_corners[c1][1] * self.scale))
-                    pt2 = (int(self.board_corners[c2][0] * self.scale),
-                           int(self.board_corners[c2][1] * self.scale))
-                    cv2.line(img_display, pt1, pt2, COLORS['board_outline'], 2)
+                    x1 = int(self.board_corners[c1][0] * self.scale)
+                    y1 = int(self.board_corners[c1][1] * self.scale)
+                    x2 = int(self.board_corners[c2][0] * self.scale)
+                    y2 = int(self.board_corners[c2][1] * self.scale)
+                    self.canvas.create_line(x1, y1, x2, y2, fill=COLORS['outline'], width=3)
         
-        # Créer le panneau latéral
-        panel = np.ones((self.display_h, self.panel_width, 3), dtype=np.uint8) * 40
-        
-        # Titre
-        cv2.putText(panel, "CALIBRATION OFFSETS", (20, 30),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
-        cv2.line(panel, (20, 45), (self.panel_width - 20, 45), (100, 100, 100), 1)
-        
-        # Instructions
-        y = 70
-        instructions = [
-            "Controles:",
-            "  - Clic + drag: Deplacer coin",
-            "  - R: Reset offsets",
-            "  - S: Sauvegarder image",
-            "  - G: Afficher grille 8x8",
-            "  - Q/Echap: Quitter",
-        ]
-        for text in instructions:
-            cv2.putText(panel, text, (20, y), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (200, 200, 200), 1)
-            y += 20
-        
-        # Séparateur
-        y += 10
-        cv2.line(panel, (20, y), (self.panel_width - 20, y), (100, 100, 100), 1)
-        y += 25
-        
-        # Statut ArUcos
-        cv2.putText(panel, f"ArUcos detectes: {len(self.calibration_markers)}/4", (20, y),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 200, 100), 1)
-        y += 25
-        
-        for marker_id in [32, 33, 34, 35]:
-            code = CALIBRATION_IDS[marker_id]
-            if marker_id in self.calibration_markers:
-                status = "OK"
-                color = (0, 255, 0)
-            else:
-                status = "NON DETECTE"
-                color = (0, 0, 255)
-            cv2.putText(panel, f"  {code}: {status}", (20, y),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.45, color, 1)
-            y += 18
-        
-        # Séparateur
-        y += 15
-        cv2.line(panel, (20, y), (self.panel_width - 20, y), (100, 100, 100), 1)
-        y += 25
-        
-        # Code Python à copier
-        cv2.putText(panel, "CODE A COPIER:", (20, y),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2)
-        y += 30
-        
-        # Afficher le code des offsets
-        cv2.putText(panel, "OFFSETS = {", (20, y),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 255, 255), 1)
-        y += 20
-        
-        for code in ['CAL_TL', 'CAL_TR', 'CAL_BL', 'CAL_BR']:
-            ox = self.offsets[code]['offset_x']
-            oy = self.offsets[code]['offset_y']
+        # Dessiner les coins du plateau (draggables)
+        self.corner_items = {}
+        for code, corner in self.board_corners.items():
+            cx = int(corner[0] * self.scale)
+            cy = int(corner[1] * self.scale)
             
-            # Couleur selon le coin actif
+            # Déterminer la couleur
             if code == self.dragging:
-                text_color = (0, 255, 255)
+                color = COLORS['corner_drag']
+                size = 12
             elif code == self.hover:
-                text_color = (255, 200, 100)
+                color = COLORS['corner_hover']
+                size = 10
+            elif code in self.estimated_codes:
+                color = COLORS['corner_estimated']
+                size = 8
             else:
-                text_color = (200, 200, 200)
+                color = COLORS['corner']
+                size = 10
             
-            line = f'  "{code}": {{"offset_x": {ox}, "offset_y": {oy}}},'
-            cv2.putText(panel, line, (20, y),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.35, text_color, 1)
-            y += 18
-        
-        cv2.putText(panel, "}", (20, y),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 255, 255), 1)
-        y += 30
-        
-        # Afficher les valeurs individuelles
-        cv2.line(panel, (20, y), (self.panel_width - 20, y), (100, 100, 100), 1)
-        y += 25
-        
-        cv2.putText(panel, "VALEURS ACTUELLES:", (20, y),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 200, 100), 1)
-        y += 25
-        
-        for code in ['CAL_TL', 'CAL_TR', 'CAL_BL', 'CAL_BR']:
-            ox = self.offsets[code]['offset_x']
-            oy = self.offsets[code]['offset_y']
+            # Dessiner la croix
+            self.canvas.create_line(cx-size, cy, cx+size, cy, fill=color, width=3)
+            self.canvas.create_line(cx, cy-size, cx, cy+size, fill=color, width=3)
+            self.canvas.create_oval(cx-size, cy-size, cx+size, cy+size, outline=color, width=2)
+            
+            # Label
             short = code.replace('CAL_', '')
+            suffix = " (est.)" if code in self.estimated_codes else ""
+            self.canvas.create_text(cx+15, cy-15, text=f"{short}{suffix}", fill=color, 
+                                   font=('Segoe UI', 9, 'bold'), anchor='w')
             
-            # Indicateur de direction
-            dir_x = "droite" if ox >= 0 else "gauche"
-            dir_y = "bas" if oy >= 0 else "haut"
+            # Stocker la zone cliquable
+            self.corner_items[code] = (cx, cy, size + 5)
+    
+    def get_corner_at_pos(self, x, y):
+        """Retourne le coin à la position donnée"""
+        for code, (cx, cy, radius) in self.corner_items.items():
+            if code not in self.estimated_codes:
+                if (x - cx)**2 + (y - cy)**2 < radius**2:
+                    return code
+        return None
+    
+    def on_mouse_move(self, event):
+        """Gère le mouvement de la souris"""
+        if not self.dragging:
+            new_hover = self.get_corner_at_pos(event.x, event.y)
+            if new_hover != self.hover:
+                self.hover = new_hover
+                self.draw_canvas()
+                self.canvas.config(cursor='hand2' if self.hover else '')
+    
+    def on_mouse_down(self, event):
+        """Gère le clic souris"""
+        corner = self.get_corner_at_pos(event.x, event.y)
+        if corner:
+            self.dragging = corner
+            self.canvas.config(cursor='fleur')
+            self.draw_canvas()
+    
+    def on_mouse_drag(self, event):
+        """Gère le drag"""
+        if self.dragging:
+            img_x = event.x / self.scale
+            img_y = event.y / self.scale
             
-            line1 = f"{short}: ({ox:+d}, {oy:+d})"
-            line2 = f"     -> {dir_x}, {dir_y}"
+            for marker_id, marker_data in self.calibration_markers.items():
+                if marker_data['code'] == self.dragging:
+                    center = marker_data['center']
+                    self.offsets[self.dragging]['offset_x'].set(int(img_x - center[0]))
+                    self.offsets[self.dragging]['offset_y'].set(int(img_y - center[1]))
+                    break
             
-            color = (0, 255, 255) if code == self.dragging else (200, 200, 200)
-            cv2.putText(panel, line1, (20, y), cv2.FONT_HERSHEY_SIMPLEX, 0.45, color, 1)
-            y += 16
-            cv2.putText(panel, line2, (20, y), cv2.FONT_HERSHEY_SIMPLEX, 0.35, (150, 150, 150), 1)
-            y += 22
+            self.update_board_corners()
+            self.draw_canvas()
+            self.update_code_text()
+    
+    def on_mouse_up(self, event):
+        """Gère le relâchement du clic"""
+        self.dragging = None
+        self.canvas.config(cursor='hand2' if self.hover else '')
+        self.draw_canvas()
+    
+    def update_code_text(self):
+        """Met à jour le texte du code Python"""
+        self.code_text.delete('1.0', tk.END)
         
-        # Combiner image et panneau
-        frame = np.hstack([img_display, panel])
+        lines = ["OFFSETS = {"]
+        for i, code in enumerate(['CAL_TL', 'CAL_TR', 'CAL_BL', 'CAL_BR']):
+            ox = self.offsets[code]['offset_x'].get()
+            oy = self.offsets[code]['offset_y'].get()
+            
+            dir_x = "+x droite" if ox >= 0 else "-x gauche"
+            dir_y = "+y bas" if oy >= 0 else "-y haut"
+            
+            comma = "," if i < 3 else ""
+            lines.append(f'    "{code}": {{"offset_x": {ox}, "offset_y": {oy}}}{comma}  # {dir_x}, {dir_y}')
         
-        return frame
+        lines.append("}")
+        
+        self.code_text.insert('1.0', '\n'.join(lines))
+    
+    def copy_code(self):
+        """Copie le code dans le presse-papier"""
+        code = self.code_text.get('1.0', tk.END).strip()
+        self.root.clipboard_clear()
+        self.root.clipboard_append(code)
+        
+        self.copy_label.config(text="✅ Code copié dans le presse-papier!")
+        self.root.after(2000, lambda: self.copy_label.config(text=""))
+    
+    def reset_offsets(self):
+        """Remet tous les offsets à zéro"""
+        for code in self.offsets:
+            self.offsets[code]['offset_x'].set(0)
+            self.offsets[code]['offset_y'].set(0)
+        
+        self.update_board_corners()
+        self.draw_canvas()
+        self.update_code_text()
     
     def extract_board(self):
-        """Extrait le plateau avec les offsets actuels"""
+        """Extrait le plateau"""
         if len(self.board_corners) < 4:
             return None
         
@@ -492,140 +565,123 @@ class OffsetCalibrator:
         
         size = EXTRACTED_BOARD_SIZE
         dst_points = np.array([
-            [0, 0], [size - 1, 0], [size - 1, size - 1], [0, size - 1]
+            [0, 0], [size-1, 0], [size-1, size-1], [0, size-1]
         ], dtype=np.float32)
         
         matrix = cv2.getPerspectiveTransform(src_points, dst_points)
         return cv2.warpPerspective(self.img_original, matrix, (size, size))
     
-    def draw_grid_on_board(self, board_img):
-        """Dessine la grille 8x8 sur le plateau extrait"""
+    def show_grid_preview(self):
+        """Affiche une fenêtre avec la grille 8x8"""
+        board_img = self.extract_board()
         if board_img is None:
-            return None
+            messagebox.showwarning("Attention", "Impossible d'extraire le plateau.\nIl faut 4 coins détectés.")
+            return
         
-        img = board_img.copy()
-        h, w = img.shape[:2]
+        h, w = board_img.shape[:2]
         cell_w, cell_h = w / 8, h / 8
         
         for i in range(9):
             x = int(i * cell_w)
-            cv2.line(img, (x, 0), (x, h), COLORS['grid_line'], 2)
+            cv2.line(board_img, (x, 0), (x, h), (0, 255, 0), 2)
             y = int(i * cell_h)
-            cv2.line(img, (0, y), (w, y), COLORS['grid_line'], 2)
+            cv2.line(board_img, (0, y), (w, y), (0, 255, 0), 2)
         
-        # Labels
-        font = cv2.FONT_HERSHEY_SIMPLEX
-        for i, col in enumerate(['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h']):
-            x = int((i + 0.5) * cell_w) - 8
-            cv2.putText(img, col, (x, h - 10), font, 0.6, (0, 0, 0), 3)
-            cv2.putText(img, col, (x, h - 10), font, 0.6, (255, 255, 255), 1)
+        for i, col in enumerate('abcdefgh'):
+            x = int((i + 0.5) * cell_w) - 10
+            cv2.putText(board_img, col, (x, h - 15), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2)
         
-        for i, row in enumerate(['8', '7', '6', '5', '4', '3', '2', '1']):
-            y = int((i + 0.5) * cell_h) + 8
-            cv2.putText(img, row, (10, y), font, 0.6, (0, 0, 0), 3)
-            cv2.putText(img, row, (10, y), font, 0.6, (255, 255, 255), 1)
+        for i, row in enumerate('87654321'):
+            y = int((i + 0.5) * cell_h) + 10
+            cv2.putText(board_img, row, (15, y), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2)
         
-        return img
+        preview_window = tk.Toplevel(self.root)
+        preview_window.title("📊 Prévisualisation Grille 8x8")
+        preview_window.configure(bg=COLORS['bg'])
+        
+        display_size = 600
+        board_resized = cv2.resize(board_img, (display_size, display_size))
+        board_rgb = cv2.cvtColor(board_resized, cv2.COLOR_BGR2RGB)
+        
+        photo = ImageTk.PhotoImage(Image.fromarray(board_rgb))
+        label = ttk.Label(preview_window, image=photo)
+        label.image = photo
+        label.pack(padx=10, pady=10)
+        
+        ttk.Button(preview_window, text="Fermer", command=preview_window.destroy).pack(pady=10)
     
-    def run(self):
-        """Lance l'interface de calibration"""
-        cv2.namedWindow(self.window_name)
-        cv2.setMouseCallback(self.window_name, self.mouse_callback)
+    def save_image(self):
+        """Sauvegarde l'image du plateau avec grille"""
+        board_img = self.extract_board()
+        if board_img is None:
+            messagebox.showwarning("Attention", "Impossible d'extraire le plateau.")
+            return
         
-        show_grid = False
-        grid_window_name = "Plateau Extrait avec Grille"
+        h, w = board_img.shape[:2]
+        cell_w, cell_h = w / 8, h / 8
         
-        print("\n" + "="*60)
-        print("🎯 CALIBRATION INTERACTIVE DES OFFSETS")
-        print("="*60)
-        print(f"   Image: {os.path.basename(self.image_path)}")
-        print(f"   ArUcos détectés: {len(self.calibration_markers)}/4")
-        print("\n   Contrôles:")
-        print("   - Clic + drag sur un coin: Déplacer")
-        print("   - R: Reset les offsets à zéro")
-        print("   - S: Sauvegarder l'image")
-        print("   - G: Afficher/masquer grille 8x8")
-        print("   - Q ou Echap: Quitter")
-        print("="*60 + "\n")
+        for i in range(9):
+            x = int(i * cell_w)
+            cv2.line(board_img, (x, 0), (x, h), (0, 255, 0), 2)
+            y = int(i * cell_h)
+            cv2.line(board_img, (0, y), (w, y), (0, 255, 0), 2)
         
-        while True:
-            frame = self.draw_frame()
-            cv2.imshow(self.window_name, frame)
-            
-            # Mettre à jour la fenêtre de grille si ouverte
-            if show_grid:
-                board_img = self.extract_board()
-                if board_img is not None:
-                    grid_img = self.draw_grid_on_board(board_img)
-                    cv2.imshow(grid_window_name, grid_img)
-            
-            key = cv2.waitKey(30) & 0xFF
-            
-            if key == ord('q') or key == 27:  # Q ou Echap
-                break
-            
-            elif key == ord('r'):  # Reset
-                for code in self.offsets:
-                    self.offsets[code] = {"offset_x": 0, "offset_y": 0}
-                self.update_board_corners()
-                print("🔄 Offsets réinitialisés à zéro")
-            
-            elif key == ord('s'):  # Sauvegarder
-                os.makedirs(OUTPUT_DIR, exist_ok=True)
-                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                
-                # Sauvegarder le plateau extrait avec grille
-                board_img = self.extract_board()
-                if board_img is not None:
-                    grid_img = self.draw_grid_on_board(board_img)
-                    output_path = os.path.join(OUTPUT_DIR, f"calibrated_board_{timestamp}.jpg")
-                    cv2.imwrite(output_path, grid_img)
-                    print(f"💾 Image sauvegardée: {output_path}")
-                
-                # Afficher le code à copier
-                self.print_offsets_code()
-            
-            elif key == ord('g'):  # Toggle grille
-                show_grid = not show_grid
-                if show_grid:
-                    board_img = self.extract_board()
-                    if board_img is not None:
-                        grid_img = self.draw_grid_on_board(board_img)
-                        cv2.imshow(grid_window_name, grid_img)
-                else:
-                    cv2.destroyWindow(grid_window_name)
+        for i, col in enumerate('abcdefgh'):
+            x = int((i + 0.5) * cell_w) - 10
+            cv2.putText(board_img, col, (x, h - 15), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2)
         
-        cv2.destroyAllWindows()
+        for i, row in enumerate('87654321'):
+            y = int((i + 0.5) * cell_h) + 10
+            cv2.putText(board_img, row, (15, y), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2)
         
-        # Afficher le code final
-        print("\n" + "="*60)
-        print("📋 CODE FINAL À COPIER DANS detect_board_corners.py:")
-        print("="*60)
-        self.print_offsets_code()
-        print("="*60 + "\n")
+        os.makedirs(OUTPUT_DIR, exist_ok=True)
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        output_path = os.path.join(OUTPUT_DIR, f"calibrated_board_{timestamp}.jpg")
+        cv2.imwrite(output_path, board_img)
+        
+        messagebox.showinfo("Sauvegardé", f"Image sauvegardée:\n{output_path}")
     
-    def print_offsets_code(self):
-        """Affiche le code Python des offsets à copier"""
-        print("\nOFFSETS = {")
-        for i, code in enumerate(['CAL_TL', 'CAL_TR', 'CAL_BL', 'CAL_BR']):
-            ox = self.offsets[code]['offset_x']
-            oy = self.offsets[code]['offset_y']
+    def open_image(self):
+        """Ouvre une nouvelle image"""
+        filetypes = [("Images", "*.jpg *.jpeg *.png *.bmp"), ("Tous", "*.*")]
+        path = filedialog.askopenfilename(
+            title="Sélectionner une image",
+            initialdir=IMAGES_DIR if os.path.exists(IMAGES_DIR) else SCRIPT_DIR,
+            filetypes=filetypes
+        )
+        
+        if path:
+            self.image_path = path
+            self.img_original = cv2.imread(path)
+            if self.img_original is None:
+                messagebox.showerror("Erreur", f"Impossible de charger:\n{path}")
+                return
             
-            # Commentaire de direction
-            dir_x = "+x vers droite" if ox >= 0 else "-x vers gauche"
-            dir_y = "+y vers bas" if oy >= 0 else "-y vers haut"
-            comment = f"# {dir_x}, {dir_y}"
+            self.img_h, self.img_w = self.img_original.shape[:2]
             
-            comma = "," if i < 3 else ""
-            print(f'    "{code}": {{"offset_x": {ox}, "offset_y": {oy}}}{comma}     {comment}')
-        print("}")
+            max_canvas_w, max_canvas_h = 900, 700
+            self.scale = min(max_canvas_w / self.img_w, max_canvas_h / self.img_h, 1.0)
+            self.canvas_w = int(self.img_w * self.scale)
+            self.canvas_h = int(self.img_h * self.scale)
+            
+            self.canvas.config(width=self.canvas_w, height=self.canvas_h)
+            
+            self.calibration_markers = detect_calibration_markers(self.img_original)
+            
+            for marker_id in [32, 33, 34, 35]:
+                detected = marker_id in self.calibration_markers
+                status_text = f"{'✅' if detected else '❌'} ArUco {marker_id} ({CALIBRATION_IDS[marker_id]})"
+                color = COLORS['success'] if detected else COLORS['error']
+                self.aruco_labels[marker_id].config(text=status_text, foreground=color)
+            
+            self.reset_offsets()
 
 
 # ============================================================
-# SÉLECTION D'IMAGE
+# SÉLECTION D'IMAGE (mode console)
 # ============================================================
-def select_image():
-    """Sélectionne une image"""
+def select_image_console():
+    """Sélectionne une image en mode console"""
     import glob
     
     images = []
@@ -641,10 +697,10 @@ def select_image():
         return None
     
     print("\n📷 Images disponibles:")
-    print("-" * 40)
+    print("-" * 50)
     for i, img_path in enumerate(images, 1):
         print(f"  {i}. {os.path.basename(img_path)}")
-    print("-" * 40)
+    print("-" * 50)
     
     while True:
         try:
@@ -662,10 +718,10 @@ def select_image():
 # ============================================================
 # POINT D'ENTRÉE
 # ============================================================
-if __name__ == "__main__":
+def main():
     print("="*60)
     print("🎯 CALIBRATION INTERACTIVE DES OFFSETS")
-    print("   Déplacez les coins avec la souris (drag & drop)")
+    print("   Interface graphique avec drag & drop")
     print(f"   Mode caméra: {CAMERA_MODE}")
     print("="*60)
     
@@ -696,16 +752,25 @@ if __name__ == "__main__":
             if image_path:
                 print(f"✅ Photo enregistrée: {image_path}")
         elif choice == '2':
-            image_path = select_image()
+            image_path = select_image_console()
         elif choice.lower() == 'q':
             print("Au revoir!")
-            sys.exit(0)
+            return
     
-    if image_path and os.path.exists(image_path):
-        try:
-            calibrator = OffsetCalibrator(image_path)
-            calibrator.run()
-        except Exception as e:
-            print(f"❌ Erreur: {e}")
-    else:
+    if not image_path or not os.path.exists(image_path):
         print("❌ Aucune image sélectionnée.")
+        return
+    
+    root = tk.Tk()
+    root.geometry("1400x800")
+    
+    try:
+        app = CalibrationApp(root, image_path)
+        root.mainloop()
+    except Exception as e:
+        messagebox.showerror("Erreur", str(e))
+        raise
+
+
+if __name__ == "__main__":
+    main()
