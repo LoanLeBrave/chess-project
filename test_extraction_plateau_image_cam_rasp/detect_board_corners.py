@@ -850,15 +850,9 @@ def detect_chess_pieces(img_np):
     # Charger le dictionnaire ArUco
     aruco_dict = cv2.aruco.getPredefinedDictionary(ARUCO_DICT)
     
-    # Paramètres de détection
+    # Paramètres de détection - utiliser les paramètres par défaut qui fonctionnent mieux
+    # pour les petits marqueurs sur les pièces
     parameters = cv2.aruco.DetectorParameters()
-    parameters.adaptiveThreshWinSizeMin = 3
-    parameters.adaptiveThreshWinSizeMax = 50
-    parameters.adaptiveThreshWinSizeStep = 2
-    parameters.minMarkerPerimeterRate = 0.01
-    parameters.maxMarkerPerimeterRate = 4.0
-    parameters.polygonalApproxAccuracyRate = 0.01
-    parameters.cornerRefinementMethod = cv2.aruco.CORNER_REFINE_CONTOUR
     
     # Créer le détecteur
     detector = cv2.aruco.ArucoDetector(aruco_dict, parameters)
@@ -870,6 +864,9 @@ def detect_chess_pieces(img_np):
     
     if ids is not None:
         for i, marker_id in enumerate(ids.flatten()):
+            # Convertir en int Python natif (numpy.int32/64 peut causer des problèmes)
+            marker_id = int(marker_id)
+            
             # Seulement les pièces (IDs 0-31)
             if marker_id in PIECE_IDS:
                 marker_corners = corners[i][0]
