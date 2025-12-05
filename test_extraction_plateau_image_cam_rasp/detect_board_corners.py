@@ -1029,6 +1029,82 @@ def generate_game_state_json(pieces_list, move_count=0, turn="white"):
     return game_state
 
 
+def draw_detected_pieces_aruco(board_img, pieces_list):
+    """
+    Dessine les ArUcos détectés sur le plateau avec leurs IDs et infos.
+    Montre clairement quels marqueurs ont été détectés.
+    
+    Args:
+        board_img: Image du plateau extrait
+        pieces_list: Liste des pièces détectées
+    
+    Returns:
+        Image annotée avec les ArUcos détectés
+    """
+    if board_img is None:
+        return None
+    
+    img_annotated = board_img.copy()
+    
+    # Détecter à nouveau les ArUcos pour dessiner leurs contours
+    aruco_dict = cv2.aruco.getPredefinedDictionary(ARUCO_DICT)
+    parameters = cv2.aruco.DetectorParameters()
+    detector = cv2.aruco.ArucoDetector(aruco_dict, parameters)
+    corners, ids, rejected = detector.detectMarkers(img_annotated)
+    
+    # Dessiner les contours des marqueurs détectés
+    if ids is not None:
+        cv2.aruco.drawDetectedMarkers(img_annotated, corners, ids)
+    
+    # Ajouter les informations sur chaque pièce
+    for piece in pieces_list:
+        px, py = piece['pixel_center']
+        
+        # Couleur selon la pièce
+        if piece['color'] == 'white':
+            box_color = (255, 255, 255)
+            text_color = (0, 0, 0)
+        else:
+            box_color = (50, 50, 50)
+            text_color = (255, 255, 255)
+        
+        # Dessiner un fond pour le texte
+        info_text = f"ID:{piece['id']} {piece['piece_type'][0]}"
+        if piece['piece_type'] == 'Knight':
+            info_text = f"ID:{piece['id']} N"
+        
+        # Position du texte (en dessous du marqueur)
+        text_x = px - 35
+        text_y = py + 40
+        
+        # Rectangle de fond
+        (text_w, text_h), _ = cv2.getTextSize(info_text, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)
+        cv2.rectangle(img_annotated, (text_x - 2, text_y - text_h - 2), 
+                     (text_x + text_w + 2, text_y + 4), box_color, -1)
+        cv2.rectangle(img_annotated, (text_x - 2, text_y - text_h - 2), 
+                     (text_x + text_w + 2, text_y + 4), (0, 255, 0), 1)
+        
+        # Texte
+        cv2.putText(img_annotated, info_text, (text_x, text_y),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, text_color, 1)
+        
+        # Ligne vers le centre du marqueur
+        cv2.line(img_annotated, (px, py + 20), (text_x + text_w // 2, text_y - text_h - 5),
+                 (0, 255, 0), 1)
+    
+    # Ajouter un titre
+    cv2.putText(img_annotated, f"Pieces ArUco detectees: {len(pieces_list)}", (10, 30),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2)
+    
+    # Légende
+    white_count = len([p for p in pieces_list if p['color'] == 'white'])
+    black_count = len([p for p in pieces_list if p['color'] == 'black'])
+    cv2.putText(img_annotated, f"Blanches: {white_count} | Noires: {black_count}", (10, 60),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.6, (200, 200, 200), 1)
+    
+    return img_annotated
+
+
 def draw_pieces_on_board(board_img, pieces_list):
     """
     Dessine les pièces détectées sur l'image du plateau.
@@ -1177,13 +1253,23 @@ def process_image(image_path):
     img_annotated = draw_visualization(img_np, calibration_markers, board_corners, offset_lines, estimated_codes)
     img_with_panel = draw_info_panel(img_annotated, calibration_markers, board_corners, estimated_codes)
     
-    # Sauvegarder le résultat annoté
-    os.makedirs(OUTPUT_DIR, exist_ok=True)
+    # Créer un dossier pour cette détection
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    output_filename = f"board_detection_{timestamp}.jpg"
-    output_path = os.path.join(OUTPUT_DIR, output_filename)
+    detection_dir = os.path.join(OUTPUT_DIR, f"detection_{timestamp}")
+    os.makedirs(detection_dir, exist_ok=True)
+    print(f"\n📁 Dossier de sortie: {detection_dir}")
+    
+    # 1. Sauvegarder l'image originale
+    original_filename = "1_original.jpg"
+    original_path = os.path.join(detection_dir, original_filename)
+    cv2.imwrite(original_path, img_np)
+    print(f"   💾 1. Image originale: {original_filename}")
+    
+    # 2. Sauvegarder l'image avec détection des coins
+    corners_filename = "2_corners_detection.jpg"
+    output_path = os.path.join(detection_dir, corners_filename)
     cv2.imwrite(output_path, img_with_panel)
-    print(f"\n💾 Résultat annoté sauvegardé: {output_path}")
+    print(f"   💾 2. Détection des coins: {corners_filename}")
     
     # Extraire et sauvegarder l'image du plateau (si 4 coins disponibles)
     board_extracted_path = None
@@ -1191,30 +1277,34 @@ def process_image(image_path):
     board_img = None
     board_img_with_grid = None
     cell_coords = None
+    pieces_detected = []
+    game_state = None
+    json_path = None
+    pieces_path = None
     
     if len(board_corners) == 4:
         print(f"\n🔲 Extraction du plateau...")
         board_img = extract_board(img_np, board_corners)
         if board_img is not None:
-            # Sauvegarder le plateau extrait (sans grille)
-            board_extracted_filename = f"board_extracted_{timestamp}.jpg"
-            board_extracted_path = os.path.join(OUTPUT_DIR, board_extracted_filename)
+            # 3. Sauvegarder le plateau extrait (sans grille)
+            board_extracted_filename = "3_board_extracted.jpg"
+            board_extracted_path = os.path.join(detection_dir, board_extracted_filename)
             cv2.imwrite(board_extracted_path, board_img)
-            print(f"   💾 Plateau extrait sauvegardé: {board_extracted_path}")
-            print(f"   📐 Dimensions: {EXTRACTED_BOARD_SIZE}x{EXTRACTED_BOARD_SIZE} pixels")
+            print(f"   💾 3. Plateau extrait: {board_extracted_filename}")
+            print(f"      📐 Dimensions: {EXTRACTED_BOARD_SIZE}x{EXTRACTED_BOARD_SIZE} pixels")
             
-            # Dessiner la grille 8x8 et sauvegarder
+            # 4. Dessiner la grille 8x8 et sauvegarder
             print(f"\n📊 Création de la grille 8x8...")
             board_img_with_grid = draw_chess_grid(board_img)
-            board_grid_filename = f"board_grid_{timestamp}.jpg"
-            board_grid_path = os.path.join(OUTPUT_DIR, board_grid_filename)
+            board_grid_filename = "4_board_grid.jpg"
+            board_grid_path = os.path.join(detection_dir, board_grid_filename)
             cv2.imwrite(board_grid_path, board_img_with_grid)
-            print(f"   💾 Plateau avec grille sauvegardé: {board_grid_path}")
+            print(f"   💾 4. Plateau avec grille: {board_grid_filename}")
             
             # Calculer les coordonnées des cases
             cell_coords = get_cell_coordinates()
-            print(f"   ✅ 64 cases calculées (a1 à h8)")
-            print(f"   📐 Taille d'une case: {EXTRACTED_BOARD_SIZE // 8}x{EXTRACTED_BOARD_SIZE // 8} pixels")
+            print(f"      ✅ 64 cases calculées (a1 à h8)")
+            print(f"      📐 Taille d'une case: {EXTRACTED_BOARD_SIZE // 8}x{EXTRACTED_BOARD_SIZE // 8} pixels")
             
             # === DÉTECTION DES PIÈCES ===
             print(f"\n♟️  Détection des pièces d'échecs...")
@@ -1227,34 +1317,36 @@ def process_image(image_path):
                           f"({piece['initial_piece']}) à ({piece['x']:.2f}, {piece['y']:.2f}) "
                           f"[{piece['chess_square']}]")
                 
-                # Générer le JSON
-                game_state = generate_game_state_json(pieces_detected)
+                # 5. Image avec les ArUcos des pièces détectées (sur plateau extrait)
+                board_with_aruco = draw_detected_pieces_aruco(board_img.copy(), pieces_detected)
+                aruco_filename = "5_pieces_aruco_detected.jpg"
+                aruco_path = os.path.join(detection_dir, aruco_filename)
+                cv2.imwrite(aruco_path, board_with_aruco)
+                print(f"   💾 5. Pièces ArUco détectées: {aruco_filename}")
                 
-                # Sauvegarder le JSON
-                json_filename = f"game_state_{timestamp}.json"
-                json_path = os.path.join(OUTPUT_DIR, json_filename)
+                # 6. Dessiner les pièces sur l'image de la grille avec coordonnées
+                board_img_with_pieces = draw_pieces_on_board(board_img_with_grid.copy(), pieces_detected)
+                pieces_filename = "6_board_pieces_coords.jpg"
+                pieces_path = os.path.join(detection_dir, pieces_filename)
+                cv2.imwrite(pieces_path, board_img_with_pieces)
+                print(f"   💾 6. Plateau avec pièces et coordonnées: {pieces_filename}")
+                
+                # 7. Générer et sauvegarder le JSON
+                game_state = generate_game_state_json(pieces_detected)
+                json_filename = "game_state.json"
+                json_path = os.path.join(detection_dir, json_filename)
                 with open(json_path, 'w', encoding='utf-8') as f:
                     json.dump(game_state, f, indent=2, ensure_ascii=False)
-                print(f"\n   💾 État du jeu sauvegardé: {json_path}")
-                
-                # Dessiner les pièces sur l'image de la grille
-                board_img_with_pieces = draw_pieces_on_board(board_img_with_grid.copy(), pieces_detected)
-                pieces_filename = f"board_pieces_{timestamp}.jpg"
-                pieces_path = os.path.join(OUTPUT_DIR, pieces_filename)
-                cv2.imwrite(pieces_path, board_img_with_pieces)
-                print(f"   💾 Plateau avec pièces sauvegardé: {pieces_path}")
+                print(f"   💾 7. État du jeu (JSON): {json_filename}")
             else:
                 print(f"   ⚠️  Aucune pièce détectée")
-                pieces_detected = []
-                game_state = None
-                json_path = None
-                pieces_path = None
     
     # Résumé
     print(f"\n{'='*60}")
     print(f"📋 RÉSUMÉ")
     print(f"{'='*60}")
-    print(f"   ArUcos détectés: {len(calibration_markers)}/4")
+    print(f"   📁 Dossier de sortie: {detection_dir}")
+    print(f"   ArUcos calibration détectés: {len(calibration_markers)}/4")
     print(f"   Coins du plateau: {len(board_corners)}/4")
     if estimated_codes:
         print(f"   Coins estimés: {', '.join(estimated_codes)}")
@@ -1266,24 +1358,32 @@ def process_image(image_path):
             if code in board_corners:
                 suffix = " (estimé)" if code in estimated_codes else ""
                 print(f"      {code.replace('CAL_', '')}: ({board_corners[code][0]:.1f}, {board_corners[code][1]:.1f}){suffix}")
-        if board_extracted_path:
-            print(f"\n   🔲 Image plateau extraite: {board_extracted_path}")
-        if board_grid_path:
-            print(f"   📊 Image avec grille: {board_grid_path}")
         
         # Résumé des pièces
-        if 'pieces_detected' in locals() and pieces_detected:
+        if pieces_detected:
             white_pieces = [p for p in pieces_detected if p['color'] == 'white']
             black_pieces = [p for p in pieces_detected if p['color'] == 'black']
             print(f"\n   ♟️  Pièces détectées: {len(pieces_detected)} total")
             print(f"      ⬜ Blanches: {len(white_pieces)}")
             print(f"      ⬛ Noires: {len(black_pieces)}")
-            if 'json_path' in locals() and json_path:
-                print(f"   📄 État du jeu (JSON): {json_path}")
+        
+        # Liste des fichiers générés
+        print(f"\n   📄 Fichiers générés:")
+        print(f"      1. 1_original.jpg - Image originale")
+        print(f"      2. 2_corners_detection.jpg - Détection des coins")
+        if board_extracted_path:
+            print(f"      3. 3_board_extracted.jpg - Plateau extrait")
+        if board_grid_path:
+            print(f"      4. 4_board_grid.jpg - Plateau avec grille")
+        if pieces_detected:
+            print(f"      5. 5_pieces_aruco_detected.jpg - ArUcos pièces détectées")
+            print(f"      6. 6_board_pieces_coords.jpg - Pièces avec coordonnées")
+            print(f"      7. game_state.json - État du jeu")
     else:
         print(f"\n   ⚠️  Plateau incomplet - ajustez les ArUcos ou les paramètres")
     
     return {
+        'detection_dir': detection_dir,
         'calibration_markers': calibration_markers,
         'board_corners': board_corners,
         'estimated_codes': estimated_codes,
@@ -1293,9 +1393,9 @@ def process_image(image_path):
         'board_image': board_img,
         'board_image_with_grid': board_img_with_grid,
         'cell_coordinates': cell_coords,
-        'pieces_detected': pieces_detected if 'pieces_detected' in locals() else [],
-        'game_state': game_state if 'game_state' in locals() else None,
-        'json_path': json_path if 'json_path' in locals() else None
+        'pieces_detected': pieces_detected,
+        'game_state': game_state,
+        'json_path': json_path
     }
 
 
