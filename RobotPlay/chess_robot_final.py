@@ -21,16 +21,30 @@ from datetime import datetime
 ROBOT_IP = "192.168.0.11"
 VITESSE = 0.1
 ACCELERATION = 0.3
-GRIPPER_OUVERTURE = 25
+GRIPPER_OUVERTURE = 50
 DELTA_APPROCHE = 0.03  # 3cm au-dessus pour approche/remontée locale
-DELTA_TRANSIT = 0.08  # 8cm au-dessus pour le trajet entre cases
+DELTA_TRANSIT = 0.20  # 20cm au-dessus pour le trajet entre cases
 DELTA_RELACHE_BASE = 0.004  # 4mm minimum au-dessus pour poser
 
-# Compensation hauteur selon taille pièce
-# Le gripper Hand-E: 0 = fermé complètement, 255 = ouvert max (50mm)
-# Petite pièce (pion) → gripper plus fermé → position basse (~50-80)
-# Grande pièce (roi/dame) → gripper moins fermé → position haute (~100-150)
-HAUTEUR_COMPENSATION_PAR_MM = 0.001  # 1mm de hauteur supplémentaire par mm de diamètre pièce
+# Hauteur de dépose par type de pièce (en mètres)
+# Ajuste ces valeurs selon tes pièces réelles
+HAUTEUR_PIECES = {
+    chess.PAWN: 0.005,  # Pion: +5mm
+    chess.KNIGHT: 0.010,  # Cavalier: +10mm
+    chess.BISHOP: 0.012,  # Fou: +12mm
+    chess.ROOK: 0.008,  # Tour: +8mm
+    chess.QUEEN: 0.015,  # Dame: +15mm
+    chess.KING: 0.018,  # Roi: +18mm
+}
+
+NOMS_PIECES = {
+    chess.PAWN: "Pion",
+    chess.KNIGHT: "Cavalier",
+    chess.BISHOP: "Fou",
+    chess.ROOK: "Tour",
+    chess.QUEEN: "Dame",
+    chess.KING: "Roi",
+}
 
 
 # ============================================================================
@@ -139,7 +153,7 @@ class ChessRobotGame:
         self.rtde_r = None
         self.gripper = None
         self.cases = {}
-        self.hauteur_compensation = 0.005  # Valeur par défaut 5mm
+        self.piece_courante = None  # Type de pièce en cours de déplacement
 
         if not simulate:
             self._init_robot(mapping_file)
@@ -189,14 +203,27 @@ class ChessRobotGame:
         pos[2] += delta_z
         return pos
 
-    def _prendre_piece(self, case):
-        """Prend une pièce sur une case et détecte sa taille"""
+    def _prendre_piece(self, case, piece_type=None):
+        """Prend une pièce sur une case"""
         case = case.lower()
         if case not in self.cases:
             print(f"      ⚠ Case {case} non mappée!")
             return False
 
         tcp = self.cases[case]["tcp"]
+
+        # Identifier la pièce depuis le plateau
+        square = chess.parse_square(case)
+        piece = self.board.piece_at(square)
+
+        if piece:
+            self.piece_courante = piece.piece_type
+            nom = NOMS_PIECES.get(piece.piece_type, "?")
+            hauteur = HAUTEUR_PIECES.get(piece.piece_type, 0.005)
+            print(f"      📏 Pièce: {nom} → hauteur dépose +{hauteur * 1000:.0f}mm")
+        else:
+            self.piece_courante = None
+            print(f"      📏 Pièce non identifiée → hauteur par défaut")
 
         print(f"      → Approche {case.upper()}...")
         self.rtde_c.moveL(self._pos_avec_z(tcp, self.delta_approche), VITESSE, ACCELERATION)
@@ -210,23 +237,6 @@ class ChessRobotGame:
         self.gripper.close()
         time.sleep(0.3)
 
-        # Détecter la taille de la pièce via la position du gripper
-        try:
-            gripper_pos = self.gripper.get_position()  # 0-255
-            # Convertir en mm (Hand-E: 0=fermé, 255=50mm ouvert)
-            diametre_piece_mm = (gripper_pos / 255.0) * 50.0
-
-            # Calculer la compensation de hauteur
-            # Plus la pièce est grosse, plus on monte
-            self.hauteur_compensation = diametre_piece_mm * HAUTEUR_COMPENSATION_PAR_MM
-
-            print(
-                f"      📏 Pièce détectée: ~{diametre_piece_mm:.1f}mm → compensation +{self.hauteur_compensation * 1000:.1f}mm")
-        except:
-            # Si on ne peut pas lire la position, utiliser une valeur par défaut
-            self.hauteur_compensation = 0.005  # 5mm par défaut
-            print(f"      📏 Taille non détectée → compensation par défaut +5mm")
-
         print(f"      → Remontée locale...")
         self.rtde_c.moveL(self._pos_avec_z(tcp, self.delta_approche), VITESSE, ACCELERATION)
         time.sleep(0.1)
@@ -238,7 +248,7 @@ class ChessRobotGame:
         return True
 
     def _poser_piece(self, case):
-        """Pose une pièce sur une case avec compensation de hauteur"""
+        """Pose une pièce sur une case avec hauteur adaptée au type de pièce"""
         case = case.lower()
         if case not in self.cases:
             print(f"      ⚠ Case {case} non mappée!")
@@ -246,8 +256,9 @@ class ChessRobotGame:
 
         tcp = self.cases[case]["tcp"]
 
-        # Calculer la hauteur de relâche avec compensation
-        delta_relache = DELTA_RELACHE_BASE + getattr(self, 'hauteur_compensation', 0.005)
+        # Calculer la hauteur de relâche selon la pièce
+        hauteur_piece = HAUTEUR_PIECES.get(self.piece_courante, 0.005)
+        delta_relache = DELTA_RELACHE_BASE + hauteur_piece
 
         print(f"      → Transit vers {case.upper()}...")
         self.rtde_c.moveL(self._pos_avec_z(tcp, DELTA_TRANSIT), VITESSE, ACCELERATION)
@@ -257,7 +268,7 @@ class ChessRobotGame:
         self.rtde_c.moveL(self._pos_avec_z(tcp, self.delta_approche), VITESSE, ACCELERATION)
         time.sleep(0.1)
 
-        print(f"      → Descente relâche (+{delta_relache * 1000:.1f}mm)...")
+        print(f"      → Descente relâche (+{delta_relache * 1000:.0f}mm)...")
         self.rtde_c.moveL(self._pos_avec_z(tcp, delta_relache), VITESSE, ACCELERATION)
         time.sleep(0.2)
 
