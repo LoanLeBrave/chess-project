@@ -19,6 +19,7 @@ import os
 import sys
 import subprocess
 import shutil
+import json
 from datetime import datetime
 
 # ============================================================
@@ -66,6 +67,74 @@ CALIBRATION_IDS = {
     34: 'CAL_BL',  # Bottom-Left (Bas-Gauche)
     35: 'CAL_BR',  # Bottom-Right (Bas-Droite)
 }
+
+# ============================================================
+# CONFIGURATION DES PIÈCES D'ÉCHECS (ArUcos IDs 0-31)
+# ============================================================
+# Pièces blanches: IDs 0-15
+# Pièces noires: IDs 16-31
+#
+# Convention:
+#   - Pions: 0-7 (blanc), 16-23 (noir) -> Pawn_A à Pawn_H
+#   - Tours: 8, 9 (blanc), 24, 25 (noir) -> Rook_A, Rook_H
+#   - Cavaliers: 10, 11 (blanc), 26, 27 (noir) -> Knight_B, Knight_G
+#   - Fous: 12, 13 (blanc), 28, 29 (noir) -> Bishop_C, Bishop_F
+#   - Dame: 14 (blanc), 30 (noir) -> Queen
+#   - Roi: 15 (blanc), 31 (noir) -> King
+
+PIECE_IDS = {
+    # Pièces blanches
+    0: {'color': 'white', 'piece_type': 'Pawn', 'initial_piece': 'Pawn_A'},
+    1: {'color': 'white', 'piece_type': 'Pawn', 'initial_piece': 'Pawn_B'},
+    2: {'color': 'white', 'piece_type': 'Pawn', 'initial_piece': 'Pawn_C'},
+    3: {'color': 'white', 'piece_type': 'Pawn', 'initial_piece': 'Pawn_D'},
+    4: {'color': 'white', 'piece_type': 'Pawn', 'initial_piece': 'Pawn_E'},
+    5: {'color': 'white', 'piece_type': 'Pawn', 'initial_piece': 'Pawn_F'},
+    6: {'color': 'white', 'piece_type': 'Pawn', 'initial_piece': 'Pawn_G'},
+    7: {'color': 'white', 'piece_type': 'Pawn', 'initial_piece': 'Pawn_H'},
+    8: {'color': 'white', 'piece_type': 'Rook', 'initial_piece': 'Rook_A'},
+    9: {'color': 'white', 'piece_type': 'Rook', 'initial_piece': 'Rook_H'},
+    10: {'color': 'white', 'piece_type': 'Knight', 'initial_piece': 'Knight_B'},
+    11: {'color': 'white', 'piece_type': 'Knight', 'initial_piece': 'Knight_G'},
+    12: {'color': 'white', 'piece_type': 'Bishop', 'initial_piece': 'Bishop_C'},
+    13: {'color': 'white', 'piece_type': 'Bishop', 'initial_piece': 'Bishop_F'},
+    14: {'color': 'white', 'piece_type': 'Queen', 'initial_piece': 'Queen'},
+    15: {'color': 'white', 'piece_type': 'King', 'initial_piece': 'King'},
+    # Pièces noires
+    16: {'color': 'black', 'piece_type': 'Pawn', 'initial_piece': 'Pawn_A'},
+    17: {'color': 'black', 'piece_type': 'Pawn', 'initial_piece': 'Pawn_B'},
+    18: {'color': 'black', 'piece_type': 'Pawn', 'initial_piece': 'Pawn_C'},
+    19: {'color': 'black', 'piece_type': 'Pawn', 'initial_piece': 'Pawn_D'},
+    20: {'color': 'black', 'piece_type': 'Pawn', 'initial_piece': 'Pawn_E'},
+    21: {'color': 'black', 'piece_type': 'Pawn', 'initial_piece': 'Pawn_F'},
+    22: {'color': 'black', 'piece_type': 'Pawn', 'initial_piece': 'Pawn_G'},
+    23: {'color': 'black', 'piece_type': 'Pawn', 'initial_piece': 'Pawn_H'},
+    24: {'color': 'black', 'piece_type': 'Rook', 'initial_piece': 'Rook_A'},
+    25: {'color': 'black', 'piece_type': 'Rook', 'initial_piece': 'Rook_H'},
+    26: {'color': 'black', 'piece_type': 'Knight', 'initial_piece': 'Knight_B'},
+    27: {'color': 'black', 'piece_type': 'Knight', 'initial_piece': 'Knight_G'},
+    28: {'color': 'black', 'piece_type': 'Bishop', 'initial_piece': 'Bishop_C'},
+    29: {'color': 'black', 'piece_type': 'Bishop', 'initial_piece': 'Bishop_F'},
+    30: {'color': 'black', 'piece_type': 'Queen', 'initial_piece': 'Queen'},
+    31: {'color': 'black', 'piece_type': 'King', 'initial_piece': 'King'},
+}
+
+# ============================================================
+# REPÈRE DE COORDONNÉES
+# ============================================================
+# Le plateau est mappé sur un repère avec:
+#   - Centre à (0, 0)
+#   - Top-Right: (+10, +10)
+#   - Top-Left: (-10, +10)
+#   - Bottom-Right: (+10, -10)
+#   - Bottom-Left: (-10, -10)
+#
+# Colonne A = x proche de -10, Colonne H = x proche de +10
+# Rangée 1 = y proche de -10, Rangée 8 = y proche de +10
+
+BOARD_COORD_MIN = -10
+BOARD_COORD_MAX = 10
+BOARD_COORD_RANGE = BOARD_COORD_MAX - BOARD_COORD_MIN  # 20
 
 # ============================================================
 # OFFSETS DE CALIBRATION
@@ -759,6 +828,248 @@ def get_cell_at_position(x, y, board_size=EXTRACTED_BOARD_SIZE):
     return None
 
 
+# ============================================================
+# DÉTECTION DES PIÈCES D'ÉCHECS
+# ============================================================
+def detect_chess_pieces(img_np):
+    """
+    Détecte les pièces d'échecs via leurs marqueurs ArUco (IDs 0-31).
+    
+    Args:
+        img_np: Image numpy (BGR)
+    
+    Returns:
+        dict: {id: {'center': (x, y), 'corners': [...], 'piece_info': {...}}}
+    """
+    # Conversion en niveaux de gris
+    if len(img_np.shape) == 3:
+        gray = cv2.cvtColor(img_np, cv2.COLOR_BGR2GRAY)
+    else:
+        gray = img_np
+    
+    # Charger le dictionnaire ArUco
+    aruco_dict = cv2.aruco.getPredefinedDictionary(ARUCO_DICT)
+    
+    # Paramètres de détection
+    parameters = cv2.aruco.DetectorParameters()
+    parameters.adaptiveThreshWinSizeMin = 3
+    parameters.adaptiveThreshWinSizeMax = 50
+    parameters.adaptiveThreshWinSizeStep = 2
+    parameters.minMarkerPerimeterRate = 0.01
+    parameters.maxMarkerPerimeterRate = 4.0
+    parameters.polygonalApproxAccuracyRate = 0.01
+    parameters.cornerRefinementMethod = cv2.aruco.CORNER_REFINE_CONTOUR
+    
+    # Créer le détecteur
+    detector = cv2.aruco.ArucoDetector(aruco_dict, parameters)
+    
+    # Détecter les marqueurs
+    corners, ids, rejected = detector.detectMarkers(gray)
+    
+    pieces = {}
+    
+    if ids is not None:
+        for i, marker_id in enumerate(ids.flatten()):
+            # Seulement les pièces (IDs 0-31)
+            if marker_id in PIECE_IDS:
+                marker_corners = corners[i][0]
+                
+                # Centre du marqueur
+                center_x = sum(c[0] for c in marker_corners) / 4
+                center_y = sum(c[1] for c in marker_corners) / 4
+                
+                pieces[marker_id] = {
+                    'center': (center_x, center_y),
+                    'corners': marker_corners,
+                    'piece_info': PIECE_IDS[marker_id]
+                }
+    
+    return pieces
+
+
+def pixel_to_board_coords(pixel_x, pixel_y, board_size=EXTRACTED_BOARD_SIZE):
+    """
+    Convertit des coordonnées pixels (dans l'image du plateau extrait)
+    en coordonnées du repère de jeu (-10 à +10).
+    
+    Convention:
+        - Pixel (0, 0) = coin Top-Left du plateau = (-10, +10)
+        - Pixel (board_size, 0) = coin Top-Right = (+10, +10)
+        - Pixel (0, board_size) = coin Bottom-Left = (-10, -10)
+        - Pixel (board_size, board_size) = coin Bottom-Right = (+10, -10)
+    
+    Args:
+        pixel_x, pixel_y: Coordonnées en pixels
+        board_size: Taille de l'image du plateau
+    
+    Returns:
+        tuple: (x, y) dans le repère -10 à +10
+    """
+    # Normaliser les pixels (0 à 1)
+    norm_x = pixel_x / board_size
+    norm_y = pixel_y / board_size
+    
+    # Convertir en coordonnées du repère
+    # X: 0 -> -10, 1 -> +10
+    coord_x = BOARD_COORD_MIN + norm_x * BOARD_COORD_RANGE
+    
+    # Y: 0 -> +10 (haut), 1 -> -10 (bas) - INVERSÉ car Y pixel augmente vers le bas
+    coord_y = BOARD_COORD_MAX - norm_y * BOARD_COORD_RANGE
+    
+    return (round(coord_x, 2), round(coord_y, 2))
+
+
+def get_chess_notation_from_coords(x, y):
+    """
+    Convertit des coordonnées du repère (-10 à +10) en notation d'échecs.
+    
+    Args:
+        x, y: Coordonnées dans le repère
+    
+    Returns:
+        str: Notation d'échecs (ex: 'e4') ou None si hors plateau
+    """
+    # Convertir X en colonne (a-h)
+    # X va de -10 (colonne a) à +10 (colonne h)
+    col_idx = int((x - BOARD_COORD_MIN) / BOARD_COORD_RANGE * 8)
+    col_idx = max(0, min(7, col_idx))
+    
+    # Convertir Y en rangée (1-8)
+    # Y va de -10 (rangée 1) à +10 (rangée 8)
+    row_idx = int((y - BOARD_COORD_MIN) / BOARD_COORD_RANGE * 8)
+    row_idx = max(0, min(7, row_idx))
+    
+    columns = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h']
+    rows = ['1', '2', '3', '4', '5', '6', '7', '8']
+    
+    return f"{columns[col_idx]}{rows[row_idx]}"
+
+
+def detect_pieces_on_board(board_img, original_img, board_corners):
+    """
+    Détecte les pièces sur le plateau extrait et calcule leurs coordonnées.
+    
+    Args:
+        board_img: Image du plateau extrait (redressé)
+        original_img: Image originale
+        board_corners: Coins du plateau dans l'image originale
+    
+    Returns:
+        list: Liste des pièces détectées avec leurs coordonnées
+    """
+    if board_img is None:
+        return []
+    
+    # Détecter les pièces sur l'image du plateau extrait
+    pieces = detect_chess_pieces(board_img)
+    
+    pieces_list = []
+    
+    for marker_id, piece_data in pieces.items():
+        pixel_x, pixel_y = piece_data['center']
+        piece_info = piece_data['piece_info']
+        
+        # Convertir en coordonnées du repère
+        coord_x, coord_y = pixel_to_board_coords(pixel_x, pixel_y)
+        
+        # Obtenir la case d'échecs
+        chess_square = get_cell_at_position(pixel_x, pixel_y)
+        
+        pieces_list.append({
+            'id': marker_id,
+            'color': piece_info['color'],
+            'piece_type': piece_info['piece_type'],
+            'x': coord_x,
+            'y': coord_y,
+            'initial_piece': piece_info['initial_piece'],
+            'chess_square': chess_square,
+            'pixel_center': (int(pixel_x), int(pixel_y))
+        })
+    
+    return pieces_list
+
+
+def generate_game_state_json(pieces_list, move_count=0, turn="white"):
+    """
+    Génère le JSON de l'état du jeu.
+    
+    Args:
+        pieces_list: Liste des pièces détectées
+        move_count: Nombre de coups joués
+        turn: Joueur dont c'est le tour ('white' ou 'black')
+    
+    Returns:
+        dict: État du jeu au format JSON
+    """
+    # Formater les coordonnées pour le JSON
+    coordinates = []
+    for piece in pieces_list:
+        coordinates.append({
+            'id': piece['id'],
+            'color': piece['color'],
+            'piece_type': piece['piece_type'],
+            'x': piece['x'],
+            'y': piece['y'],
+            'initial_piece': piece['initial_piece']
+        })
+    
+    # Trier par ID pour un affichage cohérent
+    coordinates.sort(key=lambda p: p['id'])
+    
+    game_state = {
+        'coordinates': coordinates,
+        'game_metadata': {
+            'turn': turn,
+            'move_count': move_count,
+            'pieces_detected': len(coordinates),
+            'timestamp': datetime.now().isoformat()
+        }
+    }
+    
+    return game_state
+
+
+def draw_pieces_on_board(board_img, pieces_list):
+    """
+    Dessine les pièces détectées sur l'image du plateau.
+    
+    Args:
+        board_img: Image du plateau
+        pieces_list: Liste des pièces
+    
+    Returns:
+        Image annotée
+    """
+    if board_img is None:
+        return None
+    
+    img_annotated = board_img.copy()
+    
+    for piece in pieces_list:
+        px, py = piece['pixel_center']
+        color_bgr = (255, 255, 255) if piece['color'] == 'white' else (0, 0, 0)
+        outline_color = (0, 0, 0) if piece['color'] == 'white' else (255, 255, 255)
+        
+        # Cercle pour la pièce
+        cv2.circle(img_annotated, (px, py), 25, outline_color, 3)
+        cv2.circle(img_annotated, (px, py), 22, color_bgr, -1)
+        
+        # Texte de la pièce
+        text = piece['piece_type'][0]  # Première lettre
+        if piece['piece_type'] == 'Knight':
+            text = 'N'  # Knight = N en notation
+        
+        cv2.putText(img_annotated, text, (px - 8, py + 8),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, outline_color, 2)
+        
+        # Coordonnées
+        coord_text = f"({piece['x']:.1f},{piece['y']:.1f})"
+        cv2.putText(img_annotated, coord_text, (px - 30, py + 45),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.35, (255, 200, 0), 1)
+    
+    return img_annotated
+
+
 def draw_info_panel(img_np, calibration_markers, board_corners, estimated_codes):
     """
     Ajoute un panneau d'information sur l'image
@@ -904,6 +1215,40 @@ def process_image(image_path):
             cell_coords = get_cell_coordinates()
             print(f"   ✅ 64 cases calculées (a1 à h8)")
             print(f"   📐 Taille d'une case: {EXTRACTED_BOARD_SIZE // 8}x{EXTRACTED_BOARD_SIZE // 8} pixels")
+            
+            # === DÉTECTION DES PIÈCES ===
+            print(f"\n♟️  Détection des pièces d'échecs...")
+            pieces_detected = detect_pieces_on_board(board_img, img_np, board_corners)
+            
+            if pieces_detected:
+                print(f"   ✅ {len(pieces_detected)} pièce(s) détectée(s):")
+                for piece in pieces_detected:
+                    print(f"      ID {piece['id']}: {piece['color']} {piece['piece_type']} "
+                          f"({piece['initial_piece']}) à ({piece['x']:.2f}, {piece['y']:.2f}) "
+                          f"[{piece['chess_square']}]")
+                
+                # Générer le JSON
+                game_state = generate_game_state_json(pieces_detected)
+                
+                # Sauvegarder le JSON
+                json_filename = f"game_state_{timestamp}.json"
+                json_path = os.path.join(OUTPUT_DIR, json_filename)
+                with open(json_path, 'w', encoding='utf-8') as f:
+                    json.dump(game_state, f, indent=2, ensure_ascii=False)
+                print(f"\n   💾 État du jeu sauvegardé: {json_path}")
+                
+                # Dessiner les pièces sur l'image de la grille
+                board_img_with_pieces = draw_pieces_on_board(board_img_with_grid.copy(), pieces_detected)
+                pieces_filename = f"board_pieces_{timestamp}.jpg"
+                pieces_path = os.path.join(OUTPUT_DIR, pieces_filename)
+                cv2.imwrite(pieces_path, board_img_with_pieces)
+                print(f"   💾 Plateau avec pièces sauvegardé: {pieces_path}")
+            else:
+                print(f"   ⚠️  Aucune pièce détectée")
+                pieces_detected = []
+                game_state = None
+                json_path = None
+                pieces_path = None
     
     # Résumé
     print(f"\n{'='*60}")
@@ -925,6 +1270,16 @@ def process_image(image_path):
             print(f"\n   🔲 Image plateau extraite: {board_extracted_path}")
         if board_grid_path:
             print(f"   📊 Image avec grille: {board_grid_path}")
+        
+        # Résumé des pièces
+        if 'pieces_detected' in locals() and pieces_detected:
+            white_pieces = [p for p in pieces_detected if p['color'] == 'white']
+            black_pieces = [p for p in pieces_detected if p['color'] == 'black']
+            print(f"\n   ♟️  Pièces détectées: {len(pieces_detected)} total")
+            print(f"      ⬜ Blanches: {len(white_pieces)}")
+            print(f"      ⬛ Noires: {len(black_pieces)}")
+            if 'json_path' in locals() and json_path:
+                print(f"   📄 État du jeu (JSON): {json_path}")
     else:
         print(f"\n   ⚠️  Plateau incomplet - ajustez les ArUcos ou les paramètres")
     
@@ -937,7 +1292,10 @@ def process_image(image_path):
         'board_grid_path': board_grid_path,
         'board_image': board_img,
         'board_image_with_grid': board_img_with_grid,
-        'cell_coordinates': cell_coords
+        'cell_coordinates': cell_coords,
+        'pieces_detected': pieces_detected if 'pieces_detected' in locals() else [],
+        'game_state': game_state if 'game_state' in locals() else None,
+        'json_path': json_path if 'json_path' in locals() else None
     }
 
 
