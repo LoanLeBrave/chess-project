@@ -21,9 +21,16 @@ from datetime import datetime
 ROBOT_IP = "192.168.0.11"
 VITESSE = 0.1
 ACCELERATION = 0.3
-GRIPPER_OUVERTURE = 30
-DELTA_APPROCHE = 0.08  # 8cm au-dessus (était 3cm, +10mm)
-DELTA_RELACHE = 0.010  # 8mm au-dessus pour poser (était 2mm, +2mm)
+GRIPPER_OUVERTURE = 25
+DELTA_APPROCHE = 0.03  # 3cm au-dessus pour approche/remontée locale
+DELTA_TRANSIT = 0.08  # 8cm au-dessus pour le trajet entre cases
+DELTA_RELACHE_BASE = 0.004  # 4mm minimum au-dessus pour poser
+
+# Compensation hauteur selon taille pièce
+# Le gripper Hand-E: 0 = fermé complètement, 255 = ouvert max (50mm)
+# Petite pièce (pion) → gripper plus fermé → position basse (~50-80)
+# Grande pièce (roi/dame) → gripper moins fermé → position haute (~100-150)
+HAUTEUR_COMPENSATION_PAR_MM = 0.001  # 1mm de hauteur supplémentaire par mm de diamètre pièce
 
 
 # ============================================================================
@@ -132,6 +139,7 @@ class ChessRobotGame:
         self.rtde_r = None
         self.gripper = None
         self.cases = {}
+        self.hauteur_compensation = 0.005  # Valeur par défaut 5mm
 
         if not simulate:
             self._init_robot(mapping_file)
@@ -182,7 +190,7 @@ class ChessRobotGame:
         return pos
 
     def _prendre_piece(self, case):
-        """Prend une pièce sur une case"""
+        """Prend une pièce sur une case et détecte sa taille"""
         case = case.lower()
         if case not in self.cases:
             print(f"      ⚠ Case {case} non mappée!")
@@ -202,14 +210,35 @@ class ChessRobotGame:
         self.gripper.close()
         time.sleep(0.3)
 
-        print(f"      → Remontée...")
+        # Détecter la taille de la pièce via la position du gripper
+        try:
+            gripper_pos = self.gripper.get_position()  # 0-255
+            # Convertir en mm (Hand-E: 0=fermé, 255=50mm ouvert)
+            diametre_piece_mm = (gripper_pos / 255.0) * 50.0
+
+            # Calculer la compensation de hauteur
+            # Plus la pièce est grosse, plus on monte
+            self.hauteur_compensation = diametre_piece_mm * HAUTEUR_COMPENSATION_PAR_MM
+
+            print(
+                f"      📏 Pièce détectée: ~{diametre_piece_mm:.1f}mm → compensation +{self.hauteur_compensation * 1000:.1f}mm")
+        except:
+            # Si on ne peut pas lire la position, utiliser une valeur par défaut
+            self.hauteur_compensation = 0.005  # 5mm par défaut
+            print(f"      📏 Taille non détectée → compensation par défaut +5mm")
+
+        print(f"      → Remontée locale...")
         self.rtde_c.moveL(self._pos_avec_z(tcp, self.delta_approche), VITESSE, ACCELERATION)
+        time.sleep(0.1)
+
+        print(f"      → Montée transit...")
+        self.rtde_c.moveL(self._pos_avec_z(tcp, DELTA_TRANSIT), VITESSE, ACCELERATION)
         time.sleep(0.2)
 
         return True
 
     def _poser_piece(self, case):
-        """Pose une pièce sur une case"""
+        """Pose une pièce sur une case avec compensation de hauteur"""
         case = case.lower()
         if case not in self.cases:
             print(f"      ⚠ Case {case} non mappée!")
@@ -217,12 +246,19 @@ class ChessRobotGame:
 
         tcp = self.cases[case]["tcp"]
 
-        print(f"      → Approche {case.upper()}...")
-        self.rtde_c.moveL(self._pos_avec_z(tcp, self.delta_approche), VITESSE, ACCELERATION)
+        # Calculer la hauteur de relâche avec compensation
+        delta_relache = DELTA_RELACHE_BASE + getattr(self, 'hauteur_compensation', 0.005)
+
+        print(f"      → Transit vers {case.upper()}...")
+        self.rtde_c.moveL(self._pos_avec_z(tcp, DELTA_TRANSIT), VITESSE, ACCELERATION)
         time.sleep(0.2)
 
-        print(f"      → Descente (relâche)...")
-        self.rtde_c.moveL(self._pos_avec_z(tcp, self.delta_relache), VITESSE, ACCELERATION)
+        print(f"      → Descente approche...")
+        self.rtde_c.moveL(self._pos_avec_z(tcp, self.delta_approche), VITESSE, ACCELERATION)
+        time.sleep(0.1)
+
+        print(f"      → Descente relâche (+{delta_relache * 1000:.1f}mm)...")
+        self.rtde_c.moveL(self._pos_avec_z(tcp, delta_relache), VITESSE, ACCELERATION)
         time.sleep(0.2)
 
         print(f"      → Ouverture gripper...")
