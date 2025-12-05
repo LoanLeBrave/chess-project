@@ -976,11 +976,11 @@ def detect_pieces_on_board(board_img, original_img, board_corners):
         chess_square = get_cell_at_position(pixel_x, pixel_y)
         
         pieces_list.append({
-            'id': marker_id,
+            'id': int(marker_id),  # Convertir numpy.int32 en int Python
             'color': piece_info['color'],
             'piece_type': piece_info['piece_type'],
-            'x': coord_x,
-            'y': coord_y,
+            'x': float(coord_x),  # Convertir numpy.float en float Python
+            'y': float(coord_y),
             'initial_piece': piece_info['initial_piece'],
             'chess_square': chess_square,
             'pixel_center': (int(pixel_x), int(pixel_y))
