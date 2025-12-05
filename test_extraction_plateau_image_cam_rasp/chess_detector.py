@@ -561,33 +561,120 @@ def analyze_board(image_path=None, image_np=None):
     }
 
 
-def capture_and_analyze():
-    """Capture une photo avec la caméra Raspberry Pi et analyse."""
+# ============================================================
+# CAPTURE CAMÉRA (même logique que detect_board_corners.py)
+# ============================================================
+
+def _check_rpicam_available():
+    """Vérifie si rpicam-still est disponible"""
+    import shutil
+    return shutil.which('rpicam-still') is not None or shutil.which('libcamera-still') is not None
+
+
+def _check_picamera2_available():
+    """Vérifie si Picamera2 est disponible"""
     try:
         from picamera2 import Picamera2
-        import time
-        
-        print("📷 Initialisation de la caméra...")
-        picam2 = Picamera2()
-        config = picam2.create_still_configuration(main={"size": (4056, 3040)})
-        picam2.configure(config)
-        picam2.start()
-        
-        print("   ⏳ Stabilisation...")
-        time.sleep(1)
-        
-        print("   📸 Capture...")
-        img = picam2.capture_array()
-        picam2.stop()
-        
-        # Convertir RGB -> BGR pour OpenCV
-        img_bgr = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
-        
-        return analyze_board(image_np=img_bgr)
-        
+        return True
     except ImportError:
-        print("❌ picamera2 non disponible (pas sur Raspberry Pi?)")
+        return False
+
+
+def _capture_with_rpicam(filepath):
+    """Capture avec rpicam-still (ligne de commande)"""
+    import subprocess
+    import shutil
+    
+    # Déterminer la commande disponible
+    if shutil.which('rpicam-still'):
+        cmd = 'rpicam-still'
+    else:
+        cmd = 'libcamera-still'
+    
+    print(f"   🎥 Mode caméra: {cmd}")
+    
+    # Construire la commande
+    args = [cmd, '-o', filepath, '-n', '--immediate']
+    
+    try:
+        result = subprocess.run(args, capture_output=True, text=True, timeout=30)
+        if result.returncode != 0:
+            raise RuntimeError(f"{cmd} a échoué: {result.stderr}")
+        print(f"   ✅ Capture terminée")
+    except subprocess.TimeoutExpired:
+        raise RuntimeError(f"{cmd} timeout après 30 secondes")
+
+
+def _capture_with_picamera2(filepath):
+    """Capture avec Picamera2 (Python)"""
+    from picamera2 import Picamera2
+    import time
+    
+    print("   🎥 Mode caméra: Picamera2")
+    print("   🔄 Initialisation...")
+    picam2 = Picamera2()
+    config = picam2.create_still_configuration()
+    picam2.configure(config)
+    print("   🔄 Démarrage...")
+    picam2.start()
+    print("   ⏳ Stabilisation (2s)...")
+    time.sleep(2)
+    print("   📸 Capture...")
+    picam2.capture_file(filepath)
+    picam2.stop()
+    picam2.close()
+    print("   ✅ Capture terminée")
+
+
+def capture_photo(filepath=None):
+    """
+    Capture une photo avec la caméra disponible.
+    
+    Args:
+        filepath: Chemin où sauvegarder l'image (optionnel)
+    
+    Returns:
+        str: Chemin de l'image capturée ou None si échec
+    """
+    import tempfile
+    
+    if filepath is None:
+        filepath = os.path.join(OUTPUT_DIR, "capture_temp.jpg")
+    
+    os.makedirs(os.path.dirname(filepath), exist_ok=True)
+    
+    print("📷 Capture de photo...")
+    
+    # Essayer rpicam-still d'abord (plus fiable sur Raspberry Pi)
+    if _check_rpicam_available():
+        try:
+            _capture_with_rpicam(filepath)
+            return filepath
+        except Exception as e:
+            print(f"   ⚠️ Erreur rpicam: {e}")
+    
+    # Essayer Picamera2
+    if _check_picamera2_available():
+        try:
+            _capture_with_picamera2(filepath)
+            return filepath
+        except Exception as e:
+            print(f"   ⚠️ Erreur Picamera2: {e}")
+    
+    print("❌ Aucune caméra disponible")
+    return None
+
+
+def capture_and_analyze():
+    """Capture une photo et analyse le plateau."""
+    # Capturer la photo
+    photo_path = capture_photo()
+    
+    if photo_path is None:
         return None
+    
+    # Analyser
+    return analyze_board(image_path=photo_path)
 
 
 # ============================================================
