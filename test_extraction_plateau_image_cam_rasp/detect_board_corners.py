@@ -1029,7 +1029,7 @@ def generate_game_state_json(pieces_list, move_count=0, turn="white"):
 def generate_board_state_json(pieces_list):
     """
     Génère le JSON de l'état du plateau avec les positions en notation échecs.
-    Format: liste plate [case, pièce, case, pièce, ...]
+    Format: objet {"board": {"a8": "BR", "b8": "BN", ...}}
     
     Pièces:
         - W = White, B = Black
@@ -1062,18 +1062,16 @@ def generate_board_state_json(pieces_list):
             piece_code = piece_codes.get(piece['piece_type'], '?')
             pieces_on_board[square.lower()] = f"{color_code}{piece_code}"
     
-    # Générer la liste plate pour toutes les cases (a8 à h1)
-    board = []
+    # Générer le dictionnaire pour toutes les cases (a8 à h1)
+    board = {}
     columns = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h']
     rows = ['8', '7', '6', '5', '4', '3', '2', '1']  # Du haut vers le bas
     
     for row in rows:
         for col in columns:
             square = f"{col}{row}"
-            board.append(square)
             # Ajouter la pièce ou null si case vide
-            piece_code = pieces_on_board.get(square, None)
-            board.append(piece_code)
+            board[square] = pieces_on_board.get(square, None)
     
     return {'board': board}
 
