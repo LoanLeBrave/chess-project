@@ -97,7 +97,18 @@ def analyze_board(image_path=None, image_np=None):
     # 1. Détecter les marqueurs de calibration
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
     aruco_dict = cv2.aruco.getPredefinedDictionary(ARUCO_DICT)
-    detector = cv2.aruco.ArucoDetector(aruco_dict, cv2.aruco.DetectorParameters())
+    
+    # Paramètres de détection optimisés (comme dans detect_board_corners.py)
+    parameters = cv2.aruco.DetectorParameters()
+    parameters.adaptiveThreshWinSizeMin = 3
+    parameters.adaptiveThreshWinSizeMax = 50
+    parameters.adaptiveThreshWinSizeStep = 2
+    parameters.minMarkerPerimeterRate = 0.01
+    parameters.maxMarkerPerimeterRate = 4.0
+    parameters.polygonalApproxAccuracyRate = 0.01
+    parameters.cornerRefinementMethod = cv2.aruco.CORNER_REFINE_CONTOUR
+    
+    detector = cv2.aruco.ArucoDetector(aruco_dict, parameters)
     corners, ids, _ = detector.detectMarkers(gray)
     
     if ids is None:
