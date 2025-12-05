@@ -1029,6 +1029,13 @@ def generate_game_state_json(pieces_list, move_count=0, turn="white"):
 def generate_board_state_json(pieces_list):
     """
     Génère le JSON de l'état du plateau avec les positions en notation échecs.
+    Format: liste plate [case, pièce, case, pièce, ...]
+    
+    Pièces:
+        - W = White, B = Black
+        - K = King, Q = Queen, R = Rook, B = Bishop, N = Knight, P = Pawn
+        - Exemples: "WK" = White King, "BP" = Black Pawn
+        - null = case vide
     
     Args:
         pieces_list: Liste des pièces détectées
@@ -1036,51 +1043,39 @@ def generate_board_state_json(pieces_list):
     Returns:
         dict: État du plateau au format JSON
     """
-    # Créer une représentation du plateau
-    board = {}
-    white_pieces = []
-    black_pieces = []
+    # Mapping des types de pièces vers les codes
+    piece_codes = {
+        'King': 'K',
+        'Queen': 'Q',
+        'Rook': 'R',
+        'Bishop': 'B',
+        'Knight': 'N',
+        'Pawn': 'P'
+    }
     
+    # Créer un dictionnaire case -> code pièce
+    pieces_on_board = {}
     for piece in pieces_list:
         square = piece['chess_square']
         if square:
-            piece_info = {
-                'id': piece['id'],
-                'piece_type': piece['piece_type'],
-                'initial_piece': piece['initial_piece'],
-                'square': square.upper()  # A1, B2, etc.
-            }
-            
-            # Ajouter à la liste par couleur
-            if piece['color'] == 'white':
-                white_pieces.append(piece_info)
-            else:
-                black_pieces.append(piece_info)
-            
-            # Ajouter au plateau (case -> pièce)
-            board[square.upper()] = {
-                'color': piece['color'],
-                'piece_type': piece['piece_type'],
-                'id': piece['id']
-            }
+            color_code = 'W' if piece['color'] == 'white' else 'B'
+            piece_code = piece_codes.get(piece['piece_type'], '?')
+            pieces_on_board[square.lower()] = f"{color_code}{piece_code}"
     
-    # Trier les pièces par case
-    white_pieces.sort(key=lambda p: p['square'])
-    black_pieces.sort(key=lambda p: p['square'])
+    # Générer la liste plate pour toutes les cases (a8 à h1)
+    board = []
+    columns = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h']
+    rows = ['8', '7', '6', '5', '4', '3', '2', '1']  # Du haut vers le bas
     
-    board_state = {
-        'board': board,
-        'white_pieces': white_pieces,
-        'black_pieces': black_pieces,
-        'summary': {
-            'total_pieces': len(pieces_list),
-            'white_count': len(white_pieces),
-            'black_count': len(black_pieces),
-            'timestamp': datetime.now().isoformat()
-        }
-    }
+    for row in rows:
+        for col in columns:
+            square = f"{col}{row}"
+            board.append(square)
+            # Ajouter la pièce ou null si case vide
+            piece_code = pieces_on_board.get(square, None)
+            board.append(piece_code)
     
-    return board_state
+    return {'board': board}
 
 
 def draw_detected_pieces_aruco(board_img, pieces_list):
