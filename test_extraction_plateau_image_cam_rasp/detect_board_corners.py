@@ -1026,6 +1026,63 @@ def generate_game_state_json(pieces_list, move_count=0, turn="white"):
     return game_state
 
 
+def generate_board_state_json(pieces_list):
+    """
+    Génère le JSON de l'état du plateau avec les positions en notation échecs.
+    
+    Args:
+        pieces_list: Liste des pièces détectées
+    
+    Returns:
+        dict: État du plateau au format JSON
+    """
+    # Créer une représentation du plateau
+    board = {}
+    white_pieces = []
+    black_pieces = []
+    
+    for piece in pieces_list:
+        square = piece['chess_square']
+        if square:
+            piece_info = {
+                'id': piece['id'],
+                'piece_type': piece['piece_type'],
+                'initial_piece': piece['initial_piece'],
+                'square': square.upper()  # A1, B2, etc.
+            }
+            
+            # Ajouter à la liste par couleur
+            if piece['color'] == 'white':
+                white_pieces.append(piece_info)
+            else:
+                black_pieces.append(piece_info)
+            
+            # Ajouter au plateau (case -> pièce)
+            board[square.upper()] = {
+                'color': piece['color'],
+                'piece_type': piece['piece_type'],
+                'id': piece['id']
+            }
+    
+    # Trier les pièces par case
+    white_pieces.sort(key=lambda p: p['square'])
+    black_pieces.sort(key=lambda p: p['square'])
+    
+    board_state = {
+        'board': board,
+        'white_pieces': white_pieces,
+        'black_pieces': black_pieces,
+        'summary': {
+            'total_pieces': len(pieces_list),
+            'white_count': len(white_pieces),
+            'black_count': len(black_pieces),
+            'timestamp': datetime.now().isoformat()
+        }
+    }
+    
+    return board_state
+
+
 def draw_detected_pieces_aruco(board_img, pieces_list):
     """
     Dessine les ArUcos détectés sur le plateau avec leurs IDs et infos.
@@ -1328,13 +1385,21 @@ def process_image(image_path):
                 cv2.imwrite(pieces_path, board_img_with_pieces)
                 print(f"   💾 6. Plateau avec pièces et coordonnées: {pieces_filename}")
                 
-                # 7. Générer et sauvegarder le JSON
+                # 7. Générer et sauvegarder le JSON des coordonnées
                 game_state = generate_game_state_json(pieces_detected)
                 json_filename = "game_state.json"
                 json_path = os.path.join(detection_dir, json_filename)
                 with open(json_path, 'w', encoding='utf-8') as f:
                     json.dump(game_state, f, indent=2, ensure_ascii=False)
-                print(f"   💾 7. État du jeu (JSON): {json_filename}")
+                print(f"   💾 7. Coordonnées pièces (JSON): {json_filename}")
+                
+                # 8. Générer et sauvegarder le JSON de l'état du plateau (notation échecs)
+                board_state = generate_board_state_json(pieces_detected)
+                board_json_filename = "board_state.json"
+                board_json_path = os.path.join(detection_dir, board_json_filename)
+                with open(board_json_path, 'w', encoding='utf-8') as f:
+                    json.dump(board_state, f, indent=2, ensure_ascii=False)
+                print(f"   💾 8. État du plateau (JSON): {board_json_filename}")
             else:
                 print(f"   ⚠️  Aucune pièce détectée")
     
@@ -1375,7 +1440,8 @@ def process_image(image_path):
         if pieces_detected:
             print(f"      5. 5_pieces_aruco_detected.jpg - ArUcos pièces détectées")
             print(f"      6. 6_board_pieces_coords.jpg - Pièces avec coordonnées")
-            print(f"      7. game_state.json - État du jeu")
+            print(f"      7. game_state.json - Coordonnées pièces (x,y)")
+            print(f"      8. board_state.json - État du plateau (A1, B2...)")
     else:
         print(f"\n   ⚠️  Plateau incomplet - ajustez les ArUcos ou les paramètres")
     
@@ -1392,7 +1458,8 @@ def process_image(image_path):
         'cell_coordinates': cell_coords,
         'pieces_detected': pieces_detected,
         'game_state': game_state,
-        'json_path': json_path
+        'json_path': json_path,
+        'board_state': board_state if 'board_state' in locals() else None
     }
 
 
