@@ -172,7 +172,7 @@ class ChessRobotGame:
             data = json.load(f)
         self.cases = data.get("cases", {})
         self.delta_approche = data.get("delta_hauteur_approche", DELTA_APPROCHE)
-        self.delta_relache = data.get("delta_hauteur_relache", DELTA_RELACHE)
+        self.delta_relache = data.get("delta_hauteur_relache", DELTA_RELACHE_BASE)
         print(f"✓ Mapping: {len(self.cases)} cases")
 
         # Connexion robot
