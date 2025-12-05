@@ -101,10 +101,10 @@ CALIBRATION_IDS = {
 #   - CAL_BL (bottom-left):  +x (droite), -y (haut)
 #   - CAL_BR (bottom-right): -x (gauche), -y (haut)
 OFFSETS = {
-    "CAL_TL": {"offset_x": 94, "offset_y": 93},      # +x vers droite, +y vers bas
-    "CAL_TR": {"offset_x": -100, "offset_y": 100},     # -x vers gauche, +y vers bas
-    "CAL_BL": {"offset_x": 85, "offset_y": -120},     # +x vers droite, -y vers haut
-    "CAL_BR": {"offset_x": -104, "offset_y": -123}     # -x vers gauche, -y vers haut
+    "CAL_TL": {"offset_x": 78, "offset_y": 83},      # +x vers droite, +y vers bas
+    "CAL_TR": {"offset_x": -51, "offset_y": 89},     # -x vers gauche, +y vers bas
+    "CAL_BL": {"offset_x": 112, "offset_y": -40},     # +x vers droite, -y vers haut
+    "CAL_BR": {"offset_x": -102, "offset_y": -11}     # -x vers gauche, -y vers haut
 }
 
 # Couleurs pour la visualisation (BGR pour OpenCV)
