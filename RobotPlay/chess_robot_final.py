@@ -44,6 +44,9 @@ FICHIER_POSITION_DEPART = "position_depart_robot.json"
 # Fichier pour sauvegarder la zone de défausse
 FICHIER_ZONE_DEFAUSSE = "zone_defausse_robot.json"
 
+# Espacement entre les pièces défaussées (en mètres)
+ESPACEMENT_DEFAUSSE = 0.04  # 4cm entre chaque pièce (ajustable)
+
 # Hauteur de dépose par type de pièce (en mètres)
 HAUTEUR_PIECES = {
     chess.PAWN: 0.005,  # Pion: +5mm
@@ -397,9 +400,13 @@ class ChessRobotGame:
             import math
             distance = math.sqrt(
                 (fin_saved[0] - debut_saved[0]) ** 2 +
-                (fin_saved[1] - debut_saved[1]) ** 2
+                (fin_saved[1] - debut_saved[1]) ** 2 +
+                (fin_saved[2] - debut_saved[2]) ** 2
             )
+            capacite = max(1, int(distance / ESPACEMENT_DEFAUSSE))
             print(f"   Longueur: {distance * 100:.1f} cm")
+            print(f"   Espacement: {ESPACEMENT_DEFAUSSE * 100:.0f} cm")
+            print(f"   Capacité: {capacite} pièces")
 
             print("\n   [O] Utiliser cette zone")
             print("   [N] Enregistrer une nouvelle zone (freedrive)")
@@ -463,37 +470,60 @@ class ChessRobotGame:
         import math
         distance = math.sqrt(
             (fin[0] - debut[0]) ** 2 +
-            (fin[1] - debut[1]) ** 2
+            (fin[1] - debut[1]) ** 2 +
+            (fin[2] - debut[2]) ** 2
         )
+        capacite = max(1, int(distance / ESPACEMENT_DEFAUSSE))
         print(f"\n✓ Zone de défausse configurée:")
         print(f"   Longueur: {distance * 100:.1f} cm")
-        print(f"   Capacité: ~{int(distance / 0.03)} pièces")
+        print(f"   Espacement: {ESPACEMENT_DEFAUSSE * 100:.0f} cm")
+        print(f"   Capacité: {capacite} pièces")
 
     def _get_position_defausse(self):
         """Calcule la prochaine position de défausse"""
         if not self.zone_defausse_debut or not self.zone_defausse_fin:
             return None
 
-        # Calculer la position le long de la ligne
-        # On espace les pièces de 3cm environ
-        max_pieces = 16  # Maximum de pièces capturables
+        # Calculer la longueur totale de la zone
+        import math
+        longueur_zone = math.sqrt(
+            (self.zone_defausse_fin[0] - self.zone_defausse_debut[0]) ** 2 +
+            (self.zone_defausse_fin[1] - self.zone_defausse_debut[1]) ** 2 +
+            (self.zone_defausse_fin[2] - self.zone_defausse_debut[2]) ** 2
+        )
 
+        # Calculer le nombre max de pièces selon l'espacement
+        max_pieces = max(1, int(longueur_zone / ESPACEMENT_DEFAUSSE))
+
+        # Si on a dépassé la capacité, recommencer au début
         if self.defausse_index >= max_pieces:
-            self.defausse_index = 0  # Recommencer au début si plein
+            self.defausse_index = 0
+            print(f"      ⚠ Zone de défausse pleine, retour au début")
 
-        # Interpolation linéaire entre début et fin
-        t = self.defausse_index / max(max_pieces - 1, 1)
+        # Calculer la position le long de la ligne (espacement fixe)
+        distance_parcourue = self.defausse_index * ESPACEMENT_DEFAUSSE
+
+        # Vecteur direction normalisé
+        if longueur_zone > 0:
+            dir_x = (self.zone_defausse_fin[0] - self.zone_defausse_debut[0]) / longueur_zone
+            dir_y = (self.zone_defausse_fin[1] - self.zone_defausse_debut[1]) / longueur_zone
+            dir_z = (self.zone_defausse_fin[2] - self.zone_defausse_debut[2]) / longueur_zone
+        else:
+            dir_x, dir_y, dir_z = 0, 0, 0
 
         position = [
-            self.zone_defausse_debut[0] + t * (self.zone_defausse_fin[0] - self.zone_defausse_debut[0]),
-            self.zone_defausse_debut[1] + t * (self.zone_defausse_fin[1] - self.zone_defausse_debut[1]),
-            self.zone_defausse_debut[2] + t * (self.zone_defausse_fin[2] - self.zone_defausse_debut[2]),
+            self.zone_defausse_debut[0] + distance_parcourue * dir_x,
+            self.zone_defausse_debut[1] + distance_parcourue * dir_y,
+            self.zone_defausse_debut[2] + distance_parcourue * dir_z,
             self.zone_defausse_debut[3],  # Garder l'orientation du point de début
             self.zone_defausse_debut[4],
             self.zone_defausse_debut[5],
         ]
 
         self.defausse_index += 1
+
+        print(
+            f"      📍 Défausse position {self.defausse_index}/{max_pieces} (espacement: {ESPACEMENT_DEFAUSSE * 100:.0f}cm)")
 
         return position
 
