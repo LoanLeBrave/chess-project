@@ -300,6 +300,23 @@ class RobotCalibrator:
         new_pos[1] += delta_y
         return self.move_robot(new_pos)
     
+    def _move_toward_center(self):
+        """
+        Déplace le robot vers le centre estimé du plateau quand l'ArUco n'est pas visible.
+        Fait un petit pas vers le centre (supposé à la position actuelle + offset).
+        """
+        # Faire un petit déplacement aléatoire vers une zone centrale
+        # On suppose que le robot est trop loin du champ de vision
+        import random
+        
+        # Petits déplacements aléatoires (±2cm) pour retrouver l'ArUco
+        delta_x = random.uniform(-0.02, 0.02)
+        delta_y = random.uniform(-0.02, 0.02)
+        
+        print(f"   🔄 Déplacement exploratoire: Δx={delta_x*1000:.1f}mm, Δy={delta_y*1000:.1f}mm")
+        self.move_robot_delta(delta_x, delta_y)
+        time.sleep(0.3)
+
     def detect_robot_on_board(self, image_path=None):
         """
         Détecte la position du robot sur le plateau.
@@ -358,6 +375,9 @@ class RobotCalibrator:
         print(f"   Facteur d'échelle: {SCALE_FACTOR} m/unité")
         print("=" * 60)
         
+        consecutive_fails = 0
+        max_consecutive_fails = 3
+        
         for iteration in range(max_iterations):
             print(f"\n📸 Itération {iteration + 1}/{max_iterations}")
             
@@ -368,8 +388,19 @@ class RobotCalibrator:
             robot_pos = self.detect_robot_on_board()
             
             if robot_pos is None:
-                print("   ⚠️  ArUco robot non détecté, nouvelle tentative...")
+                consecutive_fails += 1
+                print(f"   ⚠️  ArUco robot non détecté ({consecutive_fails}/{max_consecutive_fails})")
+                
+                if consecutive_fails >= max_consecutive_fails:
+                    print("   🔄 Tentative de déplacement pour retrouver l'ArUco...")
+                    # Bouger le robot vers le centre estimé du plateau
+                    self._move_toward_center()
+                    consecutive_fails = 0
+                
                 continue
+            
+            # Reset du compteur si détection réussie
+            consecutive_fails = 0
             
             x, y = robot_pos
             print(f"   📍 Position robot: x={x:.2f}, y={y:.2f}")
