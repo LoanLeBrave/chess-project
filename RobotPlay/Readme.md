@@ -153,23 +153,23 @@ Par défaut, le robot est attendu à l'IP `192.168.0.11`. Modifiable via l'argum
 
 ```bash
 # Afficher l'aide complète
-python chess_robot_self_play.py --help
+python (OLD)chess_robot_self_play.py --help
 
 # Afficher les niveaux disponibles
-python chess_robot_self_play.py --list-levels
+python (OLD)chess_robot_self_play.py --list-levels
 ```
 
 ### Lancer une partie
 
 ```bash
 # Partie avec niveaux prédéfinis
-python chess_robot_self_play.py --blanc facile --noir expert
+python (OLD)chess_robot_self_play.py --blanc facile --noir expert
 
 # Partie avec niveaux personnalisés (skill 0-20)
-python chess_robot_self_play.py --blanc-skill 5 --noir-skill 18
+python (OLD)chess_robot_self_play.py --blanc-skill 5 --noir-skill 18
 
 # Mode simulation (sans robot physique)
-python chess_robot_self_play.py --simulate --blanc debutant --noir maitre
+python (OLD)chess_robot_self_play.py --simulate --blanc debutant --noir maitre
 ```
 
 ### Options avancées
@@ -192,16 +192,16 @@ python chess_robot_self_play.py --simulate --blanc debutant --noir maitre
 
 ```bash
 # 🎮 Partie débutant vs débutant (partie équilibrée, niveau faible)
-python chess_robot_self_play.py --blanc debutant --noir debutant
+python (OLD)chess_robot_self_play.py --blanc debutant --noir debutant
 
 # 🏆 Partie déséquilibrée (le joueur fort devrait gagner)
-python chess_robot_self_play.py --blanc debutant --noir maitre
+python (OLD)chess_robot_self_play.py --blanc debutant --noir maitre
 
 # ⚔️ Combat de titans (deux joueurs très forts)
-python chess_robot_self_play.py --blanc expert --noir maitre --delai 2
+python (OLD)chess_robot_self_play.py --blanc expert --noir maitre --delai 2
 
 # 🧪 Test rapide en simulation
-python chess_robot_self_play.py --simulate --blanc facile --noir avance --max-coups 20
+python (OLD)chess_robot_self_play.py --simulate --blanc facile --noir avance --max-coups 20
 
 # 🤖 Partie réelle sur le robot avec pause entre chaque coup
 python chess_robot_self_play_complete.py --blanc intermediaire --noir avance --pause
@@ -228,7 +228,7 @@ Vous pouvez définir des niveaux personnalisés avec `--blanc-skill` et `--noir-
 
 ```bash
 # Blancs skill 7, Noirs skill 14
-python chess_robot_self_play.py --blanc-skill 7 --noir-skill 14
+python (OLD)chess_robot_self_play.py --blanc-skill 7 --noir-skill 14
 ```
 
 Le **Skill Level** de Stockfish (0-20) influence directement la qualité des coups :

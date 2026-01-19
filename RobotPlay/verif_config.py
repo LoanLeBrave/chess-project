@@ -29,9 +29,9 @@ print("=" * 60)
 # Chercher le fichier chess_robot
 fichiers_possibles = [
     'chess_robot_final.py',
-    'chess_robot_self_play.py',
+    '(OLD)chess_robot_self_play.py',
     'Chess_robot_self_play.py',
-    'final_chess.py',
+    '(OLD)final_chess.py',
 ]
 
 for fichier in fichiers_possibles:

@@ -762,16 +762,16 @@ def main():
         epilog="""
 Exemples:
   # Partie débutant vs expert
-  python chess_robot_self_play.py --blanc debutant --noir expert
+  python (OLD)chess_robot_self_play.py --blanc debutant --noir expert
 
   # Partie avec niveaux personnalisés
-  python chess_robot_self_play.py --blanc-skill 5 --noir-skill 15
+  python (OLD)chess_robot_self_play.py --blanc-skill 5 --noir-skill 15
 
   # Afficher les niveaux disponibles
-  python chess_robot_self_play.py --list-levels
+  python (OLD)chess_robot_self_play.py --list-levels
 
   # Mode simulation (sans robot)
-  python chess_robot_self_play.py --simulate --blanc facile --noir avance
+  python (OLD)chess_robot_self_play.py --simulate --blanc facile --noir avance
         """
     )
 
