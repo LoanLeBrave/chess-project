@@ -50,18 +50,42 @@ OFFSETS = {
     "CAL_BR": {"offset_x": 53, "offset_y": 86}
 }
 
-# Configuration des pièces (IDs 0-31)
+# Configuration des pièces (IDs 0-31) - Format complet avec initial_piece
 PIECE_IDS = {
-    # Blanches (0-15)
-    0: ('white', 'Pawn'), 1: ('white', 'Pawn'), 2: ('white', 'Pawn'), 3: ('white', 'Pawn'),
-    4: ('white', 'Pawn'), 5: ('white', 'Pawn'), 6: ('white', 'Pawn'), 7: ('white', 'Pawn'),
-    8: ('white', 'Rook'), 9: ('white', 'Rook'), 10: ('white', 'Knight'), 11: ('white', 'Knight'),
-    12: ('white', 'Bishop'), 13: ('white', 'Bishop'), 14: ('white', 'Queen'), 15: ('white', 'King'),
-    # Noires (16-31)
-    16: ('black', 'Pawn'), 17: ('black', 'Pawn'), 18: ('black', 'Pawn'), 19: ('black', 'Pawn'),
-    20: ('black', 'Pawn'), 21: ('black', 'Pawn'), 22: ('black', 'Pawn'), 23: ('black', 'Pawn'),
-    24: ('black', 'Rook'), 25: ('black', 'Rook'), 26: ('black', 'Knight'), 27: ('black', 'Knight'),
-    28: ('black', 'Bishop'), 29: ('black', 'Bishop'), 30: ('black', 'Queen'), 31: ('black', 'King'),
+    # Pièces blanches (0-15)
+    0: {'color': 'white', 'piece_type': 'Pawn', 'initial_piece': 'Pawn_A'},
+    1: {'color': 'white', 'piece_type': 'Pawn', 'initial_piece': 'Pawn_B'},
+    2: {'color': 'white', 'piece_type': 'Pawn', 'initial_piece': 'Pawn_C'},
+    3: {'color': 'white', 'piece_type': 'Pawn', 'initial_piece': 'Pawn_D'},
+    4: {'color': 'white', 'piece_type': 'Pawn', 'initial_piece': 'Pawn_E'},
+    5: {'color': 'white', 'piece_type': 'Pawn', 'initial_piece': 'Pawn_F'},
+    6: {'color': 'white', 'piece_type': 'Pawn', 'initial_piece': 'Pawn_G'},
+    7: {'color': 'white', 'piece_type': 'Pawn', 'initial_piece': 'Pawn_H'},
+    8: {'color': 'white', 'piece_type': 'Rook', 'initial_piece': 'Rook_A'},
+    9: {'color': 'white', 'piece_type': 'Rook', 'initial_piece': 'Rook_H'},
+    10: {'color': 'white', 'piece_type': 'Knight', 'initial_piece': 'Knight_B'},
+    11: {'color': 'white', 'piece_type': 'Knight', 'initial_piece': 'Knight_G'},
+    12: {'color': 'white', 'piece_type': 'Bishop', 'initial_piece': 'Bishop_C'},
+    13: {'color': 'white', 'piece_type': 'Bishop', 'initial_piece': 'Bishop_F'},
+    14: {'color': 'white', 'piece_type': 'Queen', 'initial_piece': 'Queen'},
+    15: {'color': 'white', 'piece_type': 'King', 'initial_piece': 'King'},
+    # Pièces noires (16-31)
+    16: {'color': 'black', 'piece_type': 'Pawn', 'initial_piece': 'Pawn_A'},
+    17: {'color': 'black', 'piece_type': 'Pawn', 'initial_piece': 'Pawn_B'},
+    18: {'color': 'black', 'piece_type': 'Pawn', 'initial_piece': 'Pawn_C'},
+    19: {'color': 'black', 'piece_type': 'Pawn', 'initial_piece': 'Pawn_D'},
+    20: {'color': 'black', 'piece_type': 'Pawn', 'initial_piece': 'Pawn_E'},
+    21: {'color': 'black', 'piece_type': 'Pawn', 'initial_piece': 'Pawn_F'},
+    22: {'color': 'black', 'piece_type': 'Pawn', 'initial_piece': 'Pawn_G'},
+    23: {'color': 'black', 'piece_type': 'Pawn', 'initial_piece': 'Pawn_H'},
+    24: {'color': 'black', 'piece_type': 'Rook', 'initial_piece': 'Rook_A'},
+    25: {'color': 'black', 'piece_type': 'Rook', 'initial_piece': 'Rook_H'},
+    26: {'color': 'black', 'piece_type': 'Knight', 'initial_piece': 'Knight_B'},
+    27: {'color': 'black', 'piece_type': 'Knight', 'initial_piece': 'Knight_G'},
+    28: {'color': 'black', 'piece_type': 'Bishop', 'initial_piece': 'Bishop_C'},
+    29: {'color': 'black', 'piece_type': 'Bishop', 'initial_piece': 'Bishop_F'},
+    30: {'color': 'black', 'piece_type': 'Queen', 'initial_piece': 'Queen'},
+    31: {'color': 'black', 'piece_type': 'King', 'initial_piece': 'King'},
 }
 
 # Codes des pièces pour le JSON
@@ -298,15 +322,18 @@ def detect_pieces(board_img, detector):
     else:
         gray = board_img
     
-    # Détecter les marqueurs
-    corners, ids, _ = detector.detectMarkers(gray)
+    # Détecter les marqueurs avec paramètres par défaut (meilleur pour petits marqueurs)
+    aruco_dict = cv2.aruco.getPredefinedDictionary(ARUCO_DICT)
+    parameters = cv2.aruco.DetectorParameters()
+    piece_detector = cv2.aruco.ArucoDetector(aruco_dict, parameters)
+    corners, ids, _ = piece_detector.detectMarkers(gray)
     
     pieces = []
     pieces_on_board = {}
     
     if ids is not None:
         for i, marker_id in enumerate(ids.flatten()):
-            marker_id = int(marker_id)
+            marker_id = int(marker_id)  # Convertir numpy.int32 en int Python
             if marker_id in PIECE_IDS:
                 marker_corners = corners[i][0]
                 
@@ -314,7 +341,10 @@ def detect_pieces(board_img, detector):
                 center_x = sum(c[0] for c in marker_corners) / 4
                 center_y = sum(c[1] for c in marker_corners) / 4
                 
-                color, piece_type = PIECE_IDS[marker_id]
+                piece_info = PIECE_IDS[marker_id]
+                color = piece_info['color']
+                piece_type = piece_info['piece_type']
+                initial_piece = piece_info['initial_piece']
                 
                 # Coordonnées dans le repère -10/+10
                 x = -10 + (center_x / BOARD_SIZE) * 20
@@ -328,13 +358,14 @@ def detect_pieces(board_img, detector):
                 square = f"{'abcdefgh'[col]}{8 - row}"
                 
                 pieces.append({
-                    'id': marker_id,
+                    'id': int(marker_id),
                     'color': color,
                     'piece_type': piece_type,
-                    'x': round(x, 2),
-                    'y': round(y, 2),
-                    'square': square,
-                    'pixel': (int(center_x), int(center_y))
+                    'initial_piece': initial_piece,
+                    'x': round(float(x), 2),
+                    'y': round(float(y), 2),
+                    'chess_square': square,
+                    'pixel_center': (int(center_x), int(center_y))
                 })
                 
                 # Code pour board_state
@@ -366,7 +397,7 @@ def draw_pieces_on_board(board_img, pieces, corners_data=None):
     
     # Ajouter les infos sur chaque pièce
     for piece in pieces:
-        px, py = piece['pixel']
+        px, py = piece['pixel_center']
         
         # Couleurs selon la pièce
         if piece['color'] == 'white':
@@ -376,8 +407,11 @@ def draw_pieces_on_board(board_img, pieces, corners_data=None):
             box_color = (50, 50, 50)
             text_color = (255, 255, 255)
         
-        # Étiquette avec ID
-        label = f"ID:{piece['id']}"
+        # Étiquette avec ID et type
+        piece_letter = piece['piece_type'][0]
+        if piece['piece_type'] == 'Knight':
+            piece_letter = 'N'
+        label = f"ID:{piece['id']} {piece_letter}"
         (tw, th), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.4, 1)
         
         # Position de l'étiquette (en dessous du marqueur)
@@ -405,18 +439,28 @@ def draw_pieces_on_board(board_img, pieces, corners_data=None):
 
 def generate_game_state_json(pieces):
     """
-    Génère le JSON des coordonnées des pièces.
+    Génère le JSON des coordonnées des pièces (format identique à detect_board_corners.py).
     """
-    return {
-        'coordinates': sorted([{
+    coordinates = []
+    for p in pieces:
+        coordinates.append({
             'id': p['id'],
             'color': p['color'],
             'piece_type': p['piece_type'],
             'x': p['x'],
-            'y': p['y']
-        } for p in pieces], key=lambda x: x['id']),
-        'metadata': {
-            'pieces_count': len(pieces),
+            'y': p['y'],
+            'initial_piece': p.get('initial_piece', '')
+        })
+    
+    # Trier par ID
+    coordinates.sort(key=lambda x: x['id'])
+    
+    return {
+        'coordinates': coordinates,
+        'game_metadata': {
+            'turn': 'white',
+            'move_count': 0,
+            'pieces_detected': len(coordinates),
             'timestamp': datetime.now().isoformat()
         }
     }
@@ -519,7 +563,7 @@ def analyze_board(image_path=None, image_np=None):
     
     for piece in sorted(pieces, key=lambda p: p['id']):
         print(f"      ID {piece['id']}: {piece['color']} {piece['piece_type']} "
-              f"à ({piece['x']:.2f}, {piece['y']:.2f}) [{piece['square']}]")
+              f"à ({piece['x']:.2f}, {piece['y']:.2f}) [{piece['chess_square']}]")
     
     # 6. Créer l'image annotée
     # Re-détecter pour avoir les corners pour le dessin
