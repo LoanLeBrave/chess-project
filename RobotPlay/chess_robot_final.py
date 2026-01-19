@@ -41,6 +41,9 @@ OFFSET_RECUL_Z = 0.05  # Monte de 5cm en Z
 # Fichier pour sauvegarder la position de départ
 FICHIER_POSITION_DEPART = "position_depart_robot.json"
 
+# Fichier pour sauvegarder la zone de défausse
+FICHIER_ZONE_DEFAUSSE = "zone_defausse_robot.json"
+
 # Hauteur de dépose par type de pièce (en mètres)
 HAUTEUR_PIECES = {
     chess.PAWN: 0.005,  # Pion: +5mm
@@ -169,6 +172,9 @@ class ChessRobotGame:
         self.cases = {}
         self.piece_courante = None
         self.position_depart = None
+        self.zone_defausse_debut = None
+        self.zone_defausse_fin = None
+        self.defausse_index = 0  # Compteur de pièces défaussées
 
         if not simulate:
             self._init_robot(mapping_file)
@@ -210,6 +216,9 @@ class ChessRobotGame:
             # Charger ou configurer la position de départ
             self._setup_position_depart()
 
+            # Charger ou configurer la zone de défausse
+            self._setup_zone_defausse()
+
         except Exception as e:
             print(f"⚠ Erreur robot: {e}")
             self.simulate = True
@@ -249,13 +258,12 @@ class ChessRobotGame:
         finally:
             termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
 
-    def _enregistrer_position_freedrive(self):
+    def _enregistrer_position_freedrive(self, nom="position"):
         """Active le freedrive et attend que l'utilisateur positionne le robot"""
         print("\n" + "=" * 60)
-        print("   MODE FREEDRIVE - Positionnez le robot")
+        print(f"   MODE FREEDRIVE - Enregistrer {nom}")
         print("=" * 60)
-        print("   Déplacez le robot à la main vers la position de départ")
-        print("   (au-dessus du centre de l'échiquier)")
+        print(f"   Déplacez le robot à la main vers la {nom}")
         print("\n   Appuyez sur ESPACE pour enregistrer la position")
         print("   Appuyez sur Q pour annuler")
         print("=" * 60)
@@ -316,7 +324,7 @@ class ChessRobotGame:
                     break
 
                 elif rep == 'N':
-                    nouvelle_pos = self._enregistrer_position_freedrive()
+                    nouvelle_pos = self._enregistrer_position_freedrive("position de départ")
                     if nouvelle_pos:
                         self.position_depart = nouvelle_pos
                         self._sauvegarder_position_depart(nouvelle_pos)
@@ -337,7 +345,7 @@ class ChessRobotGame:
             rep = input("\n   Enregistrer maintenant? (O/N): ").strip().upper()
 
             if rep == 'O':
-                nouvelle_pos = self._enregistrer_position_freedrive()
+                nouvelle_pos = self._enregistrer_position_freedrive("position de départ")
                 if nouvelle_pos:
                     self.position_depart = nouvelle_pos
                     self._sauvegarder_position_depart(nouvelle_pos)
@@ -347,6 +355,147 @@ class ChessRobotGame:
             else:
                 print("   Utilisation de la position actuelle comme départ")
                 self.position_depart = list(self.rtde_r.getActualTCPPose())
+
+    def _charger_zone_defausse(self):
+        """Charge la zone de défausse depuis le fichier"""
+        if os.path.exists(FICHIER_ZONE_DEFAUSSE):
+            try:
+                with open(FICHIER_ZONE_DEFAUSSE, 'r') as f:
+                    data = json.load(f)
+                return data.get("debut"), data.get("fin")
+            except:
+                pass
+        return None, None
+
+    def _sauvegarder_zone_defausse(self, debut, fin):
+        """Sauvegarde la zone de défausse"""
+        data = {
+            "debut": debut,
+            "fin": fin,
+            "date": datetime.now().isoformat(),
+            "description": "Zone de défausse pour les pièces capturées"
+        }
+        with open(FICHIER_ZONE_DEFAUSSE, 'w') as f:
+            json.dump(data, f, indent=2)
+        print(f"✓ Zone de défausse sauvegardée dans {FICHIER_ZONE_DEFAUSSE}")
+
+    def _setup_zone_defausse(self):
+        """Configure la zone de défausse"""
+        print("\n" + "=" * 60)
+        print("   CONFIGURATION ZONE DE DÉFAUSSE")
+        print("=" * 60)
+
+        # Charger zone existante
+        debut_saved, fin_saved = self._charger_zone_defausse()
+
+        if debut_saved and fin_saved:
+            print(f"\n📍 Zone de défausse enregistrée:")
+            print(f"   DÉBUT: X={debut_saved[0]:.4f} Y={debut_saved[1]:.4f} Z={debut_saved[2]:.4f}")
+            print(f"   FIN:   X={fin_saved[0]:.4f} Y={fin_saved[1]:.4f} Z={fin_saved[2]:.4f}")
+
+            # Calculer la distance
+            import math
+            distance = math.sqrt(
+                (fin_saved[0] - debut_saved[0]) ** 2 +
+                (fin_saved[1] - debut_saved[1]) ** 2
+            )
+            print(f"   Longueur: {distance * 100:.1f} cm")
+
+            print("\n   [O] Utiliser cette zone")
+            print("   [N] Enregistrer une nouvelle zone (freedrive)")
+
+            while True:
+                rep = input("\n   Choix (O/N): ").strip().upper()
+
+                if rep == 'O':
+                    self.zone_defausse_debut = debut_saved
+                    self.zone_defausse_fin = fin_saved
+                    print("✓ Zone de défausse chargée")
+                    break
+
+                elif rep == 'N':
+                    self._enregistrer_zone_defausse_freedrive()
+                    break
+        else:
+            print("\n⚠ Aucune zone de défausse enregistrée!")
+            print("   Vous devez enregistrer une zone pour les pièces capturées.")
+
+            rep = input("\n   Enregistrer maintenant? (O/N): ").strip().upper()
+
+            if rep == 'O':
+                self._enregistrer_zone_defausse_freedrive()
+            else:
+                print("⚠ Zone non enregistrée - Les pièces seront lâchées en l'air")
+
+    def _enregistrer_zone_defausse_freedrive(self):
+        """Enregistre la zone de défausse en deux points via freedrive"""
+        print("\n" + "-" * 60)
+        print("   ENREGISTREMENT ZONE DE DÉFAUSSE")
+        print("-" * 60)
+        print("   Vous allez enregistrer 2 points:")
+        print("   1. Point de DÉBUT de la zone")
+        print("   2. Point de FIN de la zone")
+        print("   Les pièces seront déposées le long de cette ligne.")
+        print("-" * 60)
+
+        # Point de début
+        print("\n📍 POINT 1: Début de la zone de défausse")
+        debut = self._enregistrer_position_freedrive("début zone défausse")
+
+        if not debut:
+            print("⚠ Enregistrement annulé")
+            return
+
+        # Point de fin
+        print("\n📍 POINT 2: Fin de la zone de défausse")
+        fin = self._enregistrer_position_freedrive("fin zone défausse")
+
+        if not fin:
+            print("⚠ Enregistrement annulé")
+            return
+
+        # Sauvegarder
+        self.zone_defausse_debut = debut
+        self.zone_defausse_fin = fin
+        self._sauvegarder_zone_defausse(debut, fin)
+
+        # Afficher résumé
+        import math
+        distance = math.sqrt(
+            (fin[0] - debut[0]) ** 2 +
+            (fin[1] - debut[1]) ** 2
+        )
+        print(f"\n✓ Zone de défausse configurée:")
+        print(f"   Longueur: {distance * 100:.1f} cm")
+        print(f"   Capacité: ~{int(distance / 0.03)} pièces")
+
+    def _get_position_defausse(self):
+        """Calcule la prochaine position de défausse"""
+        if not self.zone_defausse_debut or not self.zone_defausse_fin:
+            return None
+
+        # Calculer la position le long de la ligne
+        # On espace les pièces de 3cm environ
+        max_pieces = 16  # Maximum de pièces capturables
+
+        if self.defausse_index >= max_pieces:
+            self.defausse_index = 0  # Recommencer au début si plein
+
+        # Interpolation linéaire entre début et fin
+        t = self.defausse_index / max(max_pieces - 1, 1)
+
+        position = [
+            self.zone_defausse_debut[0] + t * (self.zone_defausse_fin[0] - self.zone_defausse_debut[0]),
+            self.zone_defausse_debut[1] + t * (self.zone_defausse_fin[1] - self.zone_defausse_debut[1]),
+            self.zone_defausse_debut[2] + t * (self.zone_defausse_fin[2] - self.zone_defausse_debut[2]),
+            self.zone_defausse_debut[3],  # Garder l'orientation du point de début
+            self.zone_defausse_debut[4],
+            self.zone_defausse_debut[5],
+        ]
+
+        self.defausse_index += 1
+
+        return position
 
     def aller_position_depart(self):
         """Va à la position de départ"""
@@ -474,13 +623,40 @@ class ChessRobotGame:
         if not self._prendre_piece(to_sq):
             return False
 
-        # Déposer hors de l'échiquier
-        pose = self.rtde_r.getActualTCPPose()
-        pose_haute = list(pose)
-        pose_haute[2] += 0.05
-        self.rtde_c.moveL(pose_haute, VITESSE, ACCELERATION)
-        self.gripper.move(GRIPPER_OUVERTURE)
-        time.sleep(0.3)
+        # Déposer dans la zone de défausse
+        pos_defausse = self._get_position_defausse()
+
+        if pos_defausse:
+            print(f"      → Dépôt en zone de défausse (position {self.defausse_index})...")
+
+            # Aller au-dessus de la position de défausse
+            pos_haute = list(pos_defausse)
+            pos_haute[2] += DELTA_TRANSIT
+            self.rtde_c.moveL(pos_haute, VITESSE, ACCELERATION)
+            time.sleep(0.2)
+
+            # Descendre pour déposer
+            pos_relache = list(pos_defausse)
+            pos_relache[2] += DELTA_RELACHE_BASE + 0.01  # +1cm pour la défausse
+            self.rtde_c.moveL(pos_relache, VITESSE, ACCELERATION)
+            time.sleep(0.2)
+
+            # Ouvrir gripper
+            self.gripper.move(GRIPPER_OUVERTURE)
+            time.sleep(0.3)
+
+            # Remonter
+            self.rtde_c.moveL(pos_haute, VITESSE, ACCELERATION)
+            time.sleep(0.2)
+        else:
+            # Pas de zone de défausse, lâcher en l'air
+            print(f"      → Dépôt hors échiquier...")
+            pose = self.rtde_r.getActualTCPPose()
+            pose_haute = list(pose)
+            pose_haute[2] += 0.05
+            self.rtde_c.moveL(pose_haute, VITESSE, ACCELERATION)
+            self.gripper.move(GRIPPER_OUVERTURE)
+            time.sleep(0.3)
 
         # 2. Déplacer la pièce qui capture
         print(f"      --- Déplacement {from_sq.upper()} → {to_sq.upper()} ---")
@@ -557,6 +733,7 @@ class ChessRobotGame:
 
         self.board.reset()
         self.visualizer.move_count = 0
+        self.defausse_index = 0  # Réinitialiser le compteur de défausse
         self.visualizer.save(self.board, player_w=player_w, player_b=player_b)
 
         num = 0
@@ -640,6 +817,8 @@ def main():
     parser.add_argument('--delai', type=float, default=1.0)
     parser.add_argument('--list-levels', action='store_true')
     parser.add_argument('--reset-position', action='store_true', help='Réenregistrer la position de départ')
+    parser.add_argument('--reset-defausse', action='store_true', help='Réenregistrer la zone de défausse')
+    parser.add_argument('--reset-all', action='store_true', help='Réenregistrer toutes les positions')
 
     args = parser.parse_args()
 
@@ -647,11 +826,20 @@ def main():
         StockfishPlayer.list_presets()
         return
 
-    # Si on veut réinitialiser la position
+    # Si on veut réinitialiser les positions
+    if args.reset_all:
+        args.reset_position = True
+        args.reset_defausse = True
+
     if args.reset_position:
         if os.path.exists(FICHIER_POSITION_DEPART):
             os.remove(FICHIER_POSITION_DEPART)
             print(f"✓ Position de départ supprimée ({FICHIER_POSITION_DEPART})")
+
+    if args.reset_defausse:
+        if os.path.exists(FICHIER_ZONE_DEFAUSSE):
+            os.remove(FICHIER_ZONE_DEFAUSSE)
+            print(f"✓ Zone de défausse supprimée ({FICHIER_ZONE_DEFAUSSE})")
 
     print("=" * 60)
     print("     ♔ ROBOT ÉCHECS ♚")
