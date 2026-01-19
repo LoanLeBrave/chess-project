@@ -443,8 +443,14 @@ def generate_game_state_json(pieces):
     """
     coordinates = []
     for p in pieces:
+        # Créer un label lisible pour le debug (ex: "White Pawn #1", "Black Rook #24")
+        color_label = p['color'].capitalize()
+        piece_label = p['piece_type']
+        label = f"{color_label} {piece_label} #{p['id']}"
+        
         coordinates.append({
             'id': p['id'],
+            'label': label,  # Champ "fantôme" pour la lisibilité humaine
             'color': p['color'],
             'piece_type': p['piece_type'],
             'x': p['x'],
@@ -455,6 +461,13 @@ def generate_game_state_json(pieces):
     # Trier par ID
     coordinates.sort(key=lambda x: x['id'])
     
+    # Créer le dictionnaire de référence des 32 pièces (pour documentation)
+    pieces_reference = {}
+    for piece_id, piece_info in PIECE_IDS.items():
+        color_label = piece_info['color'].capitalize()
+        piece_label = piece_info['piece_type']
+        pieces_reference[piece_id] = f"{color_label} {piece_label} ({piece_info['initial_piece']})"
+    
     return {
         'coordinates': coordinates,
         'game_metadata': {
@@ -462,7 +475,8 @@ def generate_game_state_json(pieces):
             'move_count': 0,
             'pieces_detected': len(coordinates),
             'timestamp': datetime.now().isoformat()
-        }
+        },
+        'pieces_reference': pieces_reference  # Dictionnaire de référence (documentation uniquement)
     }
 
 
