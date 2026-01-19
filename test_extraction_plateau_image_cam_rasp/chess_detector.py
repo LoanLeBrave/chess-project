@@ -637,8 +637,8 @@ def _capture_with_rpicam(filepath):
     
     print(f"   🎥 Mode caméra: {cmd}")
     
-    # Construire la commande
-    args = [cmd, '-o', filepath, '-n', '--immediate']
+    # Construire la commande (avec timeout pour laisser la caméra se stabiliser)
+    args = [cmd, '-n', '-o', filepath, '--timeout', '2000']
     
     try:
         result = subprocess.run(args, capture_output=True, text=True, timeout=30)
