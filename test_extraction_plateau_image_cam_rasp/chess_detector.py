@@ -643,6 +643,7 @@ def _capture_with_rpicam(filepath):
     try:
         result = subprocess.run(args, capture_output=True, text=True, timeout=30)
         if result.returncode != 0:
+            print(f"   ⚠️ Stderr: {result.stderr}")
             raise RuntimeError(f"{cmd} a échoué: {result.stderr}")
         print(f"   ✅ Capture terminée")
     except subprocess.TimeoutExpired:
@@ -738,19 +739,13 @@ if __name__ == "__main__":
         print(f"📷 Image: {image_path}")
         result = analyze_board(image_path=image_path)
     else:
-        # Essayer la caméra, sinon chercher une image
+        # Capturer une nouvelle photo
         result = capture_and_analyze()
         
         if result is None:
-            # Chercher une image de test
-            import glob
-            images = glob.glob(os.path.join(SCRIPT_DIR, "images", "*.jpg"))
-            if images:
-                print(f"\n📷 Utilisation de: {images[0]}")
-                result = analyze_board(image_path=images[0])
-            else:
-                print("\n❌ Aucune image disponible")
-                print("Usage: python chess_detector.py [image.jpg]")
+
+            print("\n❌ Échec de la capture ou de l'analyse")
+            print("Usage: python chess_detector.py [image.jpg]")
     
     if result:
         print("\n" + "=" * 60)
