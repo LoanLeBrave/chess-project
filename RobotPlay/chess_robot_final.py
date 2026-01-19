@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
 """
 Script de jeu d'échecs autonome - Robot UR5e joue contre lui-même
-VERSION FINALE - Avec contrôle robot RÉEL intégré
+VERSION FINALE avec:
+- Position de départ configurable
+- Position reculée pour laisser jouer
+- Hauteurs adaptées par type de pièce
 """
 
 import chess
@@ -12,6 +15,10 @@ import json
 import time
 import argparse
 import os
+import sys
+import tty
+import termios
+import select
 from datetime import datetime
 
 # ============================================================================
@@ -21,13 +28,20 @@ from datetime import datetime
 ROBOT_IP = "192.168.0.11"
 VITESSE = 0.1
 ACCELERATION = 0.3
-GRIPPER_OUVERTURE = 30
+GRIPPER_OUVERTURE = 25
 DELTA_APPROCHE = 0.03  # 3cm au-dessus pour approche/remontée locale
-DELTA_TRANSIT = 0.20  # 20cm au-dessus pour le trajet entre cases
+DELTA_TRANSIT = 0.08  # 8cm au-dessus pour le trajet entre cases
 DELTA_RELACHE_BASE = 0.004  # 4mm minimum au-dessus pour poser
 
+# Position reculée : offset par rapport à la position de départ (en mètres)
+OFFSET_RECUL_X = 0.0  # Pas de décalage en X
+OFFSET_RECUL_Y = -0.15  # Recul de 15cm en Y (vers l'arrière)
+OFFSET_RECUL_Z = 0.05  # Monte de 5cm en Z
+
+# Fichier pour sauvegarder la position de départ
+FICHIER_POSITION_DEPART = "position_depart_robot.json"
+
 # Hauteur de dépose par type de pièce (en mètres)
-# Ajuste ces valeurs selon tes pièces réelles
 HAUTEUR_PIECES = {
     chess.PAWN: 0.005,  # Pion: +5mm
     chess.KNIGHT: 0.010,  # Cavalier: +10mm
@@ -153,12 +167,11 @@ class ChessRobotGame:
         self.rtde_r = None
         self.gripper = None
         self.cases = {}
-        self.piece_courante = None  # Type de pièce en cours de déplacement
+        self.piece_courante = None
+        self.position_depart = None
 
         if not simulate:
             self._init_robot(mapping_file)
-        else:
-            print("⚠ Mode SIMULATION - Le robot ne bougera pas")
 
     def _init_robot(self, mapping_file):
         """Initialise le robot"""
@@ -193,9 +206,168 @@ class ChessRobotGame:
             self.gripper.move(GRIPPER_OUVERTURE)
 
             print("✓ Robot prêt!")
+
+            # Charger ou configurer la position de départ
+            self._setup_position_depart()
+
         except Exception as e:
             print(f"⚠ Erreur robot: {e}")
             self.simulate = True
+
+    def _charger_position_depart(self):
+        """Charge la position de départ depuis le fichier"""
+        if os.path.exists(FICHIER_POSITION_DEPART):
+            try:
+                with open(FICHIER_POSITION_DEPART, 'r') as f:
+                    data = json.load(f)
+                return data.get("position_depart")
+            except:
+                pass
+        return None
+
+    def _sauvegarder_position_depart(self, position):
+        """Sauvegarde la position de départ"""
+        data = {
+            "position_depart": position,
+            "date": datetime.now().isoformat(),
+            "description": "Position de départ du robot au-dessus de l'échiquier"
+        }
+        with open(FICHIER_POSITION_DEPART, 'w') as f:
+            json.dump(data, f, indent=2)
+        print(f"✓ Position de départ sauvegardée dans {FICHIER_POSITION_DEPART}")
+
+    def _get_key_non_blocking(self):
+        """Lecture non-bloquante du clavier"""
+        fd = sys.stdin.fileno()
+        old_settings = termios.tcgetattr(fd)
+        try:
+            tty.setraw(sys.stdin.fileno())
+            rlist, _, _ = select.select([sys.stdin], [], [], 0.1)
+            if rlist:
+                return sys.stdin.read(1)
+            return None
+        finally:
+            termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+
+    def _enregistrer_position_freedrive(self):
+        """Active le freedrive et attend que l'utilisateur positionne le robot"""
+        print("\n" + "=" * 60)
+        print("   MODE FREEDRIVE - Positionnez le robot")
+        print("=" * 60)
+        print("   Déplacez le robot à la main vers la position de départ")
+        print("   (au-dessus du centre de l'échiquier)")
+        print("\n   Appuyez sur ESPACE pour enregistrer la position")
+        print("   Appuyez sur Q pour annuler")
+        print("=" * 60)
+
+        # Activer freedrive
+        self.rtde_c.freedriveMode()
+        print("\n🆓 Freedrive ACTIVÉ - Déplacez le robot...")
+
+        try:
+            while True:
+                key = self._get_key_non_blocking()
+
+                if key == ' ':
+                    # Enregistrer la position
+                    self.rtde_c.endFreedriveMode()
+                    position = list(self.rtde_r.getActualTCPPose())
+                    print(f"\n✓ Position enregistrée:")
+                    print(f"   X={position[0]:.4f} Y={position[1]:.4f} Z={position[2]:.4f}")
+                    return position
+
+                elif key in ['q', 'Q', '\x1b']:
+                    self.rtde_c.endFreedriveMode()
+                    print("\n⚠ Annulé")
+                    return None
+
+                # Afficher position actuelle
+                pose = self.rtde_r.getActualTCPPose()
+                print(f"\r   Position: X={pose[0]:.4f} Y={pose[1]:.4f} Z={pose[2]:.4f}    ", end='', flush=True)
+
+        except KeyboardInterrupt:
+            self.rtde_c.endFreedriveMode()
+            return None
+
+    def _setup_position_depart(self):
+        """Configure la position de départ"""
+        print("\n" + "=" * 60)
+        print("   CONFIGURATION POSITION DE DÉPART")
+        print("=" * 60)
+
+        # Charger position existante
+        position_saved = self._charger_position_depart()
+
+        if position_saved:
+            print(f"\n📍 Position de départ enregistrée:")
+            print(f"   X={position_saved[0]:.4f} Y={position_saved[1]:.4f} Z={position_saved[2]:.4f}")
+
+            # Demander si on veut l'utiliser
+            print("\n   [O] Utiliser cette position")
+            print("   [N] Enregistrer une nouvelle position (freedrive)")
+            print("   [A] Aller à cette position maintenant")
+
+            while True:
+                rep = input("\n   Choix (O/N/A): ").strip().upper()
+
+                if rep == 'O':
+                    self.position_depart = position_saved
+                    print("✓ Position de départ chargée")
+                    break
+
+                elif rep == 'N':
+                    nouvelle_pos = self._enregistrer_position_freedrive()
+                    if nouvelle_pos:
+                        self.position_depart = nouvelle_pos
+                        self._sauvegarder_position_depart(nouvelle_pos)
+                    else:
+                        self.position_depart = position_saved
+                    break
+
+                elif rep == 'A':
+                    self.position_depart = position_saved
+                    print("   Déplacement vers la position de départ...")
+                    self.rtde_c.moveL(position_saved, VITESSE, ACCELERATION)
+                    print("✓ Position atteinte")
+                    break
+        else:
+            print("\n⚠ Aucune position de départ enregistrée!")
+            print("   Vous devez enregistrer une position de départ.")
+
+            rep = input("\n   Enregistrer maintenant? (O/N): ").strip().upper()
+
+            if rep == 'O':
+                nouvelle_pos = self._enregistrer_position_freedrive()
+                if nouvelle_pos:
+                    self.position_depart = nouvelle_pos
+                    self._sauvegarder_position_depart(nouvelle_pos)
+                else:
+                    print("⚠ Position non enregistrée - Utilisation position actuelle")
+                    self.position_depart = list(self.rtde_r.getActualTCPPose())
+            else:
+                print("   Utilisation de la position actuelle comme départ")
+                self.position_depart = list(self.rtde_r.getActualTCPPose())
+
+    def aller_position_depart(self):
+        """Va à la position de départ"""
+        if self.simulate or not self.position_depart:
+            return
+
+        print("   → Retour position de départ...")
+        self.rtde_c.moveL(self.position_depart, VITESSE, ACCELERATION)
+
+    def aller_position_reculee(self):
+        """Va à la position reculée (pour laisser le joueur jouer)"""
+        if self.simulate or not self.position_depart:
+            return
+
+        position_reculee = list(self.position_depart)
+        position_reculee[0] += OFFSET_RECUL_X
+        position_reculee[1] += OFFSET_RECUL_Y
+        position_reculee[2] += OFFSET_RECUL_Z
+
+        print("   → Position reculée (attente joueur)...")
+        self.rtde_c.moveL(position_reculee, VITESSE, ACCELERATION)
 
     def _pos_avec_z(self, tcp, delta_z):
         """Ajoute un delta Z à une position TCP"""
@@ -203,7 +375,7 @@ class ChessRobotGame:
         pos[2] += delta_z
         return pos
 
-    def _prendre_piece(self, case, piece_type=None):
+    def _prendre_piece(self, case):
         """Prend une pièce sur une case"""
         case = case.lower()
         if case not in self.cases:
@@ -223,7 +395,6 @@ class ChessRobotGame:
             print(f"      📏 Pièce: {nom} → hauteur dépose +{hauteur * 1000:.0f}mm")
         else:
             self.piece_courante = None
-            print(f"      📏 Pièce non identifiée → hauteur par défaut")
 
         print(f"      → Approche {case.upper()}...")
         self.rtde_c.moveL(self._pos_avec_z(tcp, self.delta_approche), VITESSE, ACCELERATION)
@@ -248,7 +419,7 @@ class ChessRobotGame:
         return True
 
     def _poser_piece(self, case):
-        """Pose une pièce sur une case avec hauteur adaptée au type de pièce"""
+        """Pose une pièce sur une case avec hauteur adaptée"""
         case = case.lower()
         if case not in self.cases:
             print(f"      ⚠ Case {case} non mappée!")
@@ -303,10 +474,10 @@ class ChessRobotGame:
         if not self._prendre_piece(to_sq):
             return False
 
-        # Déposer hors de l'échiquier (on monte juste et on lâche)
+        # Déposer hors de l'échiquier
         pose = self.rtde_r.getActualTCPPose()
         pose_haute = list(pose)
-        pose_haute[2] += 0.05  # +5cm
+        pose_haute[2] += 0.05
         self.rtde_c.moveL(pose_haute, VITESSE, ACCELERATION)
         self.gripper.move(GRIPPER_OUVERTURE)
         time.sleep(0.3)
@@ -381,6 +552,9 @@ class ChessRobotGame:
             if rep not in ['o', 'oui', 'y']:
                 return "Annulé"
 
+            # Aller à la position de départ
+            self.aller_position_depart()
+
         self.board.reset()
         self.visualizer.move_count = 0
         self.visualizer.save(self.board, player_w=player_w, player_b=player_b)
@@ -406,7 +580,7 @@ class ChessRobotGame:
             else:
                 print(f"   📊 {ev}")
 
-            # EXÉCUTER SUR LE ROBOT
+            # Exécuter sur le robot
             if not self.execute_move(move):
                 print("   ⚠ Erreur mouvement!")
                 rep = input("   Continuer en simulation? (o/n): ")
@@ -418,6 +592,10 @@ class ChessRobotGame:
             self.board.push(move)
             svg = self.visualizer.save(self.board, move, player_w, player_b)
             print(f"   📊 {svg.name}")
+
+            # Retour position de départ après chaque coup
+            if not self.simulate:
+                self.aller_position_depart()
 
             if pause:
                 input("   [ENTRÉE]...")
@@ -436,6 +614,10 @@ class ChessRobotGame:
         print("\n" + "=" * 60)
         print(f"  {result}")
         print("=" * 60)
+
+        # Position reculée à la fin
+        if not self.simulate:
+            self.aller_position_reculee()
 
         return result
 
@@ -457,12 +639,19 @@ def main():
     parser.add_argument('--max-coups', type=int, default=150)
     parser.add_argument('--delai', type=float, default=1.0)
     parser.add_argument('--list-levels', action='store_true')
+    parser.add_argument('--reset-position', action='store_true', help='Réenregistrer la position de départ')
 
     args = parser.parse_args()
 
     if args.list_levels:
         StockfishPlayer.list_presets()
         return
+
+    # Si on veut réinitialiser la position
+    if args.reset_position:
+        if os.path.exists(FICHIER_POSITION_DEPART):
+            os.remove(FICHIER_POSITION_DEPART)
+            print(f"✓ Position de départ supprimée ({FICHIER_POSITION_DEPART})")
 
     print("=" * 60)
     print("     ♔ ROBOT ÉCHECS ♚")
