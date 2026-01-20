@@ -18,7 +18,7 @@ import numpy as np
 # Import des fonctions de chess_detector
 sys.path.append('../test_extraction_plateau_image_cam_rasp')
 from chess_detector import (
-    load_aruco_detector,
+    create_aruco_detector,
     detect_calibration_markers,
     calculate_board_corners,
     estimate_missing_corners,
@@ -56,7 +56,7 @@ def detect_robot_position():
         return None
     
     # Détecter le plateau
-    detector = load_aruco_detector()
+    detector = create_aruco_detector()
     markers = detect_calibration_markers(img, detector)
     
     if len(markers) < 2:
