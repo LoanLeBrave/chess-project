@@ -173,10 +173,10 @@ BOARD_COORD_RANGE = BOARD_COORD_MAX - BOARD_COORD_MIN  # 20
 #   - CAL_BL (bottom-left):  +x (droite), -y (haut)
 #   - CAL_BR (bottom-right): -x (gauche), -y (haut)
 OFFSETS = {
-    "CAL_TL": {"offset_x": -97, "offset_y": -120},
-    "CAL_TR": {"offset_x": -72, "offset_y": 53},
-    "CAL_BL": {"offset_x": 115, "offset_y": -156},
-    "CAL_BR": {"offset_x": 120, "offset_y": 35}
+    "CAL_TL": {"offset_x": -70, "offset_y": -155},
+    "CAL_TR": {"offset_x": -96, "offset_y": 47},
+    "CAL_BL": {"offset_x": 111, "offset_y": -128},
+    "CAL_BR": {"offset_x": 87, "offset_y": 57}
 }
 
 # Couleurs pour la visualisation (BGR pour OpenCV)
