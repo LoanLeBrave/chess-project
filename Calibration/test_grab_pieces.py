@@ -35,11 +35,18 @@ class PieceGrabTester:
     def __init__(self,
                  robot_ip: str = "192.168.0.11",
                  camera_index: int = 0,
-                 calibration_file: str = "auto_calibration.json"):
+                 calibration_file: str = "auto_calibration.json",
+                 offset_x_mm: float = 0.0,
+                 offset_y_mm: float = 0.0):
 
         self.robot_ip = robot_ip
         self.camera_index = camera_index
         self.calibration_file = calibration_file
+
+        # DÉCALAGE entre l'ArUco et le centre de la pince (en mm)
+        # Ajustez ces valeurs selon votre installation
+        self.offset_x_mm = offset_x_mm  # Décalage en X
+        self.offset_y_mm = offset_y_mm  # Décalage en Y
 
         # Vision
         self.vision: Optional[ChessVisionSystem] = None
@@ -74,6 +81,9 @@ class PieceGrabTester:
         # Vitesses (m/s)
         self.speed_fast = 0.2
         self.speed_slow = 0.05
+
+        # Pas de descente pour le contrôle manuel (mm)
+        self.z_step_mm = 5.0
 
     def connect(self) -> bool:
         """Connecte à la caméra et au robot."""
@@ -151,14 +161,43 @@ class PieceGrabTester:
             return False
 
     def camera_to_robot(self, x_cm: float, y_cm: float) -> Tuple[float, float, float]:
-        """Convertit coordonnées caméra (cm) vers robot (mm)."""
+        """
+        Convertit coordonnées caméra (cm) vers robot (mm).
+        Applique le décalage ArUco → pince.
+        """
         if not self.is_calibrated:
             raise ValueError("Calibration non chargée!")
 
         pt = np.array([x_cm, y_cm, 1])
         robot_pt = self.transform_matrix @ pt
 
-        return (robot_pt[0], robot_pt[1], self.z_offset_mm)
+        # Appliquer le décalage ArUco → pince
+        robot_x = robot_pt[0] + self.offset_x_mm
+        robot_y = robot_pt[1] + self.offset_y_mm
+
+        return (robot_x, robot_y, self.z_offset_mm)
+
+    def set_offset(self, x_mm: float, y_mm: float):
+        """Définit le décalage ArUco → pince."""
+        self.offset_x_mm = x_mm
+        self.offset_y_mm = y_mm
+        print(f"✅ Décalage défini: X={x_mm}mm, Y={y_mm}mm")
+
+    def move_z(self, delta_mm: float):
+        """Déplace le robot en Z (monte si positif, descend si négatif)."""
+        current = self.get_robot_tcp()
+        new_z = current[2] + delta_mm
+        print(f"   Z: {current[2]:.1f} → {new_z:.1f} mm")
+        self.move_robot(current[0], current[1], new_z, self.speed_slow)
+
+    def move_xy(self, delta_x_mm: float, delta_y_mm: float):
+        """Déplace le robot en X/Y."""
+        current = self.get_robot_tcp()
+        new_x = current[0] + delta_x_mm
+        new_y = current[1] + delta_y_mm
+        print(f"   X: {current[0]:.1f} → {new_x:.1f} mm")
+        print(f"   Y: {current[1]:.1f} → {new_y:.1f} mm")
+        self.move_robot(new_x, new_y, current[2], self.speed_slow)
 
     def get_robot_tcp(self) -> Tuple[float, float, float]:
         """Retourne la position TCP actuelle (mm)."""
@@ -355,16 +394,34 @@ class PieceGrabTester:
         print("\n" + "=" * 60)
         print("MODE INTERACTIF")
         print("=" * 60)
-        print("""
+        print(f"""
+Décalage actuel: X={self.offset_x_mm}mm, Y={self.offset_y_mm}mm
+
 Commandes:
-  d          - Détecter et afficher les pièces
-  p <ID>     - Aller vers la pièce avec cet ID ArUco
-  g <ID>     - Aller vers la pièce et descendre (grip)
-  s <case>   - Aller vers une case (ex: s e4)
-  corners    - Tester les 4 coins
-  center     - Aller au centre
-  home       - Remonter à la hauteur de transit
-  q          - Quitter
+  d            - Détecter et afficher les pièces
+  p <ID>       - Aller vers la pièce avec cet ID ArUco
+  g <ID>       - Aller vers la pièce et descendre (grip)
+  s <case>     - Aller vers une case (ex: s e4)
+
+CONTRÔLE MANUEL (position fine):
+  z+ ou u      - Monter de {self.z_step_mm}mm
+  z- ou j      - Descendre de {self.z_step_mm}mm
+  x+ ou l      - Déplacer X+ de 5mm
+  x- ou h      - Déplacer X- de 5mm  
+  y+ ou k      - Déplacer Y+ de 5mm
+  y- ou n      - Déplacer Y- de 5mm
+
+DÉCALAGE (offset ArUco → pince):
+  offset       - Afficher le décalage actuel
+  offset <X> <Y>  - Définir le décalage (ex: offset 50 0)
+
+TESTS:
+  corners      - Tester les 4 coins
+  center       - Aller au centre
+  home         - Remonter à la hauteur de transit
+  pos          - Afficher position actuelle du robot
+
+  q            - Quitter
         """)
 
         while True:
@@ -398,6 +455,50 @@ Commandes:
                     else:
                         print("Usage: s <case> (ex: s e4)")
 
+                # Contrôle Z (monter/descendre)
+                elif cmd in ['z+', 'u']:
+                    print(f"⬆️ Montée de {self.z_step_mm}mm")
+                    self.move_z(self.z_step_mm)
+
+                elif cmd in ['z-', 'j']:
+                    print(f"⬇️ Descente de {self.z_step_mm}mm")
+                    self.move_z(-self.z_step_mm)
+
+                # Contrôle X
+                elif cmd in ['x+', 'l']:
+                    print("➡️ X+ 5mm")
+                    self.move_xy(5, 0)
+
+                elif cmd in ['x-', 'h']:
+                    print("⬅️ X- 5mm")
+                    self.move_xy(-5, 0)
+
+                # Contrôle Y
+                elif cmd in ['y+', 'k']:
+                    print("⬆️ Y+ 5mm")
+                    self.move_xy(0, 5)
+
+                elif cmd in ['y-', 'n']:
+                    print("⬇️ Y- 5mm")
+                    self.move_xy(0, -5)
+
+                # Offset
+                elif cmd == 'offset':
+                    print(f"📐 Décalage actuel: X={self.offset_x_mm}mm, Y={self.offset_y_mm}mm")
+
+                elif cmd.startswith('offset '):
+                    try:
+                        parts = cmd[7:].split()
+                        if len(parts) == 2:
+                            ox = float(parts[0])
+                            oy = float(parts[1])
+                            self.set_offset(ox, oy)
+                        else:
+                            print("Usage: offset <X> <Y> (ex: offset 50 0)")
+                    except ValueError:
+                        print("Usage: offset <X> <Y> (ex: offset 50 0)")
+
+                # Tests
                 elif cmd == 'corners':
                     self.test_corners()
 
@@ -410,6 +511,10 @@ Commandes:
                                     self.z_offset_mm + self.heights['transit'],
                                     self.speed_fast)
                     print("✅ Robot remonté")
+
+                elif cmd == 'pos':
+                    pos = self.get_robot_tcp()
+                    print(f"📍 Position robot: X={pos[0]:.1f}, Y={pos[1]:.1f}, Z={pos[2]:.1f} mm")
 
                 else:
                     print("Commande inconnue. Tapez 'q' pour quitter.")
@@ -425,13 +530,30 @@ def main():
     parser.add_argument("--robot", default="192.168.0.11", help="IP du robot")
     parser.add_argument("--camera", type=int, default=0, help="Index caméra")
     parser.add_argument("--calibration", default="auto_calibration.json", help="Fichier calibration")
+    parser.add_argument("--offset-x", type=float, default=0.0, help="Décalage X ArUco→pince (mm)")
+    parser.add_argument("--offset-y", type=float, default=0.0, help="Décalage Y ArUco→pince (mm)")
 
     args = parser.parse_args()
+
+    print("\n" + "=" * 60)
+    print("TEST DE SAISIE DES PIONS")
+    print("=" * 60)
+    print(f"""
+Configuration:
+  - Robot: {args.robot}
+  - Décalage X: {args.offset_x} mm
+  - Décalage Y: {args.offset_y} mm
+
+Si l'ArUco est décalé de 5cm par rapport à la pince,
+utilisez: --offset-x 50 (ou --offset-y 50 selon l'axe)
+    """)
 
     tester = PieceGrabTester(
         robot_ip=args.robot,
         camera_index=args.camera,
-        calibration_file=args.calibration
+        calibration_file=args.calibration,
+        offset_x_mm=args.offset_x,
+        offset_y_mm=args.offset_y
     )
 
     if not tester.connect():
