@@ -192,12 +192,24 @@ def detect_robot_aruco(board_img, detector):
     Returns:
         tuple: (x, y) dans le repère -10/+10, ou None si non détecté
     """
+    # Vérifier que l'image est valide
+    if board_img is None or board_img.size == 0:
+        return None
+    
     if len(board_img.shape) == 3:
         gray = cv2.cvtColor(board_img, cv2.COLOR_BGR2GRAY)
     else:
         gray = board_img
     
-    corners, ids, _ = detector.detectMarkers(gray)
+    # Vérifier que l'image convertie est valide
+    if gray is None or gray.size == 0 or gray.shape[0] < 10 or gray.shape[1] < 10:
+        return None
+    
+    try:
+        corners, ids, _ = detector.detectMarkers(gray)
+    except cv2.error as e:
+        print(f"⚠️ Erreur OpenCV lors de la détection: {e}")
+        return None
     
     if ids is not None:
         for i, marker_id in enumerate(ids.flatten()):
@@ -283,10 +295,16 @@ class RobotCalibrator:
         """Déplace le robot vers une position."""
         if self.simulate:
             print(f"   [SIMULATION] moveL vers {position[:3]}")
+            time.sleep(0.5)  # Simuler le délai
             return True
         
         try:
             self.rtde_c.moveL(position, VITESSE, ACCELERATION)
+            # Attendre que le mouvement soit terminé
+            time.sleep(0.3)  # Petit délai initial
+            while not self.rtde_c.isSteady():
+                time.sleep(0.1)
+            time.sleep(0.5)  # Stabilisation supplémentaire pour la caméra
             return True
         except Exception as e:
             print(f"❌ Erreur déplacement: {e}")
@@ -375,9 +393,6 @@ class RobotCalibrator:
         print(f"   Facteur d'échelle: {SCALE_FACTOR} m/unité")
         print("=" * 60)
         
-        consecutive_fails = 0
-        max_consecutive_fails = 3
-        
         for iteration in range(max_iterations):
             print(f"\n📸 Itération {iteration + 1}/{max_iterations}")
             
@@ -388,19 +403,11 @@ class RobotCalibrator:
             robot_pos = self.detect_robot_on_board()
             
             if robot_pos is None:
-                consecutive_fails += 1
-                print(f"   ⚠️  ArUco robot non détecté ({consecutive_fails}/{max_consecutive_fails})")
-                
-                if consecutive_fails >= max_consecutive_fails:
-                    print("   🔄 Tentative de déplacement pour retrouver l'ArUco...")
-                    # Bouger le robot vers le centre estimé du plateau
-                    self._move_toward_center()
-                    consecutive_fails = 0
-                
+                print(f"   ⚠️  ArUco robot non détecté")
+                print("   🔄 Déplacement pour retrouver l'ArUco...")
+                # Bouger le robot immédiatement pour essayer de voir l'ArUco
+                self._move_toward_center()
                 continue
-            
-            # Reset du compteur si détection réussie
-            consecutive_fails = 0
             
             x, y = robot_pos
             print(f"   📍 Position robot: x={x:.2f}, y={y:.2f}")
