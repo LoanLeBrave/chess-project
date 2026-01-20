@@ -22,6 +22,15 @@ import json
 import time
 from enum import Enum
 
+# Essayer d'importer picamera2 pour Raspberry Pi
+try:
+    from picamera2 import Picamera2
+
+    PICAMERA2_AVAILABLE = True
+except ImportError:
+    PICAMERA2_AVAILABLE = False
+    print("⚠️ picamera2 non disponible, utilisation de cv2.VideoCapture")
+
 
 class PieceType(Enum):
     """Types de pièces d'échecs."""
@@ -180,18 +189,22 @@ class ChessVisionSystem:
                  camera_index: int = 0,
                  camera_matrix: np.ndarray = None,
                  dist_coeffs: np.ndarray = None,
-                 aruco_dict_type: int = cv2.aruco.DICT_4X4_50):
+                 aruco_dict_type: int = cv2.aruco.DICT_4X4_50,
+                 use_picamera: bool = True):
         """
         Initialise le système de vision.
 
         Args:
-            camera_index: Index de la caméra (0 pour PiCamera via V4L2)
+            camera_index: Index de la caméra (pour cv2.VideoCapture)
             camera_matrix: Matrice intrinsèque (3x3)
             dist_coeffs: Coefficients de distorsion
             aruco_dict_type: Type de dictionnaire ArUco (DICT_4X4_50 pour IDs 0-49)
+            use_picamera: Utiliser picamera2 si disponible (recommandé pour Pi)
         """
         self.camera_index = camera_index
-        self.cap = None
+        self.cap = None  # Pour cv2.VideoCapture
+        self.picam = None  # Pour Picamera2
+        self.use_picamera = use_picamera and PICAMERA2_AVAILABLE
 
         # Configuration
         self.board_config = BoardConfig()
@@ -199,7 +212,7 @@ class ChessVisionSystem:
 
         # Paramètres caméra (valeurs par défaut pour PiCamera v2)
         if camera_matrix is None:
-            # Estimation pour PiCamera v2 en 640x480
+            # Estimation pour PiCamera en 640x480
             self.camera_matrix = np.array([
                 [500, 0, 320],
                 [0, 500, 240],
@@ -227,8 +240,52 @@ class ChessVisionSystem:
         self._calibration_offset: Optional[np.ndarray] = None
 
     def connect_camera(self) -> bool:
-        """Connecte à la caméra."""
-        print(f"📷 Connexion caméra index {self.camera_index}...")
+        """Connecte à la caméra (PiCamera2 ou USB)."""
+
+        if self.use_picamera:
+            return self._connect_picamera()
+        else:
+            return self._connect_cv2()
+
+    def _connect_picamera(self) -> bool:
+        """Connecte via picamera2 (pour Raspberry Pi)."""
+        print("📷 Connexion PiCamera2...")
+
+        try:
+            self.picam = Picamera2()
+
+            # Configuration pour 640x480
+            config = self.picam.create_preview_configuration(
+                main={"size": (640, 480), "format": "RGB888"}
+            )
+            self.picam.configure(config)
+            self.picam.start()
+
+            # Attendre l'initialisation
+            time.sleep(1)
+
+            # Test de capture
+            frame = self.picam.capture_array()
+            if frame is not None:
+                h, w = frame.shape[:2]
+                print(f"✅ PiCamera connectée: {w}x{h}")
+
+                # Mettre à jour le centre de la caméra
+                self.camera_matrix[0, 2] = w / 2
+                self.camera_matrix[1, 2] = h / 2
+
+                return True
+            else:
+                print("❌ Impossible de capturer une image")
+                return False
+
+        except Exception as e:
+            print(f"❌ Erreur PiCamera2: {e}")
+            return False
+
+    def _connect_cv2(self) -> bool:
+        """Connecte via cv2.VideoCapture (pour webcam USB)."""
+        print(f"📷 Connexion caméra USB index {self.camera_index}...")
 
         try:
             self.cap = cv2.VideoCapture(self.camera_index)
@@ -238,22 +295,21 @@ class ChessVisionSystem:
 
         if not self.cap.isOpened():
             print("❌ Impossible d'ouvrir la caméra")
-            print("   Vérifiez que la caméra est connectée et pas utilisée ailleurs")
             return False
 
-        # Configuration pour Raspberry Pi
-        print("   Configuration de la caméra...")
+        # Configuration
         self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
         self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
         self.cap.set(cv2.CAP_PROP_FPS, 30)
 
-        print("   Lecture d'une frame de test...")
+        # Attendre l'initialisation
+        time.sleep(0.5)
+
         ret, frame = self.cap.read()
         if ret:
             h, w = frame.shape[:2]
-            print(f"✅ Caméra connectée: {w}x{h}")
+            print(f"✅ Caméra USB connectée: {w}x{h}")
 
-            # Mettre à jour le centre de la caméra
             self.camera_matrix[0, 2] = w / 2
             self.camera_matrix[1, 2] = h / 2
 
@@ -264,17 +320,31 @@ class ChessVisionSystem:
 
     def disconnect_camera(self):
         """Déconnecte la caméra."""
+        if self.picam:
+            self.picam.stop()
+            self.picam = None
+            print("📷 PiCamera déconnectée")
         if self.cap:
             self.cap.release()
             self.cap = None
-            print("📷 Caméra déconnectée")
+            print("📷 Caméra USB déconnectée")
 
     def get_frame(self) -> Optional[np.ndarray]:
         """Capture une frame."""
-        if self.cap is None:
-            return None
-        ret, frame = self.cap.read()
-        return frame if ret else None
+        if self.picam:
+            try:
+                frame = self.picam.capture_array()
+                # Convertir RGB -> BGR pour OpenCV si nécessaire
+                if frame is not None and len(frame.shape) == 3 and frame.shape[2] == 3:
+                    frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+                return frame
+            except Exception as e:
+                print(f"Erreur capture: {e}")
+                return None
+        elif self.cap:
+            ret, frame = self.cap.read()
+            return frame if ret else None
+        return None
 
     def calibrate_with_corners(self, frame: np.ndarray,
                                corner_positions_cm: Dict[int, Tuple[float, float]]) -> bool:
