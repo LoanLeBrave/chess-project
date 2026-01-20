@@ -16,9 +16,8 @@ Ce module:
 
 import cv2
 import numpy as np
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Optional, Dict, List, Tuple
-from dataclasses import field
 import json
 import time
 from enum import Enum
