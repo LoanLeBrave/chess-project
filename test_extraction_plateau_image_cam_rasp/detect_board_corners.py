@@ -41,7 +41,7 @@ EXTRACTED_BOARD_SIZE = 800
 # ============================================================
 # True = utilise les paramètres par défaut de la caméra (auto pour tout)
 # False = utilise nos paramètres personnalisés ci-dessous
-USE_DEFAULT_CAMERA_PARAMS = True
+USE_DEFAULT_CAMERA_PARAMS = False
 
 CAMERA_CONFIG = {
     'width': None,       # None = max, ou ex: 1920
@@ -55,9 +55,9 @@ CAMERA_CONFIG = {
     'sharpness': None,   # 1.0 = normal
     'denoise': None,     # 'auto', 'off', 'cdn_off', 'cdn_fast', 'cdn_hq'
     'timeout': 2000,     # Temps stabilisation caméra (ms)
-    'autofocus_mode': 'auto',    # 'auto', 'manual', 'continuous'
-    'lens_position': None,       # Position focus manuel (0.0-10.0, None = auto)
-    'autofocus_on_capture': True # Force autofocus avant capture
+    'autofocus_mode': 'manual',  # 'auto', 'manual', 'continuous'
+    'lens_position': 7.0,        # Position focus manuel (0.0-10.0, None = auto)
+    'autofocus_on_capture': False # Force autofocus avant capture
 }
 
 # Dictionnaire ArUco (doit correspondre à celui utilisé pour la génération)

@@ -649,10 +649,15 @@ def _capture_with_rpicam(filepath):
     else:
         cmd = 'libcamera-still'
     
-    print(f"   🎥 Mode caméra: {cmd}")
+    print(f"   🎥 Mode caméra: {cmd} (focus manuel 7.0)")
     
-    # Construire la commande (avec timeout pour laisser la caméra se stabiliser)
-    args = [cmd, '-n', '-o', filepath, '--timeout', '2000']
+    # Construire la commande (avec timeout et focus manuel)
+    args = [
+        cmd, '-n', '-o', filepath,
+        '--timeout', '2000',
+        '--autofocus-mode', 'manual',
+        '--lens-position', '7.0'
+    ]
     
     try:
         result = subprocess.run(args, capture_output=True, text=True, timeout=30)
