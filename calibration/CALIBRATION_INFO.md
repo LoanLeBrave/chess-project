@@ -23,20 +23,28 @@ Côté JOUEUR
 Extraction plateau → image 800x800 pixels → conversion repère:
 ```python
 x_repere = -10 + (pixel_x / 800) * 20
-y_repere = -10 + (pixel_y / 800) * 20
+y_repere = +10 - (pixel_y / 800) * 20  # Inversion Y pour repère math
 ```
 
-**Mapping actuel:**
+**Mapping validé (tests réels):**
 ```
-(-10,-10) -------- (+10,-10)
-   TL                 TR
+        Y+ (vers robot)
+              ^
+              |
+TL(-10,+10) -------- TR(+10,+10)
     |                  |
-    |                  |
-   BL                 BR
-(-10,+10) -------- (+10,+10)
+    |      (0,0)       |
+    |     centre       |
+BL(-10,-10) -------- BR(+10,-10)
+              |
+              v
+        Y- (vers joueur)
 ```
 
-**Centre plateau** = (0, 0) dans le repère
+**Convention:** Repère mathématique standard
+- X augmente vers la droite
+- Y augmente vers le robot (haut)
+- Centre plateau = (0, 0)
 
 ## TODO - Correspondance axes robot ↔ vision
 
