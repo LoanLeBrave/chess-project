@@ -55,6 +55,9 @@ CAMERA_CONFIG = {
     'sharpness': None,   # 1.0 = normal
     'denoise': None,     # 'auto', 'off', 'cdn_off', 'cdn_fast', 'cdn_hq'
     'timeout': 2000,     # Temps stabilisation caméra (ms)
+    'autofocus_mode': 'auto',    # 'auto', 'manual', 'continuous'
+    'lens_position': None,       # Position focus manuel (0.0-10.0, None = auto)
+    'autofocus_on_capture': True # Force autofocus avant capture
 }
 
 # Dictionnaire ArUco (doit correspondre à celui utilisé pour la génération)
@@ -276,6 +279,9 @@ def _capture_with_rpicam(filepath):
     # Si USE_DEFAULT_CAMERA_PARAMS = True, on utilise les paramètres par défaut (auto)
     if USE_DEFAULT_CAMERA_PARAMS:
         print("   ⚙️  Paramètres caméra: par défaut (auto)")
+        # Ajouter autofocus même en mode par défaut
+        if CAMERA_CONFIG.get('autofocus_on_capture'):
+            args.extend(['--autofocus-on-capture'])
     else:
         print("   ⚙️  Paramètres caméra: personnalisés")
         
@@ -303,6 +309,16 @@ def _capture_with_rpicam(filepath):
         
         if CAMERA_CONFIG.get('sharpness'):
             args.extend(['--sharpness', str(CAMERA_CONFIG['sharpness'])])
+        
+        # Focus parameters
+        if CAMERA_CONFIG.get('autofocus_mode'):
+            args.extend(['--autofocus-mode', str(CAMERA_CONFIG['autofocus_mode'])])
+        
+        if CAMERA_CONFIG.get('lens_position') is not None:
+            args.extend(['--lens-position', str(CAMERA_CONFIG['lens_position'])])
+        
+        if CAMERA_CONFIG.get('autofocus_on_capture'):
+            args.extend(['--autofocus-on-capture'])
         
         if CAMERA_CONFIG.get('denoise'):
             args.extend(['--denoise', str(CAMERA_CONFIG['denoise'])])
