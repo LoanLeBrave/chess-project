@@ -304,7 +304,7 @@ class RobotCalibrator:
             time.sleep(0.3)  # Petit délai initial
             while not self.rtde_c.isSteady():
                 time.sleep(0.1)
-            time.sleep(0.5)  # Stabilisation supplémentaire pour la caméra
+            time.sleep(0.1)  # Stabilisation rapide (caméra fixe)
             return True
         except Exception as e:
             print(f"❌ Erreur déplacement: {e}")
@@ -333,7 +333,7 @@ class RobotCalibrator:
         
         print(f"   🔄 Déplacement exploratoire: Δx={delta_x*1000:.1f}mm, Δy={delta_y*1000:.1f}mm")
         self.move_robot_delta(delta_x, delta_y)
-        time.sleep(0.3)
+        time.sleep(0.1)
 
     def detect_robot_on_board(self, image_path=None):
         """
@@ -397,7 +397,7 @@ class RobotCalibrator:
             print(f"\n📸 Itération {iteration + 1}/{max_iterations}")
             
             # Petite pause pour stabiliser
-            time.sleep(0.5)
+            time.sleep(0.1)
             
             # Détecter la position du robot
             robot_pos = self.detect_robot_on_board()
