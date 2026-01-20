@@ -254,25 +254,50 @@ class ChessVisionSystem:
         try:
             self.picam = Picamera2()
 
-            # Configuration pour 640x480
-            config = self.picam.create_preview_configuration(
-                main={"size": (640, 480), "format": "RGB888"}
+            # Utiliser la résolution native du capteur pour meilleure qualité
+            # IMX708 (Pi Camera 3) : 4608x2592
+            # On capture en haute résolution puis on redimensionne si besoin
+            config = self.picam.create_still_configuration(
+                main={"size": (4608, 2592), "format": "RGB888"},
+                buffer_count=2
             )
             self.picam.configure(config)
+
+            # Régler le focus manuellement à 7 (0-15, plus bas = plus loin)
+            # LensPosition: 0 = infini, 15 = très proche
+            self.picam.set_controls({
+                "AfMode": 0,  # Mode manuel
+                "LensPosition": 7.0,  # Focus à 7
+                "AeEnable": True,  # Auto-exposition
+                "AwbEnable": True,  # Balance des blancs auto
+                "Sharpness": 1.5,  # Netteté améliorée
+                "Contrast": 1.1,  # Contraste légèrement augmenté
+            })
+
             self.picam.start()
 
-            # Attendre l'initialisation
-            time.sleep(1)
+            # Attendre l'initialisation et la stabilisation
+            print("   Stabilisation de l'image...")
+            time.sleep(2)
 
             # Test de capture
             frame = self.picam.capture_array()
             if frame is not None:
                 h, w = frame.shape[:2]
-                print(f"✅ PiCamera connectée: {w}x{h}")
+                print(f"✅ PiCamera connectée: {w}x{h} (résolution native)")
+                print(f"   Focus: 7.0 (manuel)")
 
                 # Mettre à jour le centre de la caméra
                 self.camera_matrix[0, 2] = w / 2
                 self.camera_matrix[1, 2] = h / 2
+
+                # Mettre à jour la matrice caméra pour haute résolution
+                # Estimation pour capteur IMX708
+                self.camera_matrix = np.array([
+                    [3500, 0, w / 2],
+                    [0, 3500, h / 2],
+                    [0, 0, 1]
+                ], dtype=np.float32)
 
                 return True
             else:
@@ -281,6 +306,8 @@ class ChessVisionSystem:
 
         except Exception as e:
             print(f"❌ Erreur PiCamera2: {e}")
+            import traceback
+            traceback.print_exc()
             return False
 
     def _connect_cv2(self) -> bool:
