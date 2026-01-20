@@ -231,17 +231,24 @@ class ChessVisionSystem:
         """Connecte à la caméra."""
         print(f"📷 Connexion caméra index {self.camera_index}...")
 
-        self.cap = cv2.VideoCapture(self.camera_index)
+        try:
+            self.cap = cv2.VideoCapture(self.camera_index)
+        except Exception as e:
+            print(f"❌ Exception lors de VideoCapture: {e}")
+            return False
 
         if not self.cap.isOpened():
             print("❌ Impossible d'ouvrir la caméra")
+            print("   Vérifiez que la caméra est connectée et pas utilisée ailleurs")
             return False
 
         # Configuration pour Raspberry Pi
+        print("   Configuration de la caméra...")
         self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
         self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
         self.cap.set(cv2.CAP_PROP_FPS, 30)
 
+        print("   Lecture d'une frame de test...")
         ret, frame = self.cap.read()
         if ret:
             h, w = frame.shape[:2]
