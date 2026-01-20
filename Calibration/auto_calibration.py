@@ -40,26 +40,17 @@ class CalibrationConfig:
     # Taille du plateau en cm
     board_size_cm: float = 28.0
 
-    # Hauteur de recherche (mm) - au-dessus du plateau
-    search_height_mm: float = 150.0
-
-    # Zone de recherche (mm) - autour du centre estimé
+    # Zone de recherche (mm) - autour de la position initiale
     search_range_mm: float = 200.0
 
-    # Pas de recherche (mm)
-    search_step_mm: float = 30.0
+    # Pas de recherche (mm) - 2cm = 20mm
+    search_step_mm: float = 20.0
 
     # Vitesse de déplacement pour la recherche (m/s)
     search_speed: float = 0.1
 
     # Vitesse de déplacement pour la calibration (m/s)
     calibration_speed: float = 0.05
-
-    # Position initiale estimée du centre du plateau (mm)
-    # À ajuster selon ton installation
-    estimated_board_center_x_mm: float = 400.0
-    estimated_board_center_y_mm: float = 0.0
-    estimated_board_z_mm: float = 50.0  # Hauteur de la surface du plateau
 
 
 class AutoCalibration:
@@ -198,6 +189,7 @@ class AutoCalibration:
     def search_robot_aruco(self) -> bool:
         """
         Recherche l'ArUco du robot en déplaçant le bras en spirale.
+        Part de la position ACTUELLE du robot et fait des pas de 2cm.
 
         Returns:
             True si trouvé
@@ -210,58 +202,95 @@ class AutoCalibration:
             print(f"✅ ArUco robot trouvé immédiatement à ({pos[0]:.1f}, {pos[1]:.1f}) cm")
             return True
 
-        # Position de départ pour la recherche
-        center_x = self.config.estimated_board_center_x_mm
-        center_y = self.config.estimated_board_center_y_mm
-        z = self.config.search_height_mm + self.config.estimated_board_z_mm
+        # Position INITIALE du robot (point de départ)
+        initial_pos = self.get_robot_tcp()
+        start_x = initial_pos[0]
+        start_y = initial_pos[1]
+        z = initial_pos[2]  # Garder la même hauteur Z
 
-        print(f"   Position de recherche initiale: ({center_x:.0f}, {center_y:.0f}, {z:.0f}) mm")
+        print(f"   Position initiale du robot: ({start_x:.1f}, {start_y:.1f}, {z:.1f}) mm")
+        print(f"   Recherche avec pas de {self.config.search_step_mm} mm (2 cm)")
 
-        # Aller à la position de départ
-        self.move_robot(center_x, center_y, z, self.config.search_speed)
-        time.sleep(0.5)
-
-        # Vérifier
-        pos = self.detect_robot_aruco()
-        if pos is not None:
-            print(f"✅ ArUco robot trouvé à ({pos[0]:.1f}, {pos[1]:.1f}) cm")
-            return True
-
-        # Recherche en spirale
-        step = self.config.search_step_mm
+        # Recherche en spirale carrée (plus simple et progressif)
+        step = self.config.search_step_mm  # 20mm = 2cm
         max_range = self.config.search_range_mm
 
-        # Générer les points de la spirale
+        # Générer les points en spirale carrée progressive
+        # Partant du centre, on fait des carrés de plus en plus grands
         spiral_points = []
-        for radius in np.arange(step, max_range + step, step):
-            # Points sur le cercle
-            n_points = max(4, int(2 * np.pi * radius / step))
-            for i in range(n_points):
-                angle = 2 * np.pi * i / n_points
-                x = center_x + radius * np.cos(angle)
-                y = center_y + radius * np.sin(angle)
-                spiral_points.append((x, y))
 
-        print(f"   Recherche en spirale ({len(spiral_points)} positions)...")
+        # Direction: droite, haut, gauche, bas
+        directions = [(1, 0), (0, 1), (-1, 0), (0, -1)]
+
+        x, y = 0, 0  # Position relative au point de départ
+        spiral_points.append((start_x, start_y))
+
+        layer = 1
+        while layer * step <= max_range:
+            # Pour chaque couche de la spirale
+            for dir_idx, (dx, dy) in enumerate(directions):
+                # Nombre de pas dans cette direction
+                steps_in_dir = layer if dir_idx < 2 else layer
+                if dir_idx >= 2:
+                    steps_in_dir = layer + 1
+
+                for _ in range(layer):
+                    x += dx * step
+                    y += dy * step
+
+                    # Vérifier qu'on ne dépasse pas la zone
+                    if abs(x) <= max_range and abs(y) <= max_range:
+                        spiral_points.append((start_x + x, start_y + y))
+
+            layer += 1
+
+        # Simplifier: utiliser une vraie spirale carrée
+        spiral_points = []
+        for ring in range(1, int(max_range / step) + 1):
+            offset = ring * step
+
+            # Côté droit (de bas en haut)
+            for i in range(-ring, ring + 1):
+                spiral_points.append((start_x + offset, start_y + i * step))
+
+            # Côté haut (de droite à gauche)
+            for i in range(ring - 1, -ring - 1, -1):
+                spiral_points.append((start_x + i * step, start_y + offset))
+
+            # Côté gauche (de haut en bas)
+            for i in range(ring - 1, -ring - 1, -1):
+                spiral_points.append((start_x - offset, start_y + i * step))
+
+            # Côté bas (de gauche à droite)
+            for i in range(-ring + 1, ring + 1):
+                spiral_points.append((start_x + i * step, start_y - offset))
+
+        print(f"   Recherche progressive: {len(spiral_points)} positions (spirale carrée)")
 
         for i, (x, y) in enumerate(spiral_points):
-            # Déplacer le robot
+            # Déplacer le robot progressivement
+            print(f"   [{i + 1}/{len(spiral_points)}] Déplacement vers ({x:.0f}, {y:.0f}) mm...", end=" ")
+
             self.move_robot(x, y, z, self.config.search_speed)
             time.sleep(0.3)  # Attendre la stabilisation
 
             # Vérifier si l'ArUco est visible
             pos = self.detect_robot_aruco()
             if pos is not None:
-                print(f"✅ ArUco robot trouvé à la position {i + 1}/{len(spiral_points)}")
+                print(f"TROUVÉ!")
+                print(f"✅ ArUco robot trouvé!")
                 print(f"   Position caméra: ({pos[0]:.1f}, {pos[1]:.1f}) cm")
                 print(f"   Position robot: ({x:.0f}, {y:.0f}, {z:.0f}) mm")
                 return True
-
-            # Afficher la progression
-            if (i + 1) % 10 == 0:
-                print(f"   Progression: {i + 1}/{len(spiral_points)}...")
+            else:
+                print("non visible")
 
         print("❌ ArUco robot non trouvé après recherche complète")
+
+        # Retourner à la position initiale
+        print("   Retour à la position initiale...")
+        self.move_robot(start_x, start_y, z, self.config.search_speed)
+
         return False
 
     def collect_calibration_point(self) -> bool:
@@ -308,6 +337,7 @@ class AutoCalibration:
     def collect_calibration_points(self, n_points: int = 9) -> bool:
         """
         Collecte plusieurs points de calibration en déplaçant le robot.
+        Utilise des pas de 2cm (20mm) à partir de la position actuelle.
 
         Args:
             n_points: Nombre de points à collecter (grille 3x3 par défaut)
@@ -318,38 +348,46 @@ class AutoCalibration:
         if not self.search_robot_aruco():
             return False
 
-        # Position actuelle
+        # Position actuelle (là où l'ArUco a été trouvé)
         current_pos = self.get_robot_tcp()
-        z = current_pos[2]  # Garder la même hauteur
+        center_x = current_pos[0]
+        center_y = current_pos[1]
+        z = current_pos[2]  # Garder la même hauteur Z
 
-        # Définir une grille de points autour de la position actuelle
+        print(f"   Position de référence: ({center_x:.1f}, {center_y:.1f}, {z:.1f}) mm")
+
+        # Définir une grille de points avec pas de 2cm (20mm)
         grid_size = int(np.sqrt(n_points))
-        half_range = 80  # mm - zone de 160x160mm
+        step = 20.0  # 2cm = 20mm
 
+        # Grille centrée sur la position actuelle
         points_to_visit = []
+        half_grid = (grid_size - 1) / 2
+
         for i in range(grid_size):
             for j in range(grid_size):
-                x = current_pos[0] + (i - grid_size // 2) * (2 * half_range / (grid_size - 1))
-                y = current_pos[1] + (j - grid_size // 2) * (2 * half_range / (grid_size - 1))
+                x = center_x + (i - half_grid) * step
+                y = center_y + (j - half_grid) * step
                 points_to_visit.append((x, y))
 
-        print(f"   Grille de {grid_size}x{grid_size} points")
+        print(f"   Grille {grid_size}x{grid_size} avec pas de 2cm")
+        print(f"   Zone couverte: {(grid_size - 1) * step:.0f} x {(grid_size - 1) * step:.0f} mm")
 
         self.calibration_points = []
 
         for i, (x, y) in enumerate(points_to_visit):
-            print(f"\n   Point {i + 1}/{len(points_to_visit)}:")
+            print(f"\n   Point {i + 1}/{len(points_to_visit)}: ({x:.0f}, {y:.0f}) mm")
 
-            # Déplacer le robot
+            # Déplacer le robot progressivement (2cm)
             self.move_robot(x, y, z, self.config.calibration_speed)
-            time.sleep(0.5)
+            time.sleep(0.5)  # Attendre la stabilisation
 
             # Collecter le point
             if not self.collect_calibration_point():
-                print(f"   ⚠️ Échec au point {i + 1}, on continue...")
+                print(f"   ⚠️ ArUco non visible au point {i + 1}, on continue...")
                 continue
 
-        print(f"\n✅ {len(self.calibration_points)} points collectés")
+        print(f"\n✅ {len(self.calibration_points)} points collectés sur {len(points_to_visit)}")
         return len(self.calibration_points) >= 4
 
     def compute_transformation(self) -> bool:
@@ -519,19 +557,33 @@ def main():
     parser.add_argument("--robot", default="192.168.0.11", help="IP du robot UR5e")
     parser.add_argument("--camera", type=int, default=0, help="Index caméra")
     parser.add_argument("--aruco-id", type=int, default=50, help="ID ArUco sur le robot")
-    parser.add_argument("--center-x", type=float, default=400, help="Position X estimée du centre (mm)")
-    parser.add_argument("--center-y", type=float, default=0, help="Position Y estimée du centre (mm)")
-    parser.add_argument("--center-z", type=float, default=50, help="Hauteur du plateau (mm)")
+    parser.add_argument("--search-range", type=float, default=200, help="Zone de recherche en mm")
+    parser.add_argument("--step", type=float, default=20, help="Pas de recherche en mm (défaut: 20 = 2cm)")
 
     args = parser.parse_args()
 
     # Configuration
     config = CalibrationConfig(
         robot_aruco_id=args.aruco_id,
-        estimated_board_center_x_mm=args.center_x,
-        estimated_board_center_y_mm=args.center_y,
-        estimated_board_z_mm=args.center_z,
+        search_range_mm=args.search_range,
+        search_step_mm=args.step,
     )
+
+    print("\n" + "=" * 60)
+    print("CALIBRATION AUTOMATIQUE ROBOT-PLATEAU")
+    print("=" * 60)
+    print(f"""
+⚠️  IMPORTANT: Positionnez le robot manuellement AU-DESSUS du plateau
+    avant de lancer ce script. Le robot va chercher l'ArUco à partir
+    de sa position ACTUELLE avec des pas de {args.step}mm ({args.step / 10}cm).
+
+Configuration:
+  - ArUco robot: ID {args.aruco_id}
+  - Pas de recherche: {args.step} mm ({args.step / 10} cm)
+  - Zone de recherche: ±{args.search_range} mm
+    """)
+
+    input("Appuyez sur Entrée quand le robot est en position...")
 
     # Calibration
     calib = AutoCalibration(
