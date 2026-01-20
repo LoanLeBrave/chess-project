@@ -46,24 +46,23 @@ BL(-10,-10) -------- BR(+10,-10)
 - Y augmente vers le robot (haut)
 - Centre plateau = (0, 0)
 
-## TODO - Correspondance axes robot ↔ vision
+## Correspondance axes robot ↔ vision (VALIDÉ)
 
-**À déterminer avec `test_axes_correspondance.py`:**
+**Tests effectués avec `test_axes_observation.py`:**
 
-- +X robot (mètres) → ? en (x,y) vision
-- +Y robot (mètres) → ? en (x,y) vision
+- +X robot → X- plateau (gauche) → **axes X inversés**
+- +Y robot → Y- plateau (vers joueur) → **axes Y inversés**
 
-**Une fois connu, formule à corriger dans `calibrate_robot.py`:**
+**Formule de correction dans `calibrate_robot.py`:**
 ```python
-# Ligne ~436-437
-delta_x_robot = error_x * SCALE_FACTOR  # À ajuster
-delta_y_robot = error_y * SCALE_FACTOR  # À ajuster
-```
+# Pour aller de (x,y) vers (0,0)
+error_x = 0 - x
+error_y = 0 - y
 
-Peut nécessiter:
-- Inversion d'axe (multiplier par -1)
-- Permutation (X vision → Y robot)
-- Facteur d'échelle différent
+# Conversion vers commandes robot (axes inversés)
+delta_x_robot = -error_x * SCALE_FACTOR
+delta_y_robot = -error_y * SCALE_FACTOR
+```
 
 ## Paramètres actuels
 

@@ -430,10 +430,10 @@ class RobotCalibrator:
                 return True
             
             # Calculer le déplacement en mètres
-            # Note: L'axe du robot peut être inversé par rapport au repère
-            # À AJUSTER selon l'orientation de ton robot !
-            delta_x_robot = error_x * SCALE_FACTOR
-            delta_y_robot = error_y * SCALE_FACTOR
+            # Axes inversés: +X robot → X- plateau, +Y robot → Y- plateau
+            # Donc on inverse les signes
+            delta_x_robot = -error_x * SCALE_FACTOR
+            delta_y_robot = -error_y * SCALE_FACTOR
             
             print(f"   🤖 Déplacement: Δx={delta_x_robot*1000:.1f}mm, Δy={delta_y_robot*1000:.1f}mm")
             
