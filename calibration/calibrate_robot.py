@@ -420,16 +420,74 @@ class RobotCalibrator:
             print("❌ Impossible de déterminer les 4 coins du plateau")
             return None
         
-        # Extraire le plateau
-        board_img = extract_board(img, board_corners)
+        # ===== NOUVELLE MÉTHODE: Détecter l'ArUco robot sur l'IMAGE COMPLÈTE =====
+        # Cela évite la perte de qualité due à la transformation perspective
+        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        corners, ids, _ = self.detector.detectMarkers(gray)
         
-        # Détecter l'ArUco du robot
-        robot_pos = detect_robot_aruco(board_img, self.detector)
+        robot_pos = None
+        if ids is not None:
+            for i, marker_id in enumerate(ids.flatten()):
+                if int(marker_id) == ROBOT_ARUCO_ID:
+                    # Trouver le centre de l'ArUco robot dans l'image complète
+                    marker_corners = corners[i][0]
+                    center_x_full = sum(c[0] for c in marker_corners) / 4
+                    center_y_full = sum(c[1] for c in marker_corners) / 4
+                    
+                    # Convertir la position vers le repère du plateau
+                    # On utilise la transformation inverse: point image → point plateau
+                    robot_pos = self._convert_full_image_to_board_coords(
+                        center_x_full, center_y_full, board_corners
+                    )
+                    break
+        
+        # Pour le debug, on extrait quand même le plateau
+        board_img = extract_board(img, board_corners)
         
         # Sauvegarder les images de debug
         self._save_debug_image(img, iteration, board_img, robot_pos, calibration_markers)
         
         return robot_pos
+    
+    def _convert_full_image_to_board_coords(self, x_img, y_img, board_corners):
+        """
+        Convertit une position (x, y) dans l'image complète vers le repère plateau (-10/+10).
+        
+        Args:
+            x_img, y_img: Coordonnées dans l'image complète
+            board_corners: Les 4 coins du plateau [TL, TR, BL, BR]
+        
+        Returns:
+            tuple: (x, y) dans le repère -10/+10
+        """
+        # Points source: les 4 coins du plateau dans l'image
+        src_pts = np.float32([
+            board_corners['TL'],
+            board_corners['TR'],
+            board_corners['BL'],
+            board_corners['BR']
+        ])
+        
+        # Points destination: repère -10/+10
+        # TL = (-10, +10), TR = (+10, +10), BL = (-10, -10), BR = (+10, -10)
+        dst_pts = np.float32([
+            [-10, 10],   # TL
+            [10, 10],    # TR
+            [-10, -10],  # BL
+            [10, -10]    # BR
+        ])
+        
+        # Calculer la transformation perspective inverse
+        matrix = cv2.getPerspectiveTransform(src_pts, dst_pts)
+        
+        # Appliquer la transformation au point (x_img, y_img)
+        point = np.array([[[x_img, y_img]]], dtype=np.float32)
+        transformed = cv2.perspectiveTransform(point, matrix)
+        
+        x_board = transformed[0][0][0]
+        y_board = transformed[0][0][1]
+        
+        return (x_board, y_board)
     
     def calibrate(self, max_iterations=50):
         """
