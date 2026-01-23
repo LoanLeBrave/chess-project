@@ -45,8 +45,14 @@ def main():
     print("🔍 TEST DÉTECTION ArUco ROBOT (ID 36)")
     print("=" * 70)
     
+    # Créer dossier tmp_test à côté du script
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    tmp_dir = os.path.join(script_dir, "tmp_test")
+    os.makedirs(tmp_dir, exist_ok=True)
+    
     # Prendre une photo
-    image_path = take_photo()
+    image_path = os.path.join(tmp_dir, "test_aruco.jpg")
+    image_path = take_photo(image_path)
     if image_path is None:
         return
     
@@ -139,7 +145,7 @@ def main():
                    cv2.FONT_HERSHEY_SIMPLEX, 2, (0, 0, 255), 3)
     
     # Sauvegarder l'image annotée
-    output_path = "/tmp/test_aruco_result.jpg"
+    output_path = os.path.join(tmp_dir, "test_aruco_result.jpg")
     cv2.imwrite(output_path, result_img)
     print(f"✅ Image annotée sauvegardée: {output_path}")
     
