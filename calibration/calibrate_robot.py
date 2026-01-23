@@ -455,18 +455,28 @@ class RobotCalibrator:
         
         Args:
             x_img, y_img: Coordonnées dans l'image complète
-            board_corners: Les 4 coins du plateau [TL, TR, BL, BR]
+            board_corners: dict des coins du plateau {code: (x, y)}
         
         Returns:
             tuple: (x, y) dans le repère -10/+10
         """
+        # Récupérer les 4 coins du plateau
+        # Les codes peuvent être 'CAL_TL', 'CAL_TR', etc. ou 'TL', 'TR', etc.
+        tl = board_corners.get('CAL_TL') or board_corners.get('TL')
+        tr = board_corners.get('CAL_TR') or board_corners.get('TR')
+        bl = board_corners.get('CAL_BL') or board_corners.get('BL')
+        br = board_corners.get('CAL_BR') or board_corners.get('BR')
+        
+        if not all([tl, tr, bl, br]):
+            # Fallback : prendre les premières 4 valeurs du dictionnaire
+            corners_list = list(board_corners.values())
+            if len(corners_list) >= 4:
+                tl, tr, bl, br = corners_list[:4]
+            else:
+                return None
+        
         # Points source: les 4 coins du plateau dans l'image
-        src_pts = np.float32([
-            board_corners['TL'],
-            board_corners['TR'],
-            board_corners['BL'],
-            board_corners['BR']
-        ])
+        src_pts = np.float32([tl, tr, bl, br])
         
         # Points destination: repère -10/+10
         # TL = (-10, +10), TR = (+10, +10), BL = (-10, -10), BR = (+10, -10)
