@@ -21,6 +21,7 @@ import numpy as np
 import subprocess
 import shutil
 import time
+from datetime import datetime
 
 # Ajouter les chemins des autres modules
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -265,6 +266,7 @@ class RobotCalibrator:
         self.rtde_c = None
         self.rtde_r = None
         self.detector = create_aruco_detector()
+        self.debug_dir = None  # Dossier de debug pour cette session
         
         if not simulate:
             self._connect_robot()
@@ -334,8 +336,54 @@ class RobotCalibrator:
         print(f"   🔄 Déplacement exploratoire: Δx={delta_x*1000:.1f}mm, Δy={delta_y*1000:.1f}mm")
         self.move_robot_delta(delta_x, delta_y)
         time.sleep(0.1)
+    
+    def _save_debug_image(self, img, iteration, board_img=None, robot_pos=None, calibration_markers=None):
+        """Sauvegarde l'image avec annotations pour debug."""
+        if self.debug_dir is None:
+            return
+        
+        # Image complète avec coins du plateau
+        debug_img = img.copy()
+        
+        # Annoter les marqueurs de calibration détectés
+        if calibration_markers:
+            for marker_id, info in calibration_markers.items():
+                corners = info['corners']
+                center = info['center']
+                
+                # Dessiner le contour
+                pts = corners.reshape((-1, 1, 2)).astype(np.int32)
+                cv2.polylines(debug_img, [pts], True, (0, 255, 0), 2)
+                
+                # Annoter l'ID
+                cv2.putText(debug_img, f"ID{marker_id}", 
+                           (int(center[0]), int(center[1])), 
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+        
+        # Sauvegarder l'image complète
+        cv2.imwrite(os.path.join(self.debug_dir, f"iter_{iteration:03d}_full.jpg"), debug_img)
+        
+        # Sauvegarder le plateau extrait avec ArUco robot si disponible
+        if board_img is not None:
+            board_debug = board_img.copy()
+            
+            # Détecter et annoter l'ArUco robot sur le plateau
+            gray = cv2.cvtColor(board_img, cv2.COLOR_BGR2GRAY)
+            corners, ids, _ = self.detector.detectMarkers(gray)
+            
+            if ids is not None:
+                cv2.aruco.drawDetectedMarkers(board_debug, corners, ids)
+                
+                # Annoter la position si connue
+                if robot_pos:
+                    x, y = robot_pos
+                    text = f"Robot: ({x:.2f}, {y:.2f})"
+                    cv2.putText(board_debug, text, (10, 30), 
+                               cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+            
+            cv2.imwrite(os.path.join(self.debug_dir, f"iter_{iteration:03d}_board.jpg"), board_debug)
 
-    def detect_robot_on_board(self, image_path=None):
+    def detect_robot_on_board(self, image_path=None, iteration=0):
         """
         Détecte la position du robot sur le plateau.
         
@@ -378,6 +426,9 @@ class RobotCalibrator:
         # Détecter l'ArUco du robot
         robot_pos = detect_robot_aruco(board_img, self.detector)
         
+        # Sauvegarder les images de debug
+        self._save_debug_image(img, iteration, board_img, robot_pos, calibration_markers)
+        
         return robot_pos
     
     def calibrate(self, max_iterations=50):
@@ -385,6 +436,12 @@ class RobotCalibrator:
         Boucle de calibration principale.
         Déplace le robot vers le centre (0, 0) du repère.
         """
+        # Créer le dossier de debug pour cette session
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        self.debug_dir = os.path.join(SCRIPT_DIR, "debug_calibration", f"session_{timestamp}")
+        os.makedirs(self.debug_dir, exist_ok=True)
+        print(f"📁 Dossier de debug: {self.debug_dir}")
+        
         print("\n" + "=" * 60)
         print("🎯 CALIBRATION DU ROBOT - CENTRAGE SUR (0, 0)")
         print("=" * 60)
@@ -400,7 +457,7 @@ class RobotCalibrator:
             time.sleep(0.1)
             
             # Détecter la position du robot
-            robot_pos = self.detect_robot_on_board()
+            robot_pos = self.detect_robot_on_board(iteration=iteration + 1)
             
             if robot_pos is None:
                 print(f"   ⚠️  ArUco robot non détecté")
