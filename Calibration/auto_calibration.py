@@ -158,33 +158,121 @@ class AutoCalibration:
     def detect_robot_aruco(self) -> Optional[Tuple[float, float]]:
         """
         Détecte l'ArUco du robot et retourne sa position en cm.
+        Fait plusieurs essais avec pause pour stabilisation.
 
         Returns:
             (x_cm, y_cm) ou None si non détecté
         """
-        frame = self.vision.get_frame()
-        if frame is None:
-            return None
+        # Faire plusieurs essais pour une détection fiable
+        for attempt in range(5):
+            # Attendre la stabilisation de l'image
+            time.sleep(0.3)
 
-        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        corners, ids, _ = self.vision.detector.detectMarkers(gray)
+            # Capturer plusieurs frames pour vider le buffer
+            for _ in range(3):
+                frame = self.vision.get_frame()
 
-        if ids is None:
-            return None
+            if frame is None:
+                continue
 
-        ids = ids.flatten()
-        idx = np.where(ids == self.config.robot_aruco_id)[0]
+            # Améliorer l'image pour la détection
+            gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
 
-        if len(idx) == 0:
-            return None
+            # Améliorer le contraste avec CLAHE
+            clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+            gray_enhanced = clahe.apply(gray)
 
-        # Centre du marqueur en pixels
-        center_px = corners[idx[0]][0].mean(axis=0)
+            # Essayer la détection sur l'image originale et améliorée
+            for img in [gray, gray_enhanced]:
+                corners, ids, rejected = self.vision.detector.detectMarkers(img)
 
-        # Convertir en cm
-        x_cm, y_cm = self.vision.pixel_to_cm(center_px[0], center_px[1])
+                if ids is not None:
+                    ids_flat = ids.flatten()
+                    idx = np.where(ids_flat == self.config.robot_aruco_id)[0]
 
-        return (x_cm, y_cm)
+                    if len(idx) > 0:
+                        # Centre du marqueur en pixels
+                        center_px = corners[idx[0]][0].mean(axis=0)
+
+                        # Convertir en cm
+                        x_cm, y_cm = self.vision.pixel_to_cm(center_px[0], center_px[1])
+
+                        print(f"      ✓ ArUco {self.config.robot_aruco_id} détecté (essai {attempt + 1})")
+                        return (x_cm, y_cm)
+
+            # Afficher ce qui a été détecté pour debug
+            if ids is not None:
+                print(
+                    f"      Essai {attempt + 1}: IDs détectés = {ids.flatten().tolist()}, recherche ID {self.config.robot_aruco_id}")
+            else:
+                print(f"      Essai {attempt + 1}: Aucun ArUco détecté")
+
+        return None
+
+    def debug_camera_view(self, duration_sec: int = 10):
+        """
+        Affiche la vue caméra en temps réel pour debug.
+        Permet de vérifier si l'ArUco est visible.
+        """
+        print(f"\n📷 Mode debug caméra ({duration_sec} secondes)")
+        print(f"   Recherche ArUco ID: {self.config.robot_aruco_id}")
+        print("   Appuyez sur 'q' pour quitter\n")
+
+        start_time = time.time()
+
+        while time.time() - start_time < duration_sec:
+            frame = self.vision.get_frame()
+            if frame is None:
+                continue
+
+            # Détecter tous les ArUco
+            gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+            corners, ids, rejected = self.vision.detector.detectMarkers(gray)
+
+            # Dessiner les détections
+            display = frame.copy()
+
+            if ids is not None:
+                cv2.aruco.drawDetectedMarkers(display, corners, ids)
+
+                # Marquer l'ArUco robot en vert
+                ids_flat = ids.flatten()
+                for i, aruco_id in enumerate(ids_flat):
+                    center = corners[i][0].mean(axis=0).astype(int)
+
+                    if aruco_id == self.config.robot_aruco_id:
+                        color = (0, 255, 0)  # Vert pour le robot
+                        label = f"ROBOT {aruco_id}"
+                    else:
+                        color = (255, 0, 0)  # Bleu pour les autres
+                        label = f"ID {aruco_id}"
+
+                    cv2.putText(display, label, (center[0] - 30, center[1] - 15),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
+
+            # Afficher les rejected candidates (marqueurs potentiels non validés)
+            if rejected is not None and len(rejected) > 0:
+                for rej in rejected:
+                    pts = rej[0].astype(int)
+                    cv2.polylines(display, [pts], True, (0, 0, 255), 1)
+
+            # Info
+            info_text = f"ArUcos detectes: {len(ids) if ids is not None else 0} | Recherche: ID {self.config.robot_aruco_id}"
+            cv2.putText(display, info_text, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
+
+            # Redimensionner pour affichage
+            h, w = display.shape[:2]
+            if w > 1280:
+                scale = 1280 / w
+                display = cv2.resize(display, (int(w * scale), int(h * scale)))
+
+            cv2.imshow("Debug Camera - ArUco Detection", display)
+
+            key = cv2.waitKey(30) & 0xFF
+            if key == ord('q'):
+                break
+
+        cv2.destroyAllWindows()
 
     def search_robot_aruco(self) -> bool:
         """
@@ -196,7 +284,18 @@ class AutoCalibration:
         """
         print("\n🔍 Recherche de l'ArUco robot (ID {})...".format(self.config.robot_aruco_id))
 
+        # Attendre la stabilisation initiale de la caméra
+        print("   Stabilisation de la caméra (2 secondes)...")
+        time.sleep(2.0)
+
+        # Vider le buffer de la caméra
+        print("   Vidage du buffer caméra...")
+        for _ in range(10):
+            self.vision.get_frame()
+            time.sleep(0.1)
+
         # Vérifier d'abord si déjà visible
+        print("   Vérification position actuelle...")
         pos = self.detect_robot_aruco()
         if pos is not None:
             print(f"✅ ArUco robot trouvé immédiatement à ({pos[0]:.1f}, {pos[1]:.1f}) cm")
@@ -211,84 +310,68 @@ class AutoCalibration:
         print(f"   Position initiale du robot: ({start_x:.1f}, {start_y:.1f}, {z:.1f}) mm")
         print(f"   Recherche avec pas de {self.config.search_step_mm} mm (2 cm)")
 
-        # Recherche en spirale carrée (plus simple et progressif)
+        # Recherche en spirale carrée
         step = self.config.search_step_mm  # 20mm = 2cm
         max_range = self.config.search_range_mm
 
-        # Générer les points en spirale carrée progressive
-        # Partant du centre, on fait des carrés de plus en plus grands
-        spiral_points = []
+        # Générer les points en spirale carrée
+        spiral_points = [(start_x, start_y)]  # Commencer par position actuelle
 
-        # Direction: droite, haut, gauche, bas
-        directions = [(1, 0), (0, 1), (-1, 0), (0, -1)]
-
-        x, y = 0, 0  # Position relative au point de départ
-        spiral_points.append((start_x, start_y))
-
-        layer = 1
-        while layer * step <= max_range:
-            # Pour chaque couche de la spirale
-            for dir_idx, (dx, dy) in enumerate(directions):
-                # Nombre de pas dans cette direction
-                steps_in_dir = layer if dir_idx < 2 else layer
-                if dir_idx >= 2:
-                    steps_in_dir = layer + 1
-
-                for _ in range(layer):
-                    x += dx * step
-                    y += dy * step
-
-                    # Vérifier qu'on ne dépasse pas la zone
-                    if abs(x) <= max_range and abs(y) <= max_range:
-                        spiral_points.append((start_x + x, start_y + y))
-
-            layer += 1
-
-        # Simplifier: utiliser une vraie spirale carrée
-        spiral_points = []
         for ring in range(1, int(max_range / step) + 1):
             offset = ring * step
 
-            # Côté droit (de bas en haut)
+            # Côté droit
             for i in range(-ring, ring + 1):
                 spiral_points.append((start_x + offset, start_y + i * step))
 
-            # Côté haut (de droite à gauche)
+            # Côté haut
             for i in range(ring - 1, -ring - 1, -1):
                 spiral_points.append((start_x + i * step, start_y + offset))
 
-            # Côté gauche (de haut en bas)
+            # Côté gauche
             for i in range(ring - 1, -ring - 1, -1):
                 spiral_points.append((start_x - offset, start_y + i * step))
 
-            # Côté bas (de gauche à droite)
+            # Côté bas
             for i in range(-ring + 1, ring + 1):
                 spiral_points.append((start_x + i * step, start_y - offset))
 
-        print(f"   Recherche progressive: {len(spiral_points)} positions (spirale carrée)")
+        print(f"   Recherche progressive: {len(spiral_points)} positions")
 
         for i, (x, y) in enumerate(spiral_points):
-            # Déplacer le robot progressivement
-            print(f"   [{i + 1}/{len(spiral_points)}] Déplacement vers ({x:.0f}, {y:.0f}) mm...", end=" ")
+            print(f"   [{i + 1}/{len(spiral_points)}] Position ({x:.0f}, {y:.0f}) mm...", end=" ", flush=True)
 
+            # Déplacer le robot
             self.move_robot(x, y, z, self.config.search_speed)
-            time.sleep(0.3)  # Attendre la stabilisation
+
+            # IMPORTANT: Attendre plus longtemps pour la stabilisation
+            time.sleep(0.8)
+
+            # Vider le buffer caméra après le mouvement
+            for _ in range(5):
+                self.vision.get_frame()
+                time.sleep(0.05)
 
             # Vérifier si l'ArUco est visible
             pos = self.detect_robot_aruco()
             if pos is not None:
                 print(f"TROUVÉ!")
-                print(f"✅ ArUco robot trouvé!")
+                print(f"\n✅ ArUco robot trouvé!")
                 print(f"   Position caméra: ({pos[0]:.1f}, {pos[1]:.1f}) cm")
                 print(f"   Position robot: ({x:.0f}, {y:.0f}, {z:.0f}) mm")
                 return True
             else:
                 print("non visible")
 
-        print("❌ ArUco robot non trouvé après recherche complète")
+        print("\n❌ ArUco robot non trouvé après recherche complète")
+        print("   Conseils:")
+        print(f"   - Vérifiez que l'ArUco ID {self.config.robot_aruco_id} est collé sur le gripper")
+        print("   - Vérifiez que l'ArUco est orienté vers le BAS (visible par la caméra)")
+        print("   - L'ArUco doit être au-dessus du plateau transparent")
+        print("   - Lancez 'python3 auto_calibration.py --debug' pour voir la vue caméra")
 
         # Retourner à la position initiale
-        print("   Retour à la position initiale...")
+        print("\n   Retour à la position initiale...")
         self.move_robot(start_x, start_y, z, self.config.search_speed)
 
         return False
@@ -559,6 +642,7 @@ def main():
     parser.add_argument("--aruco-id", type=int, default=50, help="ID ArUco sur le robot")
     parser.add_argument("--search-range", type=float, default=200, help="Zone de recherche en mm")
     parser.add_argument("--step", type=float, default=20, help="Pas de recherche en mm (défaut: 20 = 2cm)")
+    parser.add_argument("--debug", action="store_true", help="Mode debug: affiche la vue caméra")
 
     args = parser.parse_args()
 
@@ -581,6 +665,7 @@ Configuration:
   - ArUco robot: ID {args.aruco_id}
   - Pas de recherche: {args.step} mm ({args.step / 10} cm)
   - Zone de recherche: ±{args.search_range} mm
+  - Mode debug: {args.debug}
     """)
 
     input("Appuyez sur Entrée quand le robot est en position...")
@@ -596,6 +681,19 @@ Configuration:
         return
 
     try:
+        # Mode debug: afficher la vue caméra d'abord
+        if args.debug:
+            print("\n📷 MODE DEBUG: Affichage de la vue caméra")
+            print("   Vérifiez que l'ArUco robot est visible")
+            print("   Appuyez sur 'q' pour continuer\n")
+            calib.debug_camera_view(duration_sec=30)
+
+            cont = input("\nContinuer la calibration? (o/n): ").strip().lower()
+            if cont != 'o':
+                print("Calibration annulée")
+                calib.disconnect()
+                return
+
         calib.run_full_calibration()
     except KeyboardInterrupt:
         print("\n⏹️ Calibration interrompue")
