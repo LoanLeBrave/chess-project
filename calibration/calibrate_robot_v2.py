@@ -405,8 +405,19 @@ class RobotCalibrator:
         # Détecter les marqueurs de calibration
         calibration_markers = detect_calibration_markers(img, self.detector)
         
+        # Logs détaillés des ArUcos de calibration détectés
+        expected_ids = {32: 'TL', 33: 'TR', 34: 'BL', 35: 'BR'}
+        detected_ids = list(calibration_markers.keys())
+        
+        print(f"   🔍 ArUcos calibration détectés: {len(detected_ids)}/4")
+        for marker_id in [32, 33, 34, 35]:
+            if marker_id in detected_ids:
+                print(f"      ✅ ID {marker_id} ({expected_ids[marker_id]}) détecté")
+            else:
+                print(f"      ❌ ID {marker_id} ({expected_ids[marker_id]}) MANQUANT")
+        
         if len(calibration_markers) < 2:
-            print(f"❌ Pas assez de marqueurs de calibration ({len(calibration_markers)}/4)")
+            print(f"   ❌ Pas assez de marqueurs de calibration ({len(calibration_markers)}/4 minimum requis: 2)")
             return None
         
         # Calculer les coins du plateau
