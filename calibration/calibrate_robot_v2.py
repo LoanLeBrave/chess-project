@@ -576,12 +576,94 @@ class RobotCalibrator:
             print(f"   Correction appliquée: Δx={delta_x_robot*1000:.1f}mm, Δy={delta_y_robot*1000:.1f}mm")
             print("=" * 60)
             
+            # Prendre une photo finale pour vérifier le résultat
+            print("\n📸 Photo finale de vérification...")
+            time.sleep(0.5)  # Pause pour stabiliser
+            self._save_result_photo()
+            
             # Sauvegarder la calibration
             self._save_calibration()
             return True
         
         print(f"\n❌ Calibration non terminée après {max_iterations} itérations")
         return False
+    
+    def _save_result_photo(self):
+        """Prend une photo finale et l'annote avec les lignes du plateau et le centre."""
+        # Prendre la photo
+        photo_path = take_photo()
+        if photo_path is None:
+            print("   ⚠️  Impossible de prendre la photo finale")
+            return
+        
+        # Charger l'image
+        img = cv2.imread(photo_path)
+        if img is None:
+            print("   ⚠️  Impossible de charger la photo finale")
+            return
+        
+        # Détecter les marqueurs de calibration pour avoir les coins
+        calibration_markers = detect_calibration_markers(img, self.detector)
+        if len(calibration_markers) < 2:
+            print("   ⚠️  Pas assez de marqueurs pour annoter la photo")
+            cv2.imwrite(os.path.join(self.debug_dir, "result.jpg"), img)
+            return
+        
+        # Calculer les coins du plateau
+        board_corners = calculate_board_corners(calibration_markers)
+        if len(board_corners) < 4:
+            board_corners, _ = estimate_missing_corners(board_corners)
+        
+        if len(board_corners) < 4:
+            print("   ⚠️  Impossible de déterminer les coins pour annoter")
+            cv2.imwrite(os.path.join(self.debug_dir, "result.jpg"), img)
+            return
+        
+        # Récupérer les 4 coins
+        tl = board_corners.get('CAL_TL') or board_corners.get('TL')
+        tr = board_corners.get('CAL_TR') or board_corners.get('TR')
+        bl = board_corners.get('CAL_BL') or board_corners.get('BL')
+        br = board_corners.get('CAL_BR') or board_corners.get('BR')
+        
+        if not all([tl, tr, bl, br]):
+            corners_list = list(board_corners.values())
+            if len(corners_list) >= 4:
+                tl, tr, bl, br = corners_list[:4]
+            else:
+                cv2.imwrite(os.path.join(self.debug_dir, "result.jpg"), img)
+                return
+        
+        # Dessiner les lignes du plateau en VERT
+        pts = np.array([tl, tr, br, bl], np.int32).reshape((-1, 1, 2))
+        cv2.polylines(img, [pts], True, (0, 255, 0), 3)
+        
+        # Calculer la position du centre (0,0) dans l'image complète
+        src_pts = np.float32([tl, tr, bl, br])
+        dst_pts = np.float32([
+            [-10, 10],   # TL
+            [10, 10],    # TR
+            [-10, -10],  # BL
+            [10, -10]    # BR
+        ])
+        
+        # Transformation inverse: repère → image
+        matrix = cv2.getPerspectiveTransform(dst_pts, src_pts)
+        center_point = np.array([[[0.0, 0.0]]], dtype=np.float32)
+        center_img = cv2.perspectiveTransform(center_point, matrix)
+        
+        center_x = int(center_img[0][0][0])
+        center_y = int(center_img[0][0][1])
+        
+        # Dessiner le centre (0,0) en VERT
+        cv2.circle(img, (center_x, center_y), 15, (0, 255, 0), -1)
+        cv2.circle(img, (center_x, center_y), 18, (0, 255, 0), 3)
+        cv2.putText(img, "CENTER (0,0)", (center_x + 25, center_y - 10),
+                   cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+        
+        # Sauvegarder l'image annotée
+        result_path = os.path.join(self.debug_dir, "result.jpg")
+        cv2.imwrite(result_path, img)
+        print(f"   ✅ Photo finale sauvegardée: {result_path}")
     
     def _save_calibration(self):
         """Sauvegarde les données de calibration."""
