@@ -16,8 +16,9 @@ ARUCO_DICT = cv2.aruco.DICT_4X4_50
 
 def create_aruco_detector():
     """Crée un détecteur ArUco."""
+    dictionary = cv2.aruco.getPredefinedDictionary(ARUCO_DICT)
     detector_params = cv2.aruco.DetectorParameters()
-    return cv2.aruco.ArucoDetector(ARUCO_DICT, detector_params)
+    return cv2.aruco.ArucoDetector(dictionary, detector_params)
 
 def take_photo(filepath="/tmp/test_aruco.jpg"):
     """Prend une photo avec rpicam-still."""
