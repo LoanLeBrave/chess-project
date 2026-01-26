@@ -1,0 +1,8 @@
+[Desktop Entry]
+Name=Chess Robot
+Comment=Lancer le robot d'échecs
+Exec=/home/robot/Desktop/start_chess_robot.sh
+Icon=applications-games
+Terminal=true
+Type=Application
+Categories=Game;
