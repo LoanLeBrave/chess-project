@@ -32,6 +32,7 @@ export function GameScreen({ difficulty, gameState, setGameState, onReturnToMenu
     playHumanMove,
     playRobotMove,
     getLegalMoves,
+    getBestMove,
     addLog
   } = useChessRobot();
 
@@ -60,7 +61,7 @@ export function GameScreen({ difficulty, gameState, setGameState, onReturnToMenu
       const timeout = setTimeout(() => {
         playRobotMove();
       }, 500);
-      
+
       return () => clearTimeout(timeout);
     }
   }, [connected, isWhiteTurn, status, gameState, isGameOver, playRobotMove]);
@@ -68,7 +69,7 @@ export function GameScreen({ difficulty, gameState, setGameState, onReturnToMenu
   // Gérer le coup du joueur
   const handlePlayerMove = async (from: string, to: string): Promise<boolean> => {
     if (gameState !== 'playing') return false;
-    
+
     const success = await playHumanMove(from, to);
     return success;
   };
@@ -156,15 +157,16 @@ export function GameScreen({ difficulty, gameState, setGameState, onReturnToMenu
             />
 
             <PlayerTurnStatus isPlayerTurn={isWhiteTurn && status === 'idle'} />
-            
+
             <div className="flex-1 min-h-0">
-              <ChessBoard 
+              <ChessBoard
                 fen={fen}
                 isWhiteTurn={isWhiteTurn}
                 robotStatus={status}
                 isGameOver={isGameOver}
                 onMove={handlePlayerMove}
                 getLegalMoves={getLegalMoves}
+                getBestMove={getBestMove}
               />
             </div>
           </div>
@@ -172,7 +174,7 @@ export function GameScreen({ difficulty, gameState, setGameState, onReturnToMenu
           {/* Right Column */}
           <div className="flex flex-col gap-3 min-h-0">
             <RobotStatus status={robotStatusForComponent} />
-            
+
             {/* Logs en temps réel */}
             <div className="bg-slate-800/50 backdrop-blur-sm rounded-xl p-4 border border-slate-700 max-h-48 overflow-hidden">
               <h3 className="text-white font-semibold mb-2 flex items-center gap-2 text-sm">
@@ -181,7 +183,7 @@ export function GameScreen({ difficulty, gameState, setGameState, onReturnToMenu
               </h3>
               <div className="space-y-1 overflow-y-auto max-h-32 text-xs">
                 {logs.slice(0, 10).map(log => (
-                  <div 
+                  <div
                     key={log.id}
                     className={`
                       px-2 py-1 rounded
@@ -200,7 +202,7 @@ export function GameScreen({ difficulty, gameState, setGameState, onReturnToMenu
                 ))}
               </div>
             </div>
-            
+
             <div className="flex-1 min-h-0">
               <MoveHistory moves={movesForHistory} />
             </div>
