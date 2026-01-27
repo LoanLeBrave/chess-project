@@ -214,6 +214,15 @@ class ChessRobotManager:
         pos[2] += delta_z
         return pos
 
+    async def _wait_with_pause_check(self, duration):
+        """Attend avec vérifications fréquentes de la pause (toutes les 10ms)"""
+        start = time.time()
+        while time.time() - start < duration:
+            if self.is_paused:
+                return False
+            await asyncio.sleep(0.01)  # Vérifier toutes les 10ms
+        return True
+
     def _get_position_defausse(self):
         """Calcule la prochaine position de défausse"""
         if not self.zone_defausse_debut or not self.zone_defausse_fin:
@@ -269,27 +278,22 @@ class ChessRobotManager:
 
         await self.log("robot", f"Approche {case.upper()}...")
         self.rtde_c.moveL(self._pos_avec_z(tcp, DELTA_APPROCHE), VITESSE, ACCELERATION)
-        time.sleep(0.2)
-        if self.is_paused: return False
+        if not await self._wait_with_pause_check(0.2): return False
 
         await self.log("robot", f"Descente...")
         self.rtde_c.moveL(tcp, VITESSE, ACCELERATION)
-        time.sleep(0.2)
-        if self.is_paused: return False
+        if not await self._wait_with_pause_check(0.2): return False
 
         await self.log("robot", f"Fermeture gripper...")
         self.gripper.close()
-        time.sleep(0.3)
-        if self.is_paused: return False
+        if not await self._wait_with_pause_check(0.3): return False
 
         await self.log("robot", f"Remontée...")
         self.rtde_c.moveL(self._pos_avec_z(tcp, DELTA_APPROCHE), VITESSE, ACCELERATION)
-        time.sleep(0.1)
-        if self.is_paused: return False
+        if not await self._wait_with_pause_check(0.1): return False
 
         self.rtde_c.moveL(self._pos_avec_z(tcp, DELTA_TRANSIT), VITESSE, ACCELERATION)
-        time.sleep(0.2)
-        if self.is_paused: return False
+        if not await self._wait_with_pause_check(0.2): return False
 
         return True
 
@@ -307,25 +311,20 @@ class ChessRobotManager:
 
         await self.log("robot", f"Transit vers {case.upper()}...")
         self.rtde_c.moveL(self._pos_avec_z(tcp, DELTA_TRANSIT), VITESSE, ACCELERATION)
-        time.sleep(0.2)
-        if self.is_paused: return False
+        if not await self._wait_with_pause_check(0.2): return False
 
         self.rtde_c.moveL(self._pos_avec_z(tcp, DELTA_APPROCHE), VITESSE, ACCELERATION)
-        time.sleep(0.1)
-        if self.is_paused: return False
+        if not await self._wait_with_pause_check(0.1): return False
 
         await self.log("robot", f"Dépose...")
         self.rtde_c.moveL(self._pos_avec_z(tcp, delta_relache), VITESSE, ACCELERATION)
-        time.sleep(0.2)
-        if self.is_paused: return False
+        if not await self._wait_with_pause_check(0.2): return False
 
         self.gripper.move(GRIPPER_OUVERTURE)
-        time.sleep(0.3)
-        if self.is_paused: return False
+        if not await self._wait_with_pause_check(0.3): return False
 
         self.rtde_c.moveL(self._pos_avec_z(tcp, DELTA_APPROCHE), VITESSE, ACCELERATION)
-        time.sleep(0.2)
-        if self.is_paused: return False
+        if not await self._wait_with_pause_check(0.2): return False
 
         return True
 
@@ -338,33 +337,28 @@ class ChessRobotManager:
             pos_haute = list(pos_defausse)
             pos_haute[2] += DELTA_TRANSIT
             self.rtde_c.moveL(pos_haute, VITESSE, ACCELERATION)
-            time.sleep(0.2)
-            if self.is_paused: return
+            if not await self._wait_with_pause_check(0.2): return
 
             pos_relache = list(pos_defausse)
             pos_relache[2] += DELTA_RELACHE_BASE + 0.01
             self.rtde_c.moveL(pos_relache, VITESSE, ACCELERATION)
-            time.sleep(0.2)
-            if self.is_paused: return
+            if not await self._wait_with_pause_check(0.2): return
 
             self.gripper.move(GRIPPER_OUVERTURE)
-            time.sleep(0.3)
-            if self.is_paused: return
+            if not await self._wait_with_pause_check(0.3): return
 
             self.rtde_c.moveL(pos_haute, VITESSE, ACCELERATION)
-            time.sleep(0.2)
-            if self.is_paused: return
+            if not await self._wait_with_pause_check(0.2): return
         else:
             # Pas de zone, lâcher en l'air
             pose = self.rtde_r.getActualTCPPose()
             pose_haute = list(pose)
             pose_haute[2] += 0.05
             self.rtde_c.moveL(pose_haute, VITESSE, ACCELERATION)
-            time.sleep(0.1)
-            if self.is_paused: return
+            if not await self._wait_with_pause_check(0.1): return
             
             self.gripper.move(GRIPPER_OUVERTURE)
-            time.sleep(0.3)
+            if not await self._wait_with_pause_check(0.3): return
 
     async def execute_move_on_robot(self, from_sq: str, to_sq: str, is_capture: bool):
         """Exécute un mouvement sur le robot"""
