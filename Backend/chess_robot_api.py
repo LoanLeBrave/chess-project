@@ -103,7 +103,8 @@ class ChessRobotManager:
         self.cases = {}
         self.connected = False
         self.difficulty = "intermediate"
-        self.status = "idle"  # idle, thinking, moving, error
+        self.status = "idle"  # idle, thinking, moving, error, paused
+        self.is_paused = False
         self.defausse_index = 0
         self.position_depart = None
         self.zone_defausse_debut = None
@@ -513,11 +514,37 @@ class ChessRobotManager:
             return "Répétition - Nulle"
         return "Partie en cours"
 
+    async def toggle_pause(self):
+        """Bascule l'état de pause"""
+        self.is_paused = not self.is_paused
+        
+        if self.is_paused:
+            # Arrêter le robot
+            if self.connected and self.rtde_c:
+                try:
+                    self.rtde_c.pauseScript()
+                    await self.log("info", "Robot en pause - Mouvements arrêtés")
+                except:
+                    await self.log("warning", "Impossible de mettre en pause le robot")
+            self.set_status("paused")
+            return {"success": True, "paused": True, "message": "Partie en pause"}
+        else:
+            # Reprendre le robot
+            if self.connected and self.rtde_c:
+                try:
+                    self.rtde_c.resumeScript()
+                    await self.log("info", "Partie reprise - Robot réactivé")
+                except:
+                    await self.log("warning", "Impossible de reprendre le robot")
+            self.set_status("idle")
+            return {"success": True, "paused": False, "message": "Partie reprise"}
+
     def new_game(self, difficulty: str = "intermediate"):
         """Démarre une nouvelle partie"""
         self.board.reset()
         self.difficulty = difficulty
         self.defausse_index = 0
+        self.is_paused = False
         self.set_status("idle")
         return {"success": True, "fen": self.board.fen()}
 
@@ -579,6 +606,7 @@ async def get_status():
     return {
         "connected": manager.connected,
         "status": manager.status,
+        "paused": manager.is_paused,
         "difficulty": manager.difficulty,
         "fen": manager.board.fen(),
         "turn": "white" if manager.board.turn == chess.WHITE else "black",
@@ -598,6 +626,12 @@ async def new_game(config: GameConfig):
 async def get_fen():
     """Retourne la position FEN actuelle"""
     return {"fen": manager.board.fen()}
+
+@app.post("/game/pause")
+async def new_pause(config: GameConfig):
+    """Bascule l'état de pause de la partie"""
+    result = await manager.toggle_pause()
+    return result
 
 
 @app.get("/game/legal-moves/{square}")
