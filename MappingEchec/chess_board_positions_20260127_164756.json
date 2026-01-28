@@ -1,0 +1,13 @@
+{
+  "cases": {},
+  "position_securite_globale": null,
+  "delta_hauteur_securite": 0.08,
+  "delta_hauteur_approche": 0.03,
+  "delta_hauteur_relache": 0.002,
+  "metadata": {
+    "date_creation": "2026-01-27T16:47:56.500454",
+    "robot_ip": "192.168.0.11",
+    "nb_cases": 0,
+    "description": "Position TCP = hauteur de PRISE. Les hauteurs sont calcul\u00e9es relativement."
+  }
+}
