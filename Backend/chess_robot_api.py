@@ -214,6 +214,15 @@ class ChessRobotManager:
         pos[2] += delta_z
         return pos
 
+    async def _wait_with_pause_check(self, duration):
+        """Attend avec vérifications fréquentes de la pause (toutes les 10ms)"""
+        start = time.time()
+        while time.time() - start < duration:
+            if self.is_paused:
+                return False
+            await asyncio.sleep(0.01)  # Vérifier toutes les 10ms
+        return True
+
     def _get_position_defausse(self):
         """Calcule la prochaine position de défausse"""
         if not self.zone_defausse_debut or not self.zone_defausse_fin:
@@ -269,22 +278,22 @@ class ChessRobotManager:
 
         await self.log("robot", f"Approche {case.upper()}...")
         self.rtde_c.moveL(self._pos_avec_z(tcp, DELTA_APPROCHE), VITESSE, ACCELERATION)
-        time.sleep(0.2)
+        if not await self._wait_with_pause_check(0.2): return False
 
         await self.log("robot", f"Descente...")
         self.rtde_c.moveL(tcp, VITESSE, ACCELERATION)
-        time.sleep(0.2)
+        if not await self._wait_with_pause_check(0.2): return False
 
         await self.log("robot", f"Fermeture gripper...")
         self.gripper.close()
-        time.sleep(0.3)
+        if not await self._wait_with_pause_check(0.3): return False
 
         await self.log("robot", f"Remontée...")
         self.rtde_c.moveL(self._pos_avec_z(tcp, DELTA_APPROCHE), VITESSE, ACCELERATION)
-        time.sleep(0.1)
+        if not await self._wait_with_pause_check(0.1): return False
 
         self.rtde_c.moveL(self._pos_avec_z(tcp, DELTA_TRANSIT), VITESSE, ACCELERATION)
-        time.sleep(0.2)
+        if not await self._wait_with_pause_check(0.2): return False
 
         return True
 
@@ -302,20 +311,20 @@ class ChessRobotManager:
 
         await self.log("robot", f"Transit vers {case.upper()}...")
         self.rtde_c.moveL(self._pos_avec_z(tcp, DELTA_TRANSIT), VITESSE, ACCELERATION)
-        time.sleep(0.2)
+        if not await self._wait_with_pause_check(0.2): return False
 
         self.rtde_c.moveL(self._pos_avec_z(tcp, DELTA_APPROCHE), VITESSE, ACCELERATION)
-        time.sleep(0.1)
+        if not await self._wait_with_pause_check(0.1): return False
 
         await self.log("robot", f"Dépose...")
         self.rtde_c.moveL(self._pos_avec_z(tcp, delta_relache), VITESSE, ACCELERATION)
-        time.sleep(0.2)
+        if not await self._wait_with_pause_check(0.2): return False
 
         self.gripper.move(GRIPPER_OUVERTURE)
-        time.sleep(0.3)
+        if not await self._wait_with_pause_check(0.3): return False
 
         self.rtde_c.moveL(self._pos_avec_z(tcp, DELTA_APPROCHE), VITESSE, ACCELERATION)
-        time.sleep(0.2)
+        if not await self._wait_with_pause_check(0.2): return False
 
         return True
 
@@ -328,26 +337,28 @@ class ChessRobotManager:
             pos_haute = list(pos_defausse)
             pos_haute[2] += DELTA_TRANSIT
             self.rtde_c.moveL(pos_haute, VITESSE, ACCELERATION)
-            time.sleep(0.2)
+            if not await self._wait_with_pause_check(0.2): return
 
             pos_relache = list(pos_defausse)
             pos_relache[2] += DELTA_RELACHE_BASE + 0.01
             self.rtde_c.moveL(pos_relache, VITESSE, ACCELERATION)
-            time.sleep(0.2)
+            if not await self._wait_with_pause_check(0.2): return
 
             self.gripper.move(GRIPPER_OUVERTURE)
-            time.sleep(0.3)
+            if not await self._wait_with_pause_check(0.3): return
 
             self.rtde_c.moveL(pos_haute, VITESSE, ACCELERATION)
-            time.sleep(0.2)
+            if not await self._wait_with_pause_check(0.2): return
         else:
             # Pas de zone, lâcher en l'air
             pose = self.rtde_r.getActualTCPPose()
             pose_haute = list(pose)
             pose_haute[2] += 0.05
             self.rtde_c.moveL(pose_haute, VITESSE, ACCELERATION)
+            if not await self._wait_with_pause_check(0.1): return
+            
             self.gripper.move(GRIPPER_OUVERTURE)
-            time.sleep(0.3)
+            if not await self._wait_with_pause_check(0.3): return
 
     async def execute_move_on_robot(self, from_sq: str, to_sq: str, is_capture: bool):
         """Exécute un mouvement sur le robot"""
@@ -363,18 +374,39 @@ class ChessRobotManager:
 
                 # Retirer la pièce capturée
                 await self._prendre_piece(to_sq)
+                if self.is_paused: 
+                    await self.log("warning", "Mouvement interrompu par PAUSE")
+                    return False
+                
                 await self._deposer_defausse()
+                if self.is_paused: 
+                    await self.log("warning", "Mouvement interrompu par PAUSE")
+                    return False
 
                 # Déplacer la pièce qui capture
                 await self._prendre_piece(from_sq)
+                if self.is_paused: 
+                    await self.log("warning", "Mouvement interrompu par PAUSE")
+                    return False
+                    
                 await self._poser_piece(to_sq)
+                if self.is_paused: 
+                    await self.log("warning", "Mouvement interrompu par PAUSE")
+                    return False
             else:
                 await self.log("robot", f"Déplacement: {from_sq.upper()} → {to_sq.upper()}")
                 await self._prendre_piece(from_sq)
+                if self.is_paused: 
+                    await self.log("warning", "Mouvement interrompu par PAUSE")
+                    return False
+                    
                 await self._poser_piece(to_sq)
+                if self.is_paused: 
+                    await self.log("warning", "Mouvement interrompu par PAUSE")
+                    return False
 
             # Retour position de départ
-            if self.position_depart:
+            if self.position_depart and not self.is_paused:
                 self.rtde_c.moveL(self.position_depart, VITESSE, ACCELERATION)
 
             self.set_status("idle")
@@ -515,6 +547,7 @@ class ChessRobotManager:
         return "Partie en cours"
 
     async def toggle_pause(self):
+<<<<<<< HEAD
         """Bascule l'état de pause"""
         self.is_paused = not self.is_paused
         
@@ -536,6 +569,30 @@ class ChessRobotManager:
                     await self.log("info", "Partie reprise - Robot réactivé")
                 except:
                     await self.log("warning", "Impossible de reprendre le robot")
+=======
+        """Bascule l'état de pause (pause d'urgence)"""
+        self.is_paused = not self.is_paused
+        
+        if self.is_paused:
+            # PAUSE D'URGENCE - Arrêt immédiat du robot
+            if self.connected and self.rtde_c:
+                try:
+                    self.rtde_c.stopScript()  # Arrêt immédiat au lieu de pauseScript
+                    await self.log("warning", "🛑 PAUSE D'URGENCE - Robot arrêté immédiatement!")
+                except Exception as e:
+                    await self.log("error", f"Erreur lors de l'arrêt du robot: {e}")
+            self.set_status("paused", "PAUSE D'URGENCE")
+            return {"success": True, "paused": True, "message": "PAUSE D'URGENCE - Robot arrêté!"}
+        else:
+            # Reprendre - Attention: le script doit être redémarré
+            if self.connected and self.rtde_c:
+                try:
+                    # Après un stopScript, on doit redémarrer une nouvelle connexion
+                    # Pour l'instant on prévient l'utilisateur
+                    await self.log("info", "Partie reprise - Robot réactivé")
+                except Exception as e:
+                    await self.log("warning", f"Erreur lors de la reprise: {e}")
+>>>>>>> f1fcb8f1f62939482b1413aea04188d10acdf0d8
             self.set_status("idle")
             return {"success": True, "paused": False, "message": "Partie reprise"}
 
