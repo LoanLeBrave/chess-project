@@ -1,4 +1,3 @@
-// components/ChessBoard.tsx
 import { useState, useEffect } from 'react';
 import { Lightbulb, Eye, EyeOff, HelpCircle } from 'lucide-react';
 import type { RobotStatus } from '../hooks/useChessRobot';
@@ -11,6 +10,7 @@ interface ChessBoardProps {
   onMove: (from: string, to: string) => Promise<boolean>;
   getLegalMoves: (square: string) => Promise<string[]>;
   getBestMove: () => Promise<{ from: string; to: string } | null>;
+  aiHelpEnabled: boolean;
 }
 
 type PieceType = 'K' | 'Q' | 'R' | 'B' | 'N' | 'P' | 'k' | 'q' | 'r' | 'b' | 'n' | 'p' | null;
@@ -54,7 +54,7 @@ function fenToBoard(fen: string): BoardState {
 }
 
 export function ChessBoard({
-  fen, isWhiteTurn, robotStatus, isGameOver, onMove, getLegalMoves, getBestMove
+  fen, isWhiteTurn, robotStatus, isGameOver, onMove, getLegalMoves, getBestMove, aiHelpEnabled
 }: ChessBoardProps) {
   const [board, setBoard] = useState<BoardState>({});
   const [selectedSquare, setSelectedSquare] = useState<string | null>(null);
@@ -163,7 +163,6 @@ export function ChessBoard({
   };
 
   const isLightSquare = (file: string, rank: string) => (files.indexOf(file) + ranks.indexOf(rank)) % 2 === 0;
-  const isWhitePiece = (piece: PieceType) => piece && ['K', 'Q', 'R', 'B', 'N', 'P'].includes(piece);
 
   const hasMovesFrom = (square: string) => showAllMoves && allWhiteMoves[square]?.length > 0;
   const isDestinationFor = (square: string) => {
@@ -177,82 +176,86 @@ export function ChessBoard({
 
   return (
     <div className="bg-slate-800/50 backdrop-blur-sm rounded-xl p-4 border border-slate-700">
-      {/* Boutons d'aide */}
-      <div className="flex gap-2 mb-4 flex-wrap items-center">
-        <button
-          onClick={() => {
-            setShowHelpOnClick(!showHelpOnClick);
-            if (!showHelpOnClick === false) setLegalMoves([]);
-          }}
-          className={`flex items-center gap-2 px-4 py-2 rounded-lg font-semibold text-sm transition-all
-            ${showHelpOnClick ? 'bg-green-600 text-white' : 'bg-slate-600 text-slate-300'}
-            hover:opacity-90`}
-        >
-          <HelpCircle className="w-4 h-4" />
-          Aide: {showHelpOnClick ? 'ON' : 'OFF'}
-        </button>
+      {/* Boutons d'aide - affichés seulement si l'aide IA est activée */}
+      {aiHelpEnabled && (
+        <>
+          <div className="flex gap-2 mb-4 flex-wrap items-center">
+            <button
+              onClick={() => {
+                setShowHelpOnClick(!showHelpOnClick);
+                if (!showHelpOnClick === false) setLegalMoves([]);
+              }}
+              className={`flex items-center gap-2 px-4 py-2 rounded-lg font-semibold text-sm transition-all
+                ${showHelpOnClick ? 'bg-green-600 text-white' : 'bg-slate-600 text-slate-300'}
+                hover:opacity-90`}
+            >
+              <HelpCircle className="w-4 h-4" />
+              Aide: {showHelpOnClick ? 'ON' : 'OFF'}
+            </button>
 
-        <div className="w-px h-6 bg-slate-600" />
+            <div className="w-px h-6 bg-slate-600" />
 
-        <button
-          onClick={handleToggleAllMoves}
-          disabled={!canInteract || isLoadingAllMoves}
-          className={`flex items-center gap-2 px-4 py-2 rounded-lg font-semibold text-sm transition-all
-            ${showAllMoves ? 'bg-purple-500 text-white' : 'bg-slate-700 text-slate-300 hover:bg-slate-600'}
-            disabled:opacity-50 disabled:cursor-not-allowed`}
-        >
-          {isLoadingAllMoves ? (
-            <><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> Chargement...</>
-          ) : showAllMoves ? (
-            <><EyeOff className="w-4 h-4" /> Masquer</>
-          ) : (
-            <><Eye className="w-4 h-4" /> Tous les coups</>
-          )}
-        </button>
+            <button
+              onClick={handleToggleAllMoves}
+              disabled={!canInteract || isLoadingAllMoves}
+              className={`flex items-center gap-2 px-4 py-2 rounded-lg font-semibold text-sm transition-all
+                ${showAllMoves ? 'bg-purple-500 text-white' : 'bg-slate-700 text-slate-300 hover:bg-slate-600'}
+                disabled:opacity-50 disabled:cursor-not-allowed`}
+            >
+              {isLoadingAllMoves ? (
+                <><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> Chargement...</>
+              ) : showAllMoves ? (
+                <><EyeOff className="w-4 h-4" /> Masquer</>
+              ) : (
+                <><Eye className="w-4 h-4" /> Tous les coups</>
+              )}
+            </button>
 
-        <button
-          onClick={handleGetBestMove}
-          disabled={!canInteract || isLoadingBestMove}
-          className={`flex items-center gap-2 px-4 py-2 rounded-lg font-semibold text-sm transition-all
-            ${bestMove ? 'bg-yellow-500 text-black' : 'bg-slate-700 text-slate-300 hover:bg-slate-600'}
-            disabled:opacity-50 disabled:cursor-not-allowed`}
-        >
-          {isLoadingBestMove ? (
-            <><div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" /> Analyse...</>
-          ) : (
-            <><Lightbulb className="w-4 h-4" /> {bestMove ? `${bestMove.from.toUpperCase()}→${bestMove.to.toUpperCase()}` : 'Meilleur coup'}</>
-          )}
-        </button>
-      </div>
+            <button
+              onClick={handleGetBestMove}
+              disabled={!canInteract || isLoadingBestMove}
+              className={`flex items-center gap-2 px-4 py-2 rounded-lg font-semibold text-sm transition-all
+                ${bestMove ? 'bg-yellow-500 text-black' : 'bg-slate-700 text-slate-300 hover:bg-slate-600'}
+                disabled:opacity-50 disabled:cursor-not-allowed`}
+            >
+              {isLoadingBestMove ? (
+                <><div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" /> Analyse...</>
+              ) : (
+                <><Lightbulb className="w-4 h-4" /> {bestMove ? `${bestMove.from.toUpperCase()}→${bestMove.to.toUpperCase()}` : 'Meilleur coup'}</>
+              )}
+            </button>
+          </div>
 
-      {/* Légende */}
-      {(showAllMoves || bestMove || (showHelpOnClick && legalMoves.length > 0)) && (
-        <div className="flex gap-4 mb-3 text-xs text-slate-400 flex-wrap">
-          {showHelpOnClick && legalMoves.length > 0 && (
-            <span className="flex items-center gap-1">
-              <span className="w-4 h-4 rounded-full bg-black/40 border-2 border-black/60" />
-              Coups possibles
-            </span>
+          {/* Légende */}
+          {(showAllMoves || bestMove || (showHelpOnClick && legalMoves.length > 0)) && (
+            <div className="flex gap-4 mb-3 text-xs text-slate-400 flex-wrap">
+              {showHelpOnClick && legalMoves.length > 0 && (
+                <span className="flex items-center gap-1">
+                  <span className="w-4 h-4 rounded-full bg-black/40 border-2 border-black/60" />
+                  Coups possibles
+                </span>
+              )}
+              {showAllMoves && (
+                <>
+                  <span className="flex items-center gap-1">
+                    <span className="w-4 h-4 rounded bg-purple-500" />
+                    Pièces jouables
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <span className="w-4 h-4 rounded bg-purple-300" />
+                    Destinations
+                  </span>
+                </>
+              )}
+              {bestMove && (
+                <span className="flex items-center gap-1">
+                  <span className="w-4 h-4 rounded bg-yellow-400" />
+                  Meilleur coup
+                </span>
+              )}
+            </div>
           )}
-          {showAllMoves && (
-            <>
-              <span className="flex items-center gap-1">
-                <span className="w-4 h-4 rounded bg-purple-500" />
-                Pièces jouables
-              </span>
-              <span className="flex items-center gap-1">
-                <span className="w-4 h-4 rounded bg-purple-300" />
-                Destinations
-              </span>
-            </>
-          )}
-          {bestMove && (
-            <span className="flex items-center gap-1">
-              <span className="w-4 h-4 rounded bg-yellow-400" />
-              Meilleur coup
-            </span>
-          )}
-        </div>
+        </>
       )}
 
       {/* Plateau */}
@@ -312,7 +315,7 @@ export function ChessBoard({
                     style={{ backgroundColor: bgColor }}
                   >
                     {/* Indicateur coup légal - point ou cercle */}
-                    {isLegal && showHelpOnClick && (
+                    {isLegal && showHelpOnClick && aiHelpEnabled && (
                       piece ? (
                         // Cercle autour de la pièce capturable
                         <div className="absolute inset-1 rounded-full border-[5px] border-black/40 pointer-events-none" />
@@ -323,7 +326,7 @@ export function ChessBoard({
                     )}
 
                     {/* Indicateur meilleur coup destination */}
-                    {isBestT && !piece && (
+                    {isBestT && !piece && aiHelpEnabled && (
                       <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
                         <div className="w-8 h-8 border-4 border-yellow-600 rounded-full bg-yellow-400/50" />
                       </div>
@@ -340,14 +343,14 @@ export function ChessBoard({
                     )}
 
                     {/* Icône meilleur coup départ */}
-                    {isBestF && (
+                    {isBestF && aiHelpEnabled && (
                       <div className="absolute top-0.5 left-0.5 bg-yellow-400 rounded-br-lg p-1 shadow-md">
                         <Lightbulb className="w-4 h-4 text-yellow-800" />
                       </div>
                     )}
 
                     {/* Badge pièce jouable */}
-                    {hasMoves && !isSelected && !isBestF && (
+                    {hasMoves && !isSelected && !isBestF && aiHelpEnabled && (
                       <div className="absolute top-1 right-1 w-4 h-4 bg-purple-600 rounded-full border-2 border-white shadow pointer-events-none" />
                     )}
 
