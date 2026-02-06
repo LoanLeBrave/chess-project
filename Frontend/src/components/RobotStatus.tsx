@@ -1,7 +1,8 @@
-import { Bot, Cpu, Activity, AlertCircle } from 'lucide-react';
+import { Bot, Cpu, Activity, AlertCircle, WifiOff } from 'lucide-react';
+import type { RobotStatus as RobotStatusType } from '../hooks/useChessRobot';
 
 interface RobotStatusProps {
-  status: 'idle' | 'thinking' | 'moving' | 'error';
+  status: RobotStatusType;
 }
 
 export function RobotStatus({ status }: RobotStatusProps) {
@@ -33,6 +34,13 @@ export function RobotStatus({ status }: RobotStatusProps) {
       bgColor: 'bg-red-900/30',
       icon: AlertCircle,
       description: 'Erreur détectée'
+    },
+    disconnected: {
+      label: 'Déconnecté',
+      color: 'text-orange-400',
+      bgColor: 'bg-orange-900/30',
+      icon: WifiOff,
+      description: 'Connexion au serveur perdue'
     }
   };
 

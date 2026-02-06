@@ -1,308 +1,315 @@
-// hooks/useChessRobot.ts
-import { useState, useEffect, useCallback, useRef } from 'react';
-
-const API_URL = 'http://localhost:8000';
-const WS_URL = 'ws://localhost:8000/ws';
+import { useState, useCallback } from 'react';
 
 export type RobotStatus = 'idle' | 'thinking' | 'moving' | 'error' | 'disconnected';
-export type LogType = 'info' | 'robot' | 'player' | 'warning' | 'error';
 
-export interface LogEntry {
-  id: string;
-  timestamp: Date;
-  type: LogType;
-  message: string;
-}
-
-export interface ChessMove {
-  id: string;
-  from: string;
-  to: string;
-  san: string;
-  player: 'human' | 'robot';
-  timestamp: Date;
-  evaluation?: number;
-}
-
-interface UseChessRobotReturn {
-  // État
-  connected: boolean;
-  robotConnected: boolean;
-  status: RobotStatus;
+export interface UseChessRobotReturn {
   fen: string;
   isWhiteTurn: boolean;
   isGameOver: boolean;
-  gameResult: string | null;
-  logs: LogEntry[];
-  moves: ChessMove[];
-  
-  // Actions
-  newGame: (difficulty: string) => Promise<void>;
-  playHumanMove: (from: string, to: string) => Promise<boolean>;
-  playRobotMove: () => Promise<boolean>;
+  robotStatus: RobotStatus;
+  setRobotStatus: (status: RobotStatus) => void;
+  onMove: (from: string, to: string) => Promise<boolean>;
   getLegalMoves: (square: string) => Promise<string[]>;
   getBestMove: () => Promise<{ from: string; to: string } | null>;
-
-  // Helpers
-  addLog: (type: LogType, message: string) => void;
+  resetGame: () => void;
 }
 
-export function useChessRobot(): UseChessRobotReturn {
-  const [connected, setConnected] = useState(false);
-  const [robotConnected, setRobotConnected] = useState(false);
-  const [status, setStatus] = useState<RobotStatus>('disconnected');
-  const [fen, setFen] = useState('rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1');
+const INITIAL_FEN = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
+
+// Fonction utilitaire pour parser le FEN
+function parseFEN(fen: string) {
+  const [position, turn] = fen.split(' ');
+  return { position, turn };
+}
+
+// Fonction utilitaire pour créer un board depuis le FEN
+function fenToBoard(fen: string): { [key: string]: string } {
+  const board: { [key: string]: string } = {};
+  const [position] = fen.split(' ');
+  const rows = position.split('/');
+  const files = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'];
+
+  rows.forEach((row, rowIndex) => {
+    const rank = 8 - rowIndex;
+    let fileIndex = 0;
+    for (const char of row) {
+      if (isNaN(parseInt(char))) {
+        board[`${files[fileIndex]}${rank}`] = char;
+        fileIndex++;
+      } else {
+        fileIndex += parseInt(char);
+      }
+    }
+  });
+  return board;
+}
+
+// Fonction utilitaire pour convertir un board en FEN
+function boardToFEN(board: { [key: string]: string }, isWhiteTurn: boolean): string {
+  const files = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'];
+  const ranks = ['8', '7', '6', '5', '4', '3', '2', '1'];
+  
+  let fenPosition = '';
+  for (const rank of ranks) {
+    let emptyCount = 0;
+    for (const file of files) {
+      const square = `${file}${rank}`;
+      const piece = board[square];
+      if (piece) {
+        if (emptyCount > 0) {
+          fenPosition += emptyCount;
+          emptyCount = 0;
+        }
+        fenPosition += piece;
+      } else {
+        emptyCount++;
+      }
+    }
+    if (emptyCount > 0) {
+      fenPosition += emptyCount;
+    }
+    if (rank !== '1') {
+      fenPosition += '/';
+    }
+  }
+  
+  const turn = isWhiteTurn ? 'w' : 'b';
+  return `${fenPosition} ${turn} KQkq - 0 1`;
+}
+
+// Fonction pour obtenir le nom de la pièce
+function getPieceName(piece: string): string {
+  const names: { [key: string]: string } = {
+    'K': 'Roi', 'Q': 'Dame', 'R': 'Tour', 'B': 'Fou', 'N': 'Cavalier', 'P': 'Pion',
+    'k': 'Roi', 'q': 'Dame', 'r': 'Tour', 'b': 'Fou', 'n': 'Cavalier', 'p': 'Pion'
+  };
+  return names[piece] || 'Pièce';
+}
+
+/**
+ * Hook personnalisé pour gérer la logique du jeu d'échecs avec le robot
+ * TODO: Intégrer avec le vrai moteur d'échecs (Stockfish) et l'API du robot UR7e
+ */
+export function useChessRobot(
+  addLog: (type: 'info' | 'warning' | 'error' | 'robot' | 'player', message: string) => void,
+  onMoveComplete: (move: { from: string; to: string; piece: string; player: 'human' | 'robot' }) => void
+): UseChessRobotReturn {
+  const [fen, setFen] = useState(INITIAL_FEN);
   const [isWhiteTurn, setIsWhiteTurn] = useState(true);
   const [isGameOver, setIsGameOver] = useState(false);
-  const [gameResult, setGameResult] = useState<string | null>(null);
-  const [logs, setLogs] = useState<LogEntry[]>([]);
-  const [moves, setMoves] = useState<ChessMove[]>([]);
+  const [robotStatus, setRobotStatus] = useState<RobotStatus>('idle');
 
-  const wsRef = useRef<WebSocket | null>(null);
-  const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  /**
+   * Effectue un mouvement sur l'échiquier
+   */
+  const onMove = useCallback(async (from: string, to: string): Promise<boolean> => {
+    try {
+      const board = fenToBoard(fen);
+      const piece = board[from];
+      
+      if (!piece) {
+        addLog('error', 'Aucune pièce à déplacer');
+        return false;
+      }
 
-  // Ajouter un log
-  const addLog = useCallback((type: LogType, message: string) => {
-    const newLog: LogEntry = {
-      id: Math.random().toString(36).substr(2, 9),
-      timestamp: new Date(),
-      type,
-      message
-    };
-    setLogs(prev => [newLog, ...prev].slice(0, 100));
-  }, []);
+      // Vérifier que c'est une pièce blanche
+      const whitePieces = ['K', 'Q', 'R', 'B', 'N', 'P'];
+      if (!whitePieces.includes(piece)) {
+        addLog('error', 'Ce n\'est pas votre pièce');
+        return false;
+      }
 
-  // Ajouter un mouvement
-  const addMove = useCallback((move: Omit<ChessMove, 'id' | 'timestamp'>) => {
-    const newMove: ChessMove = {
-      ...move,
-      id: Math.random().toString(36).substr(2, 9),
-      timestamp: new Date()
-    };
-    setMoves(prev => [...prev, newMove]);
-  }, []);
+      // Effectuer le mouvement
+      const capturedPiece = board[to];
+      board[to] = piece;
+      delete board[from];
 
-  // Connexion WebSocket
-  const connectWebSocket = useCallback(() => {
-    if (wsRef.current?.readyState === WebSocket.OPEN) return;
+      // Mettre à jour le FEN
+      const newFen = boardToFEN(board, false);
+      setFen(newFen);
 
-    const ws = new WebSocket(WS_URL);
+      const pieceName = getPieceName(piece);
+      let moveDesc = `${pieceName} ${from.toUpperCase()} → ${to.toUpperCase()}`;
+      if (capturedPiece) {
+        moveDesc += ` (capture ${getPieceName(capturedPiece)})`;
+      }
+      
+      addLog('player', `Vous jouez: ${moveDesc}`);
 
-    ws.onopen = () => {
-      console.log('WebSocket connected');
-      setConnected(true);
-      addLog('info', 'Connexion au serveur établie');
-    };
+      // Notifier le coup
+      onMoveComplete({
+        from,
+        to,
+        piece: pieceName,
+        player: 'human'
+      });
 
-    ws.onmessage = (event) => {
-      try {
-        const message = JSON.parse(event.data);
+      // Changer de tour
+      setIsWhiteTurn(false);
 
-        switch (message.type) {
-          case 'connected':
-            setStatus(message.status || 'idle');
-            setFen(message.fen);
-            setRobotConnected(message.robot_connected);
-            if (message.robot_connected) {
-              addLog('info', 'Robot UR5e connecté');
-            } else {
-              addLog('warning', 'Robot non connecté - Mode simulation');
-            }
-            break;
+      // Déclencher le coup du robot après un délai
+      setTimeout(() => {
+        simulateRobotMove(newFen);
+      }, 500);
 
-          case 'status':
-            setStatus(message.status);
-            if (message.message) {
-              addLog('info', message.message);
-            }
-            break;
+      return true;
+    } catch (error) {
+      addLog('error', 'Erreur lors du mouvement');
+      return false;
+    }
+  }, [fen, addLog, onMoveComplete]);
 
-          case 'log':
-            addLog(message.logType, message.message);
-            break;
+  /**
+   * Simule un coup du robot
+   */
+  const simulateRobotMove = useCallback(async (currentFen: string) => {
+    setRobotStatus('thinking');
+    addLog('robot', 'Robot analyse la position...');
 
-          case 'move':
-            setFen(message.fen);
-            setIsWhiteTurn(message.fen.split(' ')[1] === 'w');
-            addMove({
-              from: message.from,
-              to: message.to,
-              san: message.san,
-              player: message.player,
-              evaluation: message.evaluation
-            });
-            break;
+    // Simuler le temps de réflexion
+    await new Promise(resolve => setTimeout(resolve, 1500));
 
-          case 'game_over':
-            setIsGameOver(true);
-            setGameResult(message.result);
-            addLog('info', `Partie terminée: ${message.result}`);
-            break;
+    setRobotStatus('moving');
+    addLog('robot', 'Mouvement du bras robotique en cours...');
 
-          case 'pong':
-            // Réponse au ping
-            break;
+    // Trouver un coup aléatoire pour le robot (pièces noires)
+    const board = fenToBoard(currentFen);
+    const blackPieces = Object.entries(board).filter(([_, piece]) => 
+      ['k', 'q', 'r', 'b', 'n', 'p'].includes(piece)
+    );
+
+    if (blackPieces.length > 0) {
+      // Choisir une pièce aléatoire
+      const [fromSquare, piece] = blackPieces[Math.floor(Math.random() * blackPieces.length)];
+      
+      // Trouver les cases vides ou avec des pièces blanches (pour capturer)
+      const files = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'];
+      const ranks = ['1', '2', '3', '4', '5', '6', '7', '8'];
+      const allSquares = files.flatMap(f => ranks.map(r => `${f}${r}`));
+      const possibleMoves = allSquares.filter(sq => {
+        const targetPiece = board[sq];
+        return !targetPiece || ['K', 'Q', 'R', 'B', 'N', 'P'].includes(targetPiece);
+      });
+
+      if (possibleMoves.length > 0) {
+        const toSquare = possibleMoves[Math.floor(Math.random() * possibleMoves.length)];
+        
+        // Simuler le mouvement physique
+        await new Promise(resolve => setTimeout(resolve, 2000));
+
+        // Effectuer le mouvement
+        const capturedPiece = board[toSquare];
+        board[toSquare] = piece;
+        delete board[fromSquare];
+
+        // Mettre à jour le FEN
+        const newFen = boardToFEN(board, true);
+        setFen(newFen);
+
+        const pieceName = getPieceName(piece);
+        let moveDesc = `${pieceName} ${fromSquare.toUpperCase()} → ${toSquare.toUpperCase()}`;
+        if (capturedPiece) {
+          moveDesc += ` (capture ${getPieceName(capturedPiece)})`;
         }
-      } catch (e) {
-        console.error('Error parsing WebSocket message:', e);
-      }
-    };
 
-    ws.onclose = () => {
-      console.log('WebSocket disconnected');
-      setConnected(false);
-      setStatus('disconnected');
-      addLog('warning', 'Connexion au serveur perdue');
+        onMoveComplete({
+          from: fromSquare,
+          to: toSquare,
+          piece: pieceName,
+          player: 'robot'
+        });
 
-      // Reconnexion automatique
-      reconnectTimeoutRef.current = setTimeout(() => {
-        connectWebSocket();
-      }, 3000);
-    };
-
-    ws.onerror = (error) => {
-      console.error('WebSocket error:', error);
-      addLog('error', 'Erreur de connexion WebSocket');
-    };
-
-    wsRef.current = ws;
-  }, [addLog, addMove]);
-
-  // Connexion au démarrage
-  useEffect(() => {
-    connectWebSocket();
-
-    return () => {
-      if (reconnectTimeoutRef.current) {
-        clearTimeout(reconnectTimeoutRef.current);
-      }
-      if (wsRef.current) {
-        wsRef.current.close();
-      }
-    };
-  }, [connectWebSocket]);
-
-  // Ping périodique pour garder la connexion
-  useEffect(() => {
-    const pingInterval = setInterval(() => {
-      if (wsRef.current?.readyState === WebSocket.OPEN) {
-        wsRef.current.send(JSON.stringify({ type: 'ping' }));
-      }
-    }, 30000);
-
-    return () => clearInterval(pingInterval);
-  }, []);
-
-  // Nouvelle partie
-  const newGame = useCallback(async (difficulty: string) => {
-    try {
-      const response = await fetch(`${API_URL}/game/new`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ difficulty })
-      });
-
-      const data = await response.json();
-
-      if (data.success) {
-        setFen(data.fen);
+        addLog('robot', `Robot joue: ${moveDesc}`);
+        setRobotStatus('idle');
         setIsWhiteTurn(true);
-        setIsGameOver(false);
-        setGameResult(null);
-        setMoves([]);
-        setLogs([]);
-        addLog('info', `Nouvelle partie - Difficulté: ${difficulty}`);
+      } else {
+        addLog('error', 'Aucun coup possible pour le robot');
+        setRobotStatus('idle');
+        setIsWhiteTurn(true);
       }
-    } catch (e) {
-      addLog('error', 'Erreur lors de la création de la partie');
     }
-  }, [addLog]);
+  }, [addLog, onMoveComplete]);
 
-  // Jouer un coup humain
-  const playHumanMove = useCallback(async (from: string, to: string): Promise<boolean> => {
-    try {
-      const response = await fetch(`${API_URL}/game/move/human`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ from_square: from, to_square: to })
-      });
-
-      const data = await response.json();
-
-      if (!data.success) {
-        addLog('warning', data.error || 'Coup invalide');
-        return false;
-      }
-
-      return true;
-    } catch (e) {
-      addLog('error', 'Erreur lors de l\'envoi du coup');
-      return false;
-    }
-  }, [addLog]);
-
-  // Demander au robot de jouer
-  const playRobotMove = useCallback(async (): Promise<boolean> => {
-    try {
-      const response = await fetch(`${API_URL}/game/move/robot`, {
-        method: 'POST'
-      });
-
-      const data = await response.json();
-
-      if (!data.success) {
-        addLog('error', data.error || 'Erreur du robot');
-        return false;
-      }
-
-      return true;
-    } catch (e) {
-      addLog('error', 'Erreur lors de la demande au robot');
-      return false;
-    }
-  }, [addLog]);
-
-  // Obtenir les coups légaux
+  /**
+   * Récupère tous les coups légaux pour une case donnée
+   * TODO: Intégrer avec Stockfish pour les vrais coups légaux
+   */
   const getLegalMoves = useCallback(async (square: string): Promise<string[]> => {
-    try {
-      const response = await fetch(`${API_URL}/game/legal-moves/${square}`);
-      const data = await response.json();
-      return data.moves || [];
-    } catch (e) {
-      return [];
-    }
-  }, []);
+    await new Promise(resolve => setTimeout(resolve, 50));
+    
+    const board = fenToBoard(fen);
+    const piece = board[square];
+    
+    if (!piece) return [];
 
-  // Obtenir le meilleur coup
+    // Simulation simple - retourner des cases vides ou avec des pièces adverses
+    const files = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'];
+    const ranks = ['1', '2', '3', '4', '5', '6', '7', '8'];
+    const allSquares = files.flatMap(f => ranks.map(r => `${f}${r}`));
+    
+    const isWhitePiece = ['K', 'Q', 'R', 'B', 'N', 'P'].includes(piece);
+    const validMoves = allSquares.filter(sq => {
+      if (sq === square) return false;
+      const targetPiece = board[sq];
+      
+      if (!targetPiece) return true; // Case vide
+      
+      // Peut capturer une pièce adverse
+      const targetIsWhite = ['K', 'Q', 'R', 'B', 'N', 'P'].includes(targetPiece);
+      return isWhitePiece !== targetIsWhite;
+    });
+
+    // Limiter à quelques coups aléatoires pour la démo
+    const shuffled = validMoves.sort(() => 0.5 - Math.random());
+    return shuffled.slice(0, 8);
+  }, [fen]);
+
+  /**
+   * Récupère le meilleur coup selon Stockfish
+   * TODO: Intégrer avec Stockfish
+   */
   const getBestMove = useCallback(async (): Promise<{ from: string; to: string } | null> => {
-    try {
-      const response = await fetch(`${API_URL}/game/best-move`);
-      const data = await response.json();
+    await new Promise(resolve => setTimeout(resolve, 1000));
+    
+    const board = fenToBoard(fen);
+    const whitePieces = Object.entries(board).filter(([_, piece]) => 
+      ['K', 'Q', 'R', 'B', 'N', 'P'].includes(piece)
+    );
 
-      if (data.success) {
-        return { from: data.from, to: data.to };
-      }
-      return null;
-    } catch (e) {
-      return null;
-    }
-  }, []);
+    if (whitePieces.length === 0) return null;
+
+    // Choisir une pièce aléatoire
+    const [from] = whitePieces[Math.floor(Math.random() * whitePieces.length)];
+    const legalMoves = await getLegalMoves(from);
+    
+    if (legalMoves.length === 0) return null;
+    
+    return {
+      from,
+      to: legalMoves[0]
+    };
+  }, [fen, getLegalMoves]);
+
+  /**
+   * Réinitialise la partie
+   */
+  const resetGame = useCallback(() => {
+    setFen(INITIAL_FEN);
+    setIsWhiteTurn(true);
+    setIsGameOver(false);
+    setRobotStatus('idle');
+    addLog('info', 'Nouvelle partie initialisée');
+  }, [addLog]);
 
   return {
-    connected,
-    robotConnected,
-    status,
     fen,
     isWhiteTurn,
     isGameOver,
-    gameResult,
-    logs,
-    moves,
-    newGame,
-    playHumanMove,
-    playRobotMove,
+    robotStatus,
+    setRobotStatus,
+    onMove,
     getLegalMoves,
     getBestMove,
-    addLog
+    resetGame
   };
 }

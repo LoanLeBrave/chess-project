@@ -1,13 +1,17 @@
 import { useState } from 'react';
-import { Play, Zap, Brain, Crown, Bot } from 'lucide-react';
+import { Play, Zap, Brain, Crown, Bot, Lightbulb, ArrowLeft } from 'lucide-react';
 import type { DifficultyLevel } from '../App';
+import { Switch } from './ui/switch';
+import { Label } from './ui/label';
 
 interface StartScreenProps {
-  onStartGame: (difficulty: DifficultyLevel) => void;
+  onStartGame: (difficulty: DifficultyLevel, aiHelpEnabled: boolean) => void;
+  onBack: () => void;
 }
 
-export function StartScreen({ onStartGame }: StartScreenProps) {
+export function StartScreen({ onStartGame, onBack }: StartScreenProps) {
   const [selectedDifficulty, setSelectedDifficulty] = useState<DifficultyLevel>('beginner');
+  const [aiHelpEnabled, setAiHelpEnabled] = useState(false);
 
   const difficulties = [
     {
@@ -41,6 +45,17 @@ export function StartScreen({ onStartGame }: StartScreenProps) {
 
   return (
     <div className="min-h-screen flex items-center justify-center p-8">
+      {/* Back Button */}
+      <button
+        onClick={onBack}
+        className="absolute top-6 left-6 flex items-center gap-2 text-slate-400 hover:text-white transition-colors group"
+      >
+        <div className="w-10 h-10 rounded-full bg-slate-800/50 border border-slate-700 flex items-center justify-center group-hover:border-cyan-400 transition-all">
+          <ArrowLeft className="w-5 h-5" />
+        </div>
+        <span className="font-medium">Retour</span>
+      </button>
+
       <div className="max-w-5xl w-full">
         {/* Header */}
         <div className="text-center mb-12">
@@ -104,10 +119,33 @@ export function StartScreen({ onStartGame }: StartScreenProps) {
           </div>
         </div>
 
+        {/* Option Aide & Prédictions */}
+        <div className="mb-8 flex justify-center">
+          <div className="bg-slate-800/50 border border-slate-700 rounded-xl p-6 inline-flex items-center gap-4">
+            <div className="flex items-center gap-3">
+              <Lightbulb className="w-6 h-6 text-cyan-400" />
+              <div className="text-left">
+                <Label htmlFor="ai-help" className="text-lg font-semibold text-white cursor-pointer">
+                  Aide & Prédictions
+                </Label>
+                <p className="text-sm text-slate-400 mt-1">
+                  Affiche les coups suggérés par l'IA et l'évaluation
+                </p>
+              </div>
+            </div>
+            <Switch 
+              id="ai-help"
+              checked={aiHelpEnabled}
+              onCheckedChange={setAiHelpEnabled}
+              className="data-[state=checked]:bg-cyan-500"
+            />
+          </div>
+        </div>
+
         {/* Start Button */}
         <div className="flex justify-center">
           <button
-            onClick={() => onStartGame(selectedDifficulty)}
+            onClick={() => onStartGame(selectedDifficulty, aiHelpEnabled)}
             className="
               group relative px-12 py-5 rounded-2xl font-bold text-xl
               bg-gradient-to-r from-cyan-500 to-blue-600
