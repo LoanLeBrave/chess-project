@@ -95,6 +95,7 @@ class RobotCalibration:
         """
         Calcule la position théorique du trou basée sur la case h1
         Le trou est à 10mm à droite de h1, aligné sur y=0
+        IMPORTANT: Retourne une position HAUTE (pas de descente automatique)
         """
         if 'h1' not in self.cases:
             print("❌ Case h1 non trouvée dans le mapping!")
@@ -102,18 +103,21 @@ class RobotCalibration:
 
         h1_tcp = self.cases['h1']['tcp']
 
-        # Position théorique du trou
+        # Position théorique du trou EN HAUTEUR SÉCURISÉE
         # h1 est le coin bas droit de l'échiquier
         # Le trou est à 10mm à droite (x positif) et centré sur y=0
         position_trou = list(h1_tcp)
         position_trou[0] += self.trou_distance_h1 + (self.trou_largeur / 2)  # Centré en X
         position_trou[1] = h1_tcp[1]  # Même Y que h1 (devrait être proche de 0)
-        position_trou[2] += 0.05  # 5cm au-dessus pour commencer
+        # NE PAS MODIFIER Z - rester à la hauteur de h1 (sécurisée)
 
         return position_trou
 
     def prepositionnement(self):
-        """Positionne le robot au-dessus du trou théorique"""
+        """
+        Positionne le robot au-dessus du trou théorique
+        RESTE EN HAUTEUR - NE DESCEND JAMAIS automatiquement
+        """
         position_trou = self.calculer_position_trou_theorique()
 
         if position_trou is None:
@@ -121,11 +125,26 @@ class RobotCalibration:
 
         print("\n📍 Prépositionnement au-dessus du trou théorique...")
         print(f"   Position: X={position_trou[0]:.4f}, Y={position_trou[1]:.4f}, Z={position_trou[2]:.4f}")
+        print("   ⚠️  SÉCURITÉ: Le robot reste en HAUTEUR - ne descendra que sur commande clavier")
 
         try:
             self.rtde_c.moveL(position_trou, VITESSE, ACCELERATION)
             time.sleep(0.5)
-            print("✅ Prépositionnement terminé\n")
+            print("   ✅ Prépositionnement terminé (en hauteur sécurisée)\n")
+
+            # VÉRIFICATION DE SÉCURITÉ
+            print("🔍 VÉRIFICATION DE SÉCURITÉ")
+            print("   Regardez le robot et vérifiez visuellement:")
+            print("   ✓ Le gripper est-il approximativement au-dessus du trou?")
+            print("   ✓ Le gripper est-il bien fermé?")
+            print("   ✓ Rien ne bloque le passage vers le bas?")
+            print("")
+            print("   Si tout est OK, vous pourrez ajuster précisément en X/Y")
+            print("   avec le freedrive avant de descendre.")
+            print("")
+            input("   Appuyez sur ENTRÉE pour continuer...")
+            print("")
+
             return True
         except Exception as e:
             print(f"❌ Erreur prépositionnement: {e}")
@@ -172,14 +191,23 @@ class RobotCalibration:
         print("\n" + "=" * 60)
         print("🎮 MODE DESCENTE INTERACTIVE")
         print("=" * 60)
-        print("\n📋 Instructions:")
-        print("  1. Ajustez la position X/Y manuellement (le robot est en freedrive)")
-        print("  2. Utilisez les touches pour descendre dans le trou:")
+        print("\n⚠️  SÉCURITÉ CRITIQUE ⚠️")
+        print("  Le robot est actuellement EN HAUTEUR au-dessus du trou.")
+        print("  Il ne descendra QUE lorsque vous appuierez sur ↓ ou S.")
+        print("  Vérifiez visuellement qu'il est bien centré sur le trou")
+        print("  AVANT de commencer la descente!")
+        print("")
+        print("📋 Instructions:")
+        print("  1. Ajustez d'abord la position X/Y (freedrive actif)")
+        print("     → Centrez le gripper au-dessus du trou")
+        print("  2. Vérifiez visuellement l'alignement")
+        print("  3. Descendez progressivement avec les touches:")
         print("     ↓ ou S : Descendre (CONTINU tant que pressé)")
         print("     ↑ ou W : Remonter (CONTINU tant que pressé)")
         print("     Q : Valider et enregistrer cette position")
         print("     ESC : Annuler la calibration")
-        print("\n⚠️  Dès qu'une touche est relâchée, le mouvement s'arrête et le freedrive X/Y est réactivé")
+        print("\n⚠️  Dès qu'une touche est relâchée, le mouvement s'arrête")
+        print("    et le freedrive X/Y est réactivé pour ajustement")
         print("=" * 60 + "\n")
 
         # Sauvegarder les paramètres du terminal
@@ -556,4 +584,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-# code pour nouveaux commit
