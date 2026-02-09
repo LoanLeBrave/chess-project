@@ -350,29 +350,51 @@ class RobotCalibration:
             self.rtde_c.moveL(pose_haute, VITESSE * 0.5, ACCELERATION)
             time.sleep(0.5)
 
-            # 2. Calculer le centre de l'échiquier (entre e4 et d5)
-            if 'e4' in self.cases and 'd4' in self.cases:
-                # Centre entre e4 et d4 (milieu de l'échiquier)
-                e4_tcp = self.cases['e4']['tcp']
+            # 2. Calculer le centre de l'échiquier (moyenne des 4 cases centrales)
+            # Le vrai centre est entre d4, e4, d5, e5
+            if all(c in self.cases for c in ['d4', 'e4', 'd5', 'e5']):
                 d4_tcp = self.cases['d4']['tcp']
+                e4_tcp = self.cases['e4']['tcp']
+                d5_tcp = self.cases['d5']['tcp']
+                e5_tcp = self.cases['e5']['tcp']
 
                 position_centre = [
-                    (e4_tcp[0] + d4_tcp[0]) / 2,
-                    (e4_tcp[1] + d4_tcp[1]) / 2,
+                    (d4_tcp[0] + e4_tcp[0] + d5_tcp[0] + e5_tcp[0]) / 4,
+                    (d4_tcp[1] + e4_tcp[1] + d5_tcp[1] + e5_tcp[1]) / 4,
                     pose_haute[2],  # Garder la hauteur actuelle
-                    e4_tcp[3],  # Orientation de e4
-                    e4_tcp[4],
-                    e4_tcp[5]
+                    d4_tcp[3],  # Orientation de d4
+                    d4_tcp[4],
+                    d4_tcp[5]
                 ]
 
-                print("   📍 Déplacement au centre de l'échiquier (e4-d4)...")
+                print("   📍 Déplacement au centre de l'échiquier (d4-e4-d5-e5)...")
+                self.rtde_c.moveL(position_centre, VITESSE, ACCELERATION)
+                time.sleep(0.5)
+
+                print("   ✅ Robot positionné au centre à 10cm de hauteur")
+
+            elif 'd5' in self.cases and 'e5' in self.cases:
+                # Fallback sur d5-e5 si les 4 cases ne sont pas dispo
+                d5_tcp = self.cases['d5']['tcp']
+                e5_tcp = self.cases['e5']['tcp']
+
+                position_centre = [
+                    (d5_tcp[0] + e5_tcp[0]) / 2,
+                    (d5_tcp[1] + e5_tcp[1]) / 2,
+                    pose_haute[2],
+                    d5_tcp[3],
+                    d5_tcp[4],
+                    d5_tcp[5]
+                ]
+
+                print("   📍 Déplacement au centre de l'échiquier (d5-e5)...")
                 self.rtde_c.moveL(position_centre, VITESSE, ACCELERATION)
                 time.sleep(0.5)
 
                 print("   ✅ Robot positionné au centre à 10cm de hauteur")
 
             else:
-                print("   ⚠️  Cases e4/d4 non trouvées, robot reste en position haute")
+                print("   ⚠️  Cases centrales non trouvées, robot reste en position haute")
 
             return True
 
