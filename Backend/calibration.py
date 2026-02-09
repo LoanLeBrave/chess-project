@@ -305,6 +305,53 @@ class RobotCalibration:
             termios.tcsetattr(sys.stdin, termios.TCSADRAIN, old_settings)
             self.disable_freedrive()
 
+    def sortir_du_trou_et_centrer(self):
+        """
+        Remonte le robot du trou et le positionne au centre de l'échiquier
+        pour éviter de bloquer le gripper
+        """
+        print("\n🔼 Remontée et positionnement au centre de l'échiquier...")
+
+        try:
+            # 1. Remonter verticalement de 10cm
+            pose_actuelle = list(self.rtde_r.getActualTCPPose())
+            pose_haute = list(pose_actuelle)
+            pose_haute[2] += 0.10  # Monter de 10cm
+
+            print("   📍 Remontée verticale de 10cm...")
+            self.rtde_c.moveL(pose_haute, VITESSE * 0.5, ACCELERATION)
+            time.sleep(0.5)
+
+            # 2. Calculer le centre de l'échiquier (entre e4 et d5)
+            if 'e4' in self.cases and 'd4' in self.cases:
+                # Centre entre e4 et d4 (milieu de l'échiquier)
+                e4_tcp = self.cases['e4']['tcp']
+                d4_tcp = self.cases['d4']['tcp']
+
+                position_centre = [
+                    (e4_tcp[0] + d4_tcp[0]) / 2,
+                    (e4_tcp[1] + d4_tcp[1]) / 2,
+                    pose_haute[2],  # Garder la hauteur actuelle
+                    e4_tcp[3],  # Orientation de e4
+                    e4_tcp[4],
+                    e4_tcp[5]
+                ]
+
+                print("   📍 Déplacement au centre de l'échiquier (e4-d4)...")
+                self.rtde_c.moveL(position_centre, VITESSE, ACCELERATION)
+                time.sleep(0.5)
+
+                print("   ✅ Robot positionné au centre à 10cm de hauteur")
+
+            else:
+                print("   ⚠️  Cases e4/d4 non trouvées, robot reste en position haute")
+
+            return True
+
+        except Exception as e:
+            print(f"   ❌ Erreur lors du repositionnement: {e}")
+            return False
+
     def calculer_offset(self, position_mesuree):
         """
         Calcule l'offset entre la position théorique et la position mesurée du trou
@@ -449,13 +496,17 @@ class RobotCalibration:
             print("❌ Calibration annulée\n")
             return False
 
-        # 5. Calculer l'offset
+        # 5. Sortir du trou et repositionner au centre
+        if not self.sortir_du_trou_et_centrer():
+            print("⚠️  Repositionnement impossible, continuez manuellement")
+
+        # 6. Calculer l'offset
         offset = self.calculer_offset(position_calibration)
 
         if offset is None:
             return False
 
-        # 6. Demander confirmation
+        # 7. Demander confirmation
         print("⚠️  Voulez-vous appliquer cet offset à toutes les positions? (o/n): ", end='')
         reponse = input().strip().lower()
 
@@ -463,11 +514,11 @@ class RobotCalibration:
             print("❌ Calibration annulée\n")
             return False
 
-        # 7. Appliquer l'offset
+        # 8. Appliquer l'offset
         if not self.appliquer_offset_mapping(offset):
             return False
 
-        # 8. Sauvegarder
+        # 9. Sauvegarder
         if not self.sauvegarder_mapping():
             return False
 
