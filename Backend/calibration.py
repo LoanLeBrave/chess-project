@@ -41,7 +41,7 @@ class RobotCalibration:
 
         # Vitesses pour descente fine
         self.vitesse_fine = 0.02  # 2cm/s
-        self.pas_descente = 0.05  # 1mm par appui
+        self.pas_descente = 0.5  # 1mm par appui
 
     def init_robot(self):
         """Initialise la connexion au robot"""
@@ -250,7 +250,7 @@ class RobotCalibration:
             en_mouvement = False
 
             # Vitesse de descente continue (m/s)
-            vitesse_descente = 0.5  # 5cm/s - plus rapide pour calibration
+            vitesse_descente = 1 # 5cm/s - plus rapide pour calibration
 
             print("🔒 Freedrive: DÉSACTIVÉ (appuyez sur F pour activer)")
 
