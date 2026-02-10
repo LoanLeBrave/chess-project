@@ -250,7 +250,7 @@ class RobotCalibration:
             en_mouvement = False
 
             # Vitesse de descente continue (m/s)
-            vitesse_descente = 0.05  # 5cm/s - plus rapide pour calibration
+            vitesse_descente = 0.5  # 5cm/s - plus rapide pour calibration
 
             print("🔒 Freedrive: DÉSACTIVÉ (appuyez sur F pour activer)")
 
