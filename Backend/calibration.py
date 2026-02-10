@@ -270,18 +270,22 @@ class RobotCalibration:
                             self.disable_freedrive()
                         time.sleep(0.5)  # Temps de stabilisation
                         return list(self.rtde_r.getActualTCPPose())
-
                     elif key.lower() == 'f':  # Freedrive
                         self.rtde_c.speedStop()
                         if freedrive_actif:
+                            # Désactivation
                             self.disable_freedrive()
                             freedrive_actif = False
+                            # IMPORTANT: On réinitialise la vélocité connue pour éviter
+                            # que la boucle ne tente d'envoyer un speedStop() inutile
+                            current_velocity = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
                             print("\r🔒 Freedrive DÉSACTIVÉ      ", end='', flush=True)
                         else:
+                            # Activation
                             self.enable_freedrive_xy()
                             freedrive_actif = True
                             print("\r🟢 Freedrive ACTIVÉ         ", end='', flush=True)
-                        time.sleep(0.2)  # Anti-rebond simple
+                        time.sleep(0.2)  # Anti-rebond
 
                     # Mouvements Z (prioritaires sur le freedrive)
                     elif key.lower() == 's':  # Descendre
