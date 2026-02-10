@@ -41,7 +41,7 @@ class RobotCalibration:
 
         # Vitesses pour descente fine
         self.vitesse_fine = 0.02  # 2cm/s
-        self.pas_descente = 0.5  # 1mm par appui
+        self.pas_descente = 0.001  # 1mm par appui
 
     def init_robot(self):
         """Initialise la connexion au robot"""
@@ -250,7 +250,7 @@ class RobotCalibration:
             en_mouvement = False
 
             # Vitesse de descente continue (m/s)
-            vitesse_descente = 1 # 5cm/s - plus rapide pour calibration
+            vitesse_descente = 0.05  # 5cm/s - plus rapide pour calibration
 
             print("🔒 Freedrive: DÉSACTIVÉ (appuyez sur F pour activer)")
 
@@ -260,15 +260,11 @@ class RobotCalibration:
 
                 # Afficher la position et l'état du freedrive
                 freedrive_status = "🟢 ACTIF" if freedrive_actif else "🔒 DÉSACTIVÉ"
-                print(
-                    f"\r📍 Position: X={pose[0]:.4f}, Y={pose[1]:.4f}, Z={pose[2]:.4f} | Freedrive: {freedrive_status}  ",
-                    end='', flush=True)
+                mouvement_status = "⬇️ DESCENTE" if en_mouvement else "⏸️  ARRÊT"
+                print(f"\r📍 Z={pose[2]:.4f} | Freedrive: {freedrive_status} | {mouvement_status}  ", end='', flush=True)
 
                 # Lire la touche (non bloquant)
                 key = self.get_key()
-
-                # Nouvelle vitesse à appliquer (par défaut = 0)
-                vz = 0
 
                 if key:
                     # Traiter ESC et flèches
@@ -307,10 +303,9 @@ class RobotCalibration:
                             self.enable_freedrive_xy()
                             freedrive_actif = True
                             print("\n🟢 Freedrive ACTIVÉ (déplacez le robot manuellement en X/Y)")
-                        continue
 
                     # Descente
-                    if key.lower() == 's':
+                    elif key.lower() == 's':
                         # Si freedrive actif, le désactiver automatiquement
                         if freedrive_actif:
                             self.disable_freedrive()
@@ -318,10 +313,12 @@ class RobotCalibration:
                             print("\n🔒 Freedrive auto-désactivé pour descente")
                             time.sleep(0.05)
 
-                        vz = -vitesse_descente  # Descendre
+                        # Appliquer vitesse de descente
                         if not en_mouvement:
-                            print("\n⬇️  Descente...")
-                            en_mouvement = True
+                            print(f"\n⬇️  DESCENTE à {vitesse_descente * 1000:.0f}mm/s...")
+
+                        self.rtde_c.speedL([0, 0, -vitesse_descente, 0, 0, 0], ACCELERATION, 60)
+                        en_mouvement = True
 
                     # Montée
                     elif key.lower() == 'w':
@@ -332,10 +329,12 @@ class RobotCalibration:
                             print("\n🔒 Freedrive auto-désactivé pour montée")
                             time.sleep(0.05)
 
-                        vz = vitesse_descente  # Monter
+                        # Appliquer vitesse de montée
                         if not en_mouvement:
-                            print("\n⬆️  Montée...")
-                            en_mouvement = True
+                            print(f"\n⬆️  MONTÉE à {vitesse_descente * 1000:.0f}mm/s...")
+
+                        self.rtde_c.speedL([0, 0, vitesse_descente, 0, 0, 0], ACCELERATION, 60)
+                        en_mouvement = True
 
                     # Validation
                     elif key.lower() == 'q':
@@ -351,13 +350,8 @@ class RobotCalibration:
                         print("\n\n✅ Position de calibration enregistrée!")
                         return position_finale
 
-                # Appliquer la vitesse
-                if vz != 0:
-                    # Mouvement demandé - appliquer speedL
-                    self.rtde_c.speedL([0, 0, vz, 0, 0, 0], ACCELERATION, 60)
-                    en_mouvement = True
                 else:
-                    # Aucun mouvement demandé - arrêter si en mouvement
+                    # Aucune touche pressée - arrêter le mouvement
                     if en_mouvement:
                         self.rtde_c.speedStop()
                         en_mouvement = False
