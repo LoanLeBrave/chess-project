@@ -281,40 +281,45 @@ class RobotCalibration:
 
                     # Touche de descente
                     if key.lower() == 's':
+                        # Désactiver freedrive si nécessaire
+                        if en_freedrive:
+                            self.disable_freedrive()
+                            en_freedrive = False
+
+                        # Démarrer descente UNIQUEMENT si pas déjà en descente
                         if not en_mouvement or direction_mouvement != 'down':
-                            # Arrêter le freedrive et démarrer la descente
-                            if en_freedrive:
-                                self.disable_freedrive()
-                                en_freedrive = False
-
-                            # Arrêter tout mouvement précédent
-                            if en_mouvement:
+                            # Arrêter tout mouvement précédent si autre direction
+                            if en_mouvement and direction_mouvement != 'down':
                                 self.rtde_c.speedStop()
+                                time.sleep(0.05)
 
-                            # Démarrer descente continue
-                            # speedL: [vx, vy, vz, vrx, vry, vrz], acceleration, time
+                            # Démarrer descente continue UNE SEULE FOIS
                             self.rtde_c.speedL([0, 0, -vitesse_descente, 0, 0, 0], ACCELERATION, 60)
                             en_mouvement = True
                             direction_mouvement = 'down'
                             print("\n⬇️  Descente continue...")
+                        # Sinon on ne fait RIEN - le mouvement continue déjà!
 
                     # Touche de montée
                     elif key.lower() == 'w':
+                        # Désactiver freedrive si nécessaire
+                        if en_freedrive:
+                            self.disable_freedrive()
+                            en_freedrive = False
+
+                        # Démarrer montée UNIQUEMENT si pas déjà en montée
                         if not en_mouvement or direction_mouvement != 'up':
-                            # Arrêter le freedrive et démarrer la montée
-                            if en_freedrive:
-                                self.disable_freedrive()
-                                en_freedrive = False
-
-                            # Arrêter tout mouvement précédent
-                            if en_mouvement:
+                            # Arrêter tout mouvement précédent si autre direction
+                            if en_mouvement and direction_mouvement != 'up':
                                 self.rtde_c.speedStop()
+                                time.sleep(0.05)
 
-                            # Démarrer montée continue
+                            # Démarrer montée continue UNE SEULE FOIS
                             self.rtde_c.speedL([0, 0, vitesse_descente, 0, 0, 0], ACCELERATION, 60)
                             en_mouvement = True
                             direction_mouvement = 'up'
                             print("\n⬆️  Montée continue...")
+                        # Sinon on ne fait RIEN - le mouvement continue déjà!
 
                     # Validation
                     elif key.lower() == 'q':
@@ -340,11 +345,11 @@ class RobotCalibration:
 
                     # Réactiver freedrive si nécessaire
                     if not en_freedrive and not en_mouvement:
-                        time.sleep(0.1)
+                        time.sleep(0.05)  # Petit délai avant réactivation
                         self.enable_freedrive_xy()
                         en_freedrive = True
 
-                time.sleep(0.02)  # 20ms entre lectures - très réactif
+                time.sleep(0.01)  # 10ms entre lectures - très réactif (100 Hz)
 
         finally:
             # Arrêter tout mouvement
