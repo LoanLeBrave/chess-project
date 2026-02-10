@@ -209,7 +209,8 @@ class RobotCalibration:
         Touches:
         - Flèche bas / s : Descendre (continu tant que pressé)
         - Flèche haut / w : Remonter (continu tant que pressé)
-        - q : Quitter et valider
+        - f : Activer/Désactiver freedrive X/Y (toggle)
+        - q : Valider et enregistrer
         - ESC : Annuler
         """
         print("\n" + "=" * 60)
@@ -222,16 +223,20 @@ class RobotCalibration:
         print("  AVANT de commencer la descente!")
         print("")
         print("📋 Instructions:")
-        print("  1. Ajustez d'abord la position X/Y (freedrive actif)")
-        print("     → Centrez le gripper au-dessus du trou")
-        print("  2. Vérifiez visuellement l'alignement")
-        print("  3. Descendez progressivement avec les touches:")
+        print("  DESCENTE/MONTÉE:")
         print("     ↓ ou S : Descendre (CONTINU tant que pressé)")
         print("     ↑ ou W : Remonter (CONTINU tant que pressé)")
+        print("")
+        print("  AJUSTEMENT X/Y:")
+        print("     F : Activer/Désactiver le freedrive X/Y (bouton toggle)")
+        print("     → Freedrive actif = vous pouvez déplacer le robot manuellement en X/Y")
+        print("     → Freedrive inactif = robot bloqué (pour descente stable)")
+        print("")
+        print("  VALIDATION:")
         print("     Q : Valider et enregistrer cette position")
         print("     ESC : Annuler la calibration")
-        print("\n⚠️  Dès qu'une touche est relâchée, le mouvement s'arrête")
-        print("    et le freedrive X/Y est réactivé pour ajustement")
+        print("")
+        print("💡 ASTUCE: Descendez avec freedrive DÉSACTIVÉ pour plus de stabilité")
         print("=" * 60 + "\n")
 
         # Sauvegarder les paramètres du terminal
@@ -241,23 +246,29 @@ class RobotCalibration:
             # Mode raw pour capturer les touches
             tty.setcbreak(sys.stdin.fileno())
 
-            en_freedrive = True
+            freedrive_actif = False  # Commence SANS freedrive
             en_mouvement = False
-            direction_mouvement = None  # 'down' ou 'up'
-            self.enable_freedrive_xy()
 
             # Vitesse de descente continue (m/s)
             vitesse_descente = 0.01  # 1cm/s - fluide et sécurisé
+
+            print("🔒 Freedrive: DÉSACTIVÉ (appuyez sur F pour activer)")
 
             while True:
                 # Lire la position actuelle
                 pose = self.rtde_r.getActualTCPPose()
 
-                # Afficher la position
-                print(f"\r📍 Position: X={pose[0]:.4f}, Y={pose[1]:.4f}, Z={pose[2]:.4f}  ", end='', flush=True)
+                # Afficher la position et l'état du freedrive
+                freedrive_status = "🟢 ACTIF" if freedrive_actif else "🔒 DÉSACTIVÉ"
+                print(
+                    f"\r📍 Position: X={pose[0]:.4f}, Y={pose[1]:.4f}, Z={pose[2]:.4f} | Freedrive: {freedrive_status}  ",
+                    end='', flush=True)
 
                 # Lire la touche (non bloquant)
                 key = self.get_key()
+
+                # Nouvelle vitesse à appliquer (par défaut = 0)
+                vz = 0
 
                 if key:
                     # Traiter ESC et flèches
@@ -275,51 +286,56 @@ class RobotCalibration:
                             # ESC seul
                             if en_mouvement:
                                 self.rtde_c.speedStop()
-                            self.disable_freedrive()
+                            if freedrive_actif:
+                                self.disable_freedrive()
                             print("\n\n❌ Calibration annulée")
                             return None
 
-                    # Touche de descente
+                    # Toggle Freedrive
+                    if key.lower() == 'f':
+                        if freedrive_actif:
+                            self.disable_freedrive()
+                            freedrive_actif = False
+                            print("\n🔒 Freedrive DÉSACTIVÉ")
+                        else:
+                            # Arrêter tout mouvement avant d'activer freedrive
+                            if en_mouvement:
+                                self.rtde_c.speedStop()
+                                en_mouvement = False
+                                time.sleep(0.05)
+
+                            self.enable_freedrive_xy()
+                            freedrive_actif = True
+                            print("\n🟢 Freedrive ACTIVÉ (déplacez le robot manuellement en X/Y)")
+                        continue
+
+                    # Descente
                     if key.lower() == 's':
-                        # Désactiver freedrive si nécessaire
-                        if en_freedrive:
+                        # Si freedrive actif, le désactiver automatiquement
+                        if freedrive_actif:
                             self.disable_freedrive()
-                            en_freedrive = False
+                            freedrive_actif = False
+                            print("\n🔒 Freedrive auto-désactivé pour descente")
+                            time.sleep(0.05)
 
-                        # Démarrer descente UNIQUEMENT si pas déjà en descente
-                        if not en_mouvement or direction_mouvement != 'down':
-                            # Arrêter tout mouvement précédent si autre direction
-                            if en_mouvement and direction_mouvement != 'down':
-                                self.rtde_c.speedStop()
-                                time.sleep(0.05)
-
-                            # Démarrer descente continue UNE SEULE FOIS
-                            self.rtde_c.speedL([0, 0, -vitesse_descente, 0, 0, 0], ACCELERATION, 60)
+                        vz = -vitesse_descente  # Descendre
+                        if not en_mouvement:
+                            print("\n⬇️  Descente...")
                             en_mouvement = True
-                            direction_mouvement = 'down'
-                            print("\n⬇️  Descente continue...")
-                        # Sinon on ne fait RIEN - le mouvement continue déjà!
 
-                    # Touche de montée
+                    # Montée
                     elif key.lower() == 'w':
-                        # Désactiver freedrive si nécessaire
-                        if en_freedrive:
+                        # Si freedrive actif, le désactiver automatiquement
+                        if freedrive_actif:
                             self.disable_freedrive()
-                            en_freedrive = False
+                            freedrive_actif = False
+                            print("\n🔒 Freedrive auto-désactivé pour montée")
+                            time.sleep(0.05)
 
-                        # Démarrer montée UNIQUEMENT si pas déjà en montée
-                        if not en_mouvement or direction_mouvement != 'up':
-                            # Arrêter tout mouvement précédent si autre direction
-                            if en_mouvement and direction_mouvement != 'up':
-                                self.rtde_c.speedStop()
-                                time.sleep(0.05)
-
-                            # Démarrer montée continue UNE SEULE FOIS
-                            self.rtde_c.speedL([0, 0, vitesse_descente, 0, 0, 0], ACCELERATION, 60)
+                        vz = vitesse_descente  # Monter
+                        if not en_mouvement:
+                            print("\n⬆️  Montée...")
                             en_mouvement = True
-                            direction_mouvement = 'up'
-                            print("\n⬆️  Montée continue...")
-                        # Sinon on ne fait RIEN - le mouvement continue déjà!
 
                     # Validation
                     elif key.lower() == 'q':
@@ -327,29 +343,27 @@ class RobotCalibration:
                         if en_mouvement:
                             self.rtde_c.speedStop()
 
-                        self.disable_freedrive()
+                        if freedrive_actif:
+                            self.disable_freedrive()
+
                         time.sleep(0.2)  # Attendre stabilisation
                         position_finale = list(self.rtde_r.getActualTCPPose())
                         print("\n\n✅ Position de calibration enregistrée!")
                         return position_finale
 
+                # Appliquer la vitesse
+                if vz != 0:
+                    # Mouvement demandé - appliquer speedL
+                    self.rtde_c.speedL([0, 0, vz, 0, 0, 0], ACCELERATION, 60)
+                    en_mouvement = True
                 else:
-                    # Aucune touche pressée
+                    # Aucun mouvement demandé - arrêter si en mouvement
                     if en_mouvement:
-                        # Arrêter le mouvement immédiatement
                         self.rtde_c.speedStop()
                         en_mouvement = False
-                        direction_mouvement = None
-                        time.sleep(0.1)  # Stabilisation
-                        print("\n⏸️  Mouvement arrêté")
+                        print("\n⏸️  Arrêt")
 
-                    # Réactiver freedrive si nécessaire
-                    if not en_freedrive and not en_mouvement:
-                        time.sleep(0.05)  # Petit délai avant réactivation
-                        self.enable_freedrive_xy()
-                        en_freedrive = True
-
-                time.sleep(0.01)  # 10ms entre lectures - très réactif (100 Hz)
+                time.sleep(0.01)  # 10ms entre lectures - 100 Hz
 
         finally:
             # Arrêter tout mouvement
@@ -358,9 +372,15 @@ class RobotCalibration:
             except:
                 pass
 
+            # Désactiver freedrive
+            try:
+                if freedrive_actif:
+                    self.disable_freedrive()
+            except:
+                pass
+
             # Restaurer les paramètres du terminal
             termios.tcsetattr(sys.stdin, termios.TCSADRAIN, old_settings)
-            self.disable_freedrive()
 
     def sortir_du_trou_et_centrer(self):
         """
