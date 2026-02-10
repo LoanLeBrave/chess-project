@@ -95,7 +95,9 @@ class RobotCalibration:
         """
         Calcule la position théorique du trou basée sur la case h1
         Le trou est à 10mm à droite de h1, aligné sur y=0
-        IMPORTANT: Retourne une position HAUTE (pas de descente automatique)
+
+        ATTENTION: Cette fonction retourne le Z de h1 (hauteur basse de prise de pièce)
+        Le prepositionnement() doit REMPLACER ce Z par le Z actuel du robot!
         """
         if 'h1' not in self.cases:
             print("❌ Case h1 non trouvée dans le mapping!")
@@ -103,34 +105,50 @@ class RobotCalibration:
 
         h1_tcp = self.cases['h1']['tcp']
 
-        # Position théorique du trou EN HAUTEUR SÉCURISÉE
+        # Position théorique du trou (X, Y corrects, mais Z de h1 = BAS)
         # h1 est le coin bas droit de l'échiquier
         # Le trou est à 10mm à droite (x positif) et centré sur y=0
         position_trou = list(h1_tcp)
         position_trou[0] += self.trou_distance_h1 + (self.trou_largeur / 2)  # Centré en X
         position_trou[1] = h1_tcp[1]  # Même Y que h1 (devrait être proche de 0)
-        # NE PAS MODIFIER Z - rester à la hauteur de h1 (sécurisée)
+        # position_trou[2] = h1_tcp[2]  ← Reste au Z de h1 (ATTENTION: position BASSE!)
 
         return position_trou
 
     def prepositionnement(self):
         """
-        Positionne le robot au-dessus du trou théorique
-        RESTE EN HAUTEUR - NE DESCEND JAMAIS automatiquement
+        Positionne le robot au-dessus du trou théorique EN X ET Y UNIQUEMENT
+        GARDE LE Z ACTUEL - NE DESCEND JAMAIS automatiquement
         """
         position_trou = self.calculer_position_trou_theorique()
 
         if position_trou is None:
             return False
 
+        # RÉCUPÉRER LA POSITION ACTUELLE DU ROBOT
+        pose_actuelle = list(self.rtde_r.getActualTCPPose())
+
+        # Créer la position cible: X et Y du trou, Z ACTUEL du robot
+        position_cible = list(position_trou)
+        position_cible[2] = pose_actuelle[2]  # 🔒 GARDER LE Z ACTUEL!
+
         print("\n📍 Prépositionnement au-dessus du trou théorique...")
-        print(f"   Position: X={position_trou[0]:.4f}, Y={position_trou[1]:.4f}, Z={position_trou[2]:.4f}")
-        print("   ⚠️  SÉCURITÉ: Le robot reste en HAUTEUR - ne descendra que sur commande clavier")
+        print(f"   Position actuelle: X={pose_actuelle[0]:.4f}, Y={pose_actuelle[1]:.4f}, Z={pose_actuelle[2]:.4f}")
+        print(f"   Position cible:    X={position_cible[0]:.4f}, Y={position_cible[1]:.4f}, Z={position_cible[2]:.4f}")
+        print("   ⚠️  SÉCURITÉ: Mouvement en X/Y uniquement - Z reste INCHANGÉ")
 
         try:
-            self.rtde_c.moveL(position_trou, VITESSE, ACCELERATION)
+            self.rtde_c.moveL(position_cible, VITESSE, ACCELERATION)
             time.sleep(0.5)
-            print("   ✅ Prépositionnement terminé (en hauteur sécurisée)\n")
+
+            # Vérifier que Z n'a pas changé
+            pose_finale = list(self.rtde_r.getActualTCPPose())
+            delta_z = abs(pose_finale[2] - pose_actuelle[2])
+
+            if delta_z > 0.001:  # Plus de 1mm de changement en Z
+                print(f"   ⚠️  ATTENTION: Z a changé de {delta_z * 1000:.1f}mm!")
+            else:
+                print(f"   ✅ Prépositionnement terminé (Z inchangé: {pose_finale[2]:.4f})\n")
 
             # VÉRIFICATION DE SÉCURITÉ
             print("🔍 VÉRIFICATION DE SÉCURITÉ")
@@ -143,6 +161,12 @@ class RobotCalibration:
             print("   avec le freedrive avant de descendre.")
             print("")
             input("   Appuyez sur ENTRÉE pour continuer...")
+            print("")
+
+            return True
+        except Exception as e:
+            print(f"❌ Erreur prépositionnement: {e}")
+            return False
             print("")
 
             return True
