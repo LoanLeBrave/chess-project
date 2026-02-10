@@ -41,7 +41,7 @@ class RobotCalibration:
 
         # Vitesses pour descente fine
         self.vitesse_fine = 0.02  # 2cm/s
-        self.pas_descente = 0.001  # 1mm par appui
+        self.pas_descente = 0.005  # 1mm par appui
 
     def init_robot(self):
         """Initialise la connexion au robot"""
