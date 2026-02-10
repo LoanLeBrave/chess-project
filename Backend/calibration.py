@@ -197,13 +197,185 @@ class RobotCalibration:
             print(f"❌ Erreur désactivation freedrive: {e}")
             return False
 
-    def get_key(self):
-        """Lit une touche du clavier sans bloquer"""
-        if select.select([sys.stdin], [], [], 0)[0]:
-            return sys.stdin.read(1)
-        return None
+    def get_key_non_blocking(self):
+        """Lit une touche sans bloquer - approche VNC qui fonctionne"""
+        fd = sys.stdin.fileno()
+        old_settings = termios.tcgetattr(fd)
+        try:
+            tty.setraw(sys.stdin.fileno())
+            rlist, _, _ = select.select([sys.stdin], [], [], 0.001)  # Timeout 1ms
+            if rlist:
+                ch = sys.stdin.read(1)
+                # Gérer les séquences d'échappement (flèches)
+                if ch == '\x1b':
+                    ch2 = sys.stdin.read(1) if select.select([sys.stdin], [], [], 0.001)[0] else ''
+                    ch3 = sys.stdin.read(1) if select.select([sys.stdin], [], [], 0.001)[0] else ''
+                    if ch2 == '[':
+                        if ch3 == 'A':
+                            return 'w'  # Flèche haut = w
+                        elif ch3 == 'B':
+                            return 's'  # Flèche bas = s
+                    return '\x1b'  # ESC seul
+                return ch
+            return None
+        finally:
+            termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
 
     def mode_descente_interactive(self):
+        """
+        Mode interactif de descente dans le trou
+        Touches:
+        - Flèche bas / s : Descendre (continu tant que pressé)
+        - Flèche haut / w : Remonter (continu tant que pressé)
+        - f : Activer/Désactiver freedrive X/Y (toggle)
+        - q : Valider et enregistrer
+        - ESC : Annuler
+        """
+        print("\n" + "=" * 60)
+        print("🎮 MODE DESCENTE INTERACTIVE")
+        print("=" * 60)
+        print("\n⚠️  SÉCURITÉ CRITIQUE ⚠️")
+        print("  Le robot est actuellement EN HAUTEUR au-dessus du trou.")
+        print("  Il ne descendra QUE lorsque vous appuierez sur ↓ ou S.")
+        print("  Vérifiez visuellement qu'il est bien centré sur le trou")
+        print("  AVANT de commencer la descente!")
+        print("")
+        print("📋 Instructions:")
+        print("  DESCENTE/MONTÉE:")
+        print("     ↓ ou S : Descendre (CONTINU tant que pressé)")
+        print("     ↑ ou W : Remonter (CONTINU tant que pressé)")
+        print("")
+        print("  AJUSTEMENT X/Y:")
+        print("     F : Activer/Désactiver le freedrive X/Y (bouton toggle)")
+        print("     → Freedrive actif = vous pouvez déplacer le robot manuellement en X/Y")
+        print("     → Freedrive inactif = robot bloqué (pour descente stable)")
+        print("")
+        print("  VALIDATION:")
+        print("     Q : Valider et enregistrer cette position")
+        print("     ESC : Annuler la calibration")
+        print("")
+        print("💡 ASTUCE: Maintenez 'S' enfoncée pour descente continue")
+        print("=" * 60 + "\n")
+
+        # Sauvegarder les paramètres du terminal
+        # Note: get_key_non_blocking() gère déjà le mode raw en interne
+
+        try:
+            freedrive_actif = False  # Commence SANS freedrive
+
+            # Vitesse de descente continue (m/s)
+            vitesse_descente = 0.05  # 5cm/s - plus rapide pour calibration
+
+            print("🔒 Freedrive: DÉSACTIVÉ (appuyez sur F pour activer)\n")
+
+            # État du mouvement
+            current_velocity = [0, 0, 0, 0, 0, 0]
+
+            while True:
+                # Lire la position actuelle
+                pose = self.rtde_r.getActualTCPPose()
+
+                # Afficher la position et l'état
+                freedrive_status = "🟢 ACTIF" if freedrive_actif else "🔒 DÉSACTIVÉ"
+                mouvement_status = "⬇️ DESCENTE" if current_velocity[2] < 0 else (
+                    "⬆️ MONTÉE" if current_velocity[2] > 0 else "⏸️  ARRÊT")
+                print(f"\r📍 Z={pose[2]:.4f} | Freedrive: {freedrive_status} | {mouvement_status}  ", end='', flush=True)
+
+                # Lire la touche (non bloquant)
+                key = self.get_key_non_blocking()
+
+                # Nouvelle vitesse (par défaut = 0)
+                new_velocity = [0, 0, 0, 0, 0, 0]
+
+                if key:
+                    # ESC
+                    if key == '\x1b':
+                        print("\n\n❌ Calibration annulée")
+                        break
+
+                    # Toggle Freedrive
+                    elif key.lower() == 'f':
+                        # Arrêter le mouvement d'abord
+                        if any(v != 0 for v in current_velocity):
+                            self.rtde_c.speedStop()
+                            current_velocity = [0, 0, 0, 0, 0, 0]
+
+                        if freedrive_actif:
+                            self.disable_freedrive()
+                            freedrive_actif = False
+                            print("\n🔒 Freedrive DÉSACTIVÉ")
+                        else:
+                            self.enable_freedrive_xy()
+                            freedrive_actif = True
+                            print("\n🟢 Freedrive ACTIVÉ")
+
+                    # Descente
+                    elif key.lower() == 's':
+                        # Désactiver freedrive si actif
+                        if freedrive_actif:
+                            self.disable_freedrive()
+                            freedrive_actif = False
+                            print("\n🔒 Freedrive auto-désactivé")
+
+                        new_velocity[2] = -vitesse_descente
+                        if current_velocity[2] >= 0:  # Pas encore en descente
+                            print(f"\n⬇️  DESCENTE à {vitesse_descente * 1000:.0f}mm/s...")
+
+                    # Montée
+                    elif key.lower() == 'w':
+                        # Désactiver freedrive si actif
+                        if freedrive_actif:
+                            self.disable_freedrive()
+                            freedrive_actif = False
+                            print("\n🔒 Freedrive auto-désactivé")
+
+                        new_velocity[2] = vitesse_descente
+                        if current_velocity[2] <= 0:  # Pas encore en montée
+                            print(f"\n⬆️  MONTÉE à {vitesse_descente * 1000:.0f}mm/s...")
+
+                    # Validation
+                    elif key.lower() == 'q':
+                        # Arrêter tout
+                        if any(v != 0 for v in current_velocity):
+                            self.rtde_c.speedStop()
+                        if freedrive_actif:
+                            self.disable_freedrive()
+
+                        time.sleep(0.2)
+                        position_finale = list(self.rtde_r.getActualTCPPose())
+                        print("\n\n✅ Position de calibration enregistrée!")
+                        return position_finale
+
+                # Appliquer la vitesse (comme dans ton code VNC)
+                if any(v != 0 for v in new_velocity):
+                    self.rtde_c.speedL(new_velocity, ACCELERATION, 0.1)
+                elif any(v != 0 for v in current_velocity):
+                    # Arrêter si on relâche la touche
+                    self.rtde_c.speedStop()
+                    if current_velocity[2] != 0:
+                        print("\n⏸️  Arrêt")
+
+                current_velocity = new_velocity
+                time.sleep(0.01)  # 10ms
+
+            # Si on arrive ici, c'est une annulation (ESC)
+            if any(v != 0 for v in current_velocity):
+                self.rtde_c.speedStop()
+            if freedrive_actif:
+                self.disable_freedrive()
+            return None
+
+        finally:
+            # Cleanup
+            try:
+                self.rtde_c.speedStop()
+            except:
+                pass
+
+            try:
+                self.disable_freedrive()
+            except:
+                pass
         """
         Mode interactif de descente dans le trou
         Touches:
