@@ -189,9 +189,12 @@ class RobotCalibration:
             return False
 
     def disable_freedrive(self):
-        """Désactive le mode freedrive"""
+        """Désactive le mode freedrive et RECHARGE le script de contrôle"""
         try:
             self.rtde_c.endFreedriveMode()
+            time.sleep(0.2)  # Petite pause mécanique
+            self.rtde_c.reuploadScript()
+            time.sleep(0.2)  # On attend que le script soit prêt
             return True
         except Exception as e:
             print(f"❌ Erreur désactivation freedrive: {e}")
