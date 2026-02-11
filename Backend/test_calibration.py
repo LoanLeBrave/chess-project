@@ -1,118 +1,115 @@
 #!/usr/bin/env python3
 """
-Script de test pour vérifier la précision de la calibration
-Teste quelques positions après calibration
+Script de vérification de la calibration.
+Permet d'envoyer le robot sur des cases spécifiques pour vérifier l'alignement.
 """
 
-import json
-import time
 import sys
+import time
+import chess
+from robot_controller import RobotController
+from config import DELTA_TRANSIT, DELTA_APPROCHE
 
-from config import ROBOT_IP, VITESSE, ACCELERATION, FICHIER_MAPPING
 
+def main():
+    print("=" * 60)
+    print("🤖 TEST DE CALIBRATION ROBOT")
+    print("=" * 60)
 
-def test_calibration():
-    """Teste la précision de la calibration en visitant quelques cases"""
-    
-    print("\n" + "="*60)
-    print("🧪 TEST DE CALIBRATION")
-    print("="*60 + "\n")
-    
-    # Charger le mapping
-    try:
-        with open(FICHIER_MAPPING, 'r') as f:
-            data = json.load(f)
-            cases = data.get("cases", {})
-        print(f"✅ Mapping chargé: {len(cases)} cases\n")
-    except Exception as e:
-        print(f"❌ Erreur chargement mapping: {e}")
-        return False
-    
-    # Connexion robot
-    try:
-        from rtde_control import RTDEControlInterface
-        from rtde_receive import RTDEReceiveInterface
-        from robotiq_gripper_control import RobotiqGripper
-        
-        print(f"🤖 Connexion au robot {ROBOT_IP}...")
-        rtde_c = RTDEControlInterface(ROBOT_IP)
-        rtde_r = RTDEReceiveInterface(ROBOT_IP)
-        
-        print("🦾 Activation du gripper...")
-        gripper = RobotiqGripper(rtde_c)
-        gripper.activate()
-        gripper.set_force(40)
-        gripper.set_speed(150)
-        gripper.move(25)
-        
-        print("✅ Robot connecté!\n")
-    except Exception as e:
-        print(f"❌ Erreur connexion robot: {e}")
-        return False
-    
-    # Cases à tester (coins + centre)
-    cases_test = ['a1', 'a8', 'h1', 'h8', 'd4', 'e4', 'd5', 'e5']
-    
-    print("📍 Test de positionnement sur les cases clés:\n")
-    
-    try:
-        for case in cases_test:
-            if case not in cases:
-                print(f"⚠️  Case {case} non trouvée")
-                continue
-            
-            tcp = cases[case]['tcp']
-            
-            # Position au-dessus de la case
-            tcp_haute = list(tcp)
-            tcp_haute[2] += 0.05  # 5cm au-dessus
-            
-            print(f"   → {case.upper()}: ", end='', flush=True)
-            rtde_c.moveL(tcp_haute, VITESSE, ACCELERATION)
-            time.sleep(0.3)
-            
-            # Descendre à la case
-            rtde_c.moveL(tcp, VITESSE * 0.5, ACCELERATION)
-            time.sleep(0.5)
-            
-            # Remonter
-            rtde_c.moveL(tcp_haute, VITESSE, ACCELERATION)
-            time.sleep(0.3)
-            
-            print("✓")
-        
-        print("\n✅ Test de positionnement terminé!")
-        print("\n💡 Vérifiez visuellement que le gripper était bien centré sur chaque case")
-        
-        # Retour position haute
-        print("\n📍 Retour position haute...")
-        pose = rtde_r.getActualTCPPose()
-        pose_haute = list(pose)
-        pose_haute[2] += 0.1
-        rtde_c.moveL(pose_haute, VITESSE, ACCELERATION)
-        
-    except Exception as e:
-        print(f"\n❌ Erreur durant le test: {e}")
-        return False
-    finally:
-        rtde_c.stopScript()
-    
-    print("\n" + "="*60)
-    print("✅ TEST TERMINÉ")
-    print("="*60 + "\n")
-    
-    return True
+    # 1. Initialisation
+    robot = RobotController()
+    if not robot.init_robot():
+        print("❌ Impossible de connecter le robot ou de charger la calibration.")
+        return
+
+    if not robot.is_calibrated:
+        print("❌ Le robot n'est pas calibré ! Lancez calibration.py d'abord.")
+        return
+
+    print("\n✅ Robot prêt.")
+    print("   Le gripper va se fermer pour servir de pointeur.")
+    robot.gripper.close()
+    time.sleep(1.0)
+
+    # Liste des coins pour tester rapidement
+    coins = ['a1', 'h1', 'h8', 'a8', 'e4', 'e5']
+    print(f"\n💡 Cases suggérées pour le test : {', '.join(coins)}")
+
+    while True:
+        print("\n" + "-" * 40)
+        user_input = input("👉 Entrez une case (ex: 'a1') ou 'q' pour quitter : ").strip().lower()
+
+        if user_input == 'q':
+            print("👋 Fin du test.")
+            break
+
+        # Vérification format case
+        if len(user_input) != 2 or user_input[0] not in "abcdefgh" or user_input[1] not in "12345678":
+            print("⚠ Format invalide. Utilisez le format échecs (ex: a1, h8).")
+            continue
+
+        try:
+            print(f"🔄 Calcul de la position pour {user_input}...")
+
+            # 1. Récupérer les coordonnées théoriques caméra
+            cx, cy = robot.get_square_center(user_input)
+
+            # 2. Convertir en coordonnées Robot
+            # On demande la position sans offset de pièce pour viser le "sol" ou juste au-dessus
+            # Mais comme cam_to_robot ajoute par défaut un offset, on va gérer le Z manuellement pour le test
+
+            # On force le type de pièce à PAWN pour avoir une référence basse standard
+            robot.piece_courante = chess.PAWN
+            target_pose = robot.cam_to_robot(cx, cy, use_piece_height=True)
+
+            # --- SÉQUENCE DE MOUVEMENT SÉCURISÉE ---
+
+            # A. Position de Transit (Haute)
+            pose_haute = list(target_pose)
+            pose_haute[2] = robot.calib_origin[2] + DELTA_TRANSIT
+
+            # B. Position d'Approche (Moyenne)
+            pose_approche = list(target_pose)
+            pose_approche[2] = robot.calib_origin[2] + DELTA_APPROCHE
+
+            # C. Position de Visée (Basse - au niveau d'un pion)
+            pose_visee = list(target_pose)
+            # On garde le Z calculé par cam_to_robot (qui inclut la hauteur du pion)
+
+            print(f"📍 Déplacement au-dessus de {user_input}...")
+
+            # Mouvement 1 : Monter en sécurité (si on est bas)
+            current_pose = robot.rtde_r.getActualTCPPose()
+            if current_pose[2] < pose_haute[2]:
+                current_pose[2] = pose_haute[2]
+                robot.rtde_c.moveL(current_pose, 0.5, 0.3)
+
+            # Mouvement 2 : Aller au-dessus de la case (Haut)
+            robot.rtde_c.moveL(pose_haute, 0.5, 0.3)
+
+            # Mouvement 3 : Descendre à l'approche
+            robot.rtde_c.moveL(pose_approche, 0.3, 0.3)
+
+            print("⬇️  Descente de précision...")
+            # Mouvement 4 : Descendre doucement pour viser
+            robot.rtde_c.moveL(pose_visee, 0.1, 0.1)  # Vitesse lente
+
+            print(f"✅ Robot sur {user_input}. Vérifiez l'alignement.")
+            time.sleep(1.0)
+
+            input("   [Appuyez sur ENTRÉE pour remonter]")
+
+            # Mouvement 5 : Remonter
+            robot.rtde_c.moveL(pose_haute, 0.5, 0.3)
+
+        except Exception as e:
+            print(f"❌ Erreur lors du mouvement : {e}")
+            # En cas d'erreur, on essaie de stopper
+            robot.rtde_c.stopScript()
+
+    # Fin du script
+    robot.close()
 
 
 if __name__ == "__main__":
-    try:
-        success = test_calibration()
-        sys.exit(0 if success else 1)
-    except KeyboardInterrupt:
-        print("\n\n⚠️  Test interrompu")
-        sys.exit(1)
-    except Exception as e:
-        print(f"\n❌ Erreur: {e}")
-        import traceback
-        traceback.print_exc()
-        sys.exit(1)
+    main()
