@@ -1,442 +1,321 @@
 #!/usr/bin/env python3
 """
-Contrôle du robot UR5e et du gripper Robotiq
-Gère les mouvements physiques et la manipulation des pièces
+Contrôle du robot UR5e - Version Dynamique
+Utilise la calibration 2 points pour calculer toutes les positions.
 """
 
 import time
 import math
 import json
 import os
-from typing import List, Optional
-from pathlib import Path
+from typing import List, Optional, Tuple
+import chess
+
+from rtde_control import RTDEControlInterface
+from rtde_receive import RTDEReceiveInterface
+from robotiq_gripper_control import RobotiqGripper
 
 from config import (
-    ROBOT_IP, VITESSE, ACCELERATION, GRIPPER_OUVERTURE,
+    ROBOT_IP, VITESSE, ACCELERATION,
+    GRIPPER_OUVERTURE,
     DELTA_APPROCHE, DELTA_TRANSIT, DELTA_RELACHE_BASE,
-    ESPACEMENT_ELIMINATION, FICHIER_POSITION_DEPART, FICHIER_MAPPING,
-    PIECE_TYPE_MAP
+    ESPACEMENT_ELIMINATION,
+    FICHIER_CALIBRATION, FICHIER_POSITION_DEPART,
+    PIECE_TYPE_MAP, HAUTEUR_PIECES
 )
 from models import PieceEliminee
-import chess
 
 
 class RobotController:
-    """Contrôleur pour le robot UR5e avec gripper Robotiq"""
+    """Contrôleur dynamique pour le robot UR5e"""
 
     def __init__(self):
         self.rtde_c = None
         self.rtde_r = None
         self.gripper = None
-        self.cases = {}
         self.connected = False
-        self.position_depart = None
-        self.piece_courante = None
 
-        # Zones d'élimination
-        self.zone_elimination_blancs_min = None
-        self.zone_elimination_blancs_max = None
-        self.zone_elimination_noirs_min = None
-        self.zone_elimination_noirs_max = None
-        self.espacement_elimination = ESPACEMENT_ELIMINATION
+        # Données de calibration
+        self.calib_origin = [0, 0, 0]
+        self.calib_rotation = 0.0
+        self.calib_scale = 1.0  # Mètres par unité caméra
+        self.is_calibrated = False
 
-        # Suivi des pièces éliminées
+        # Piece actuellement manipulée (pour ajuster la hauteur Z)
+        self.piece_courante = chess.PAWN
+
+        # Zones d'élimination dynamiques (Points de départ)
+        self.elim_white_start = None
+        self.elim_black_start = None
+
+        # Suivi des pièces
         self.pieces_blanches_eliminees: List[PieceEliminee] = []
         self.pieces_noires_eliminees: List[PieceEliminee] = []
-        self.index_elimination_blancs = 0
-        self.index_elimination_noirs = 0
 
-        # Callback pour logging
         self.log_callback = None
 
     def set_log_callback(self, callback):
-        """Définit le callback pour les logs"""
         self.log_callback = callback
 
     async def log(self, log_type: str, message: str):
-        """Envoie un log via le callback"""
         if self.log_callback:
             await self.log_callback(log_type, message)
 
     def init_robot(self):
-        """Initialise la connexion au robot"""
+        """Initialise la connexion et charge la calibration"""
         try:
-            if not os.path.exists(FICHIER_MAPPING):
-                print(f"⚠ Mapping non trouvé: {FICHIER_MAPPING}")
+            # 1. Charger la calibration
+            if not os.path.exists(FICHIER_CALIBRATION):
+                print(f"⚠ Fichier calibration introuvable: {FICHIER_CALIBRATION}")
                 return False
 
-            with open(FICHIER_MAPPING, 'r') as f:
+            with open(FICHIER_CALIBRATION, 'r') as f:
                 data = json.load(f)
+                self.calib_origin = data["origin"]
+                self.calib_rotation = data["rotation"]
+                if "camera_scale" in data:
+                    self.calib_scale = data["camera_scale"]
+                else:
+                    self.calib_scale = data["board_size"] / 20.0
 
-            self.cases = data.get("cases", {})
-            print(f"✓ Mapping: {len(self.cases)} cases")
+                self.is_calibrated = True
+                print(f"✓ Calibration chargée (Scale: {self.calib_scale:.4f})")
 
-            # Charger zones d'élimination
-            self.zone_elimination_blancs_min = data.get("zone_elimination_blancs_min")
-            self.zone_elimination_blancs_max = data.get("zone_elimination_blancs_max")
-            self.zone_elimination_noirs_min = data.get("zone_elimination_noirs_min")
-            self.zone_elimination_noirs_max = data.get("zone_elimination_noirs_max")
-            self.espacement_elimination = data.get("espacement_elimination", ESPACEMENT_ELIMINATION)
+            # 2. Calculer les zones d'élimination relatives au plateau
+            self._calculate_dynamic_zones()
 
-            if self.zone_elimination_blancs_min and self.zone_elimination_blancs_max:
-                nb = self._calculer_nb_positions_zone(
-                    self.zone_elimination_blancs_min,
-                    self.zone_elimination_blancs_max
-                )
-                print(f"✓ Zone élimination blancs: {nb} positions")
-            if self.zone_elimination_noirs_min and self.zone_elimination_noirs_max:
-                nb = self._calculer_nb_positions_zone(
-                    self.zone_elimination_noirs_min,
-                    self.zone_elimination_noirs_max
-                )
-                print(f"✓ Zone élimination noirs: {nb} positions")
-
-            # Charger position de départ
-            if os.path.exists(FICHIER_POSITION_DEPART):
-                with open(FICHIER_POSITION_DEPART, 'r') as f:
-                    self.position_depart = json.load(f).get("position_depart")
-
-            # Connexion robot
-            from rtde_control import RTDEControlInterface
-            from rtde_receive import RTDEReceiveInterface
-            from robotiq_gripper_control import RobotiqGripper
-
+            # 3. Connexion Robot
             print(f"Connexion robot {ROBOT_IP}...")
             self.rtde_c = RTDEControlInterface(ROBOT_IP)
             self.rtde_r = RTDEReceiveInterface(ROBOT_IP)
-
-            print("Activation gripper...")
             self.gripper = RobotiqGripper(self.rtde_c)
             self.gripper.activate()
-            self.gripper.set_force(40)
+            self.gripper.set_force(50)
             self.gripper.set_speed(150)
             self.gripper.move(GRIPPER_OUVERTURE)
 
             self.connected = True
-            print("✓ Robot connecté!")
+            print("✓ Robot connecté et prêt!")
             return True
 
         except Exception as e:
-            print(f"⚠ Erreur robot: {e}")
+            print(f"⚠ Erreur initialisation: {e}")
             self.connected = False
             return False
 
-    def _calculer_nb_positions_zone(self, pos_min, pos_max):
-        """Calcule le nombre de positions dans une zone d'élimination"""
-        distance = math.sqrt(
-            (pos_max[0] - pos_min[0]) ** 2 +
-            (pos_max[1] - pos_min[1]) ** 2
-        )
-        return max(1, int(distance / self.espacement_elimination) + 1)
+    def _calculate_dynamic_zones(self):
+        """Définit les zones d'élimination sur les côtés du plateau."""
+        y_angle = self.calib_rotation + (math.pi / 2)
+        board_half_width = (10.0 * self.calib_scale) + 0.05
 
-    def _get_position_elimination(self, color: bool):
+        # Zone Blancs (Gauche)
+        wb_x = self.calib_origin[0] + board_half_width * math.cos(y_angle)
+        wb_y = self.calib_origin[1] + board_half_width * math.sin(y_angle)
+        self.elim_white_start = [wb_x, wb_y, self.calib_origin[2]]
+
+        # Zone Noirs (Droite)
+        bn_x = self.calib_origin[0] - board_half_width * math.cos(y_angle)
+        bn_y = self.calib_origin[1] - board_half_width * math.sin(y_angle)
+        self.elim_black_start = [bn_x, bn_y, self.calib_origin[2]]
+
+    def cam_to_robot(self, cam_x: float, cam_y: float, use_piece_height: bool = True) -> List[float]:
         """
-        Calcule la prochaine position d'élimination pour une couleur donnée.
-        color: chess.WHITE ou chess.BLACK (pièce capturée)
-        Retourne la position TCP ou None
+        Transforme les coordonnées caméra en coordonnées Robot (mètres).
+        AJOUTÉ: use_piece_height pour ajuster le Z selon le type de pièce.
         """
-        if color == chess.WHITE:
-            pos_min = self.zone_elimination_blancs_min
-            pos_max = self.zone_elimination_blancs_max
-            index = self.index_elimination_blancs
+        # 1. Mise à l'échelle
+        x_scaled = cam_x * self.calib_scale
+        y_scaled = cam_y * self.calib_scale
+
+        # 2. Rotation
+        cos_t = math.cos(self.calib_rotation)
+        sin_t = math.sin(self.calib_rotation)
+
+        x_rot = x_scaled * cos_t - y_scaled * sin_t
+        y_rot = x_scaled * sin_t + y_scaled * cos_t
+
+        # 3. Translation (Origine)
+        rx = self.calib_origin[0] + x_rot
+        ry = self.calib_origin[1] + y_rot
+
+        # 4. Gestion de la Hauteur Z (CORRECTION CRITIQUE)
+        rz = self.calib_origin[2]  # Niveau du plateau
+
+        if use_piece_height:
+            # On ajoute la hauteur spécifique de la pièce (ex: Roi +18mm, Pion +5mm)
+            z_offset = HAUTEUR_PIECES.get(self.piece_courante, 0.010)
+            rz += z_offset
+
+        # Orientation du TCP (pointe vers le bas)
+        return [rx, ry, rz, 3.14, 0.0, 0.0]
+
+    def get_square_center(self, square_name: str) -> Tuple[float, float]:
+        """Retourne les coordonnées Caméra théoriques (x, y) du centre d'une case."""
+        file_idx = chess.FILE_NAMES.index(square_name[0])
+        rank_idx = int(square_name[1]) - 1
+        unit_per_square = 2.5
+        cam_x = (file_idx - 3.5) * unit_per_square
+        cam_y = (rank_idx - 3.5) * unit_per_square
+        return cam_x, cam_y
+
+    async def _move_tcp(self, target_pose, speed=VITESSE, acc=ACCELERATION):
+        """Déplacement linéaire sécurisé"""
+        if self.connected:
+            self.rtde_c.moveL(target_pose, speed, acc)
         else:
-            pos_min = self.zone_elimination_noirs_min
-            pos_max = self.zone_elimination_noirs_max
-            index = self.index_elimination_noirs
-
-        if not pos_min or not pos_max:
-            return None
-
-        distance_totale = math.sqrt(
-            (pos_max[0] - pos_min[0]) ** 2 +
-            (pos_max[1] - pos_min[1]) ** 2
-        )
-
-        if distance_totale == 0:
-            return list(pos_min)
-
-        dir_x = (pos_max[0] - pos_min[0]) / distance_totale
-        dir_y = (pos_max[1] - pos_min[1]) / distance_totale
-
-        distance_parcourue = index * self.espacement_elimination
-
-        if distance_parcourue > distance_totale:
-            distance_parcourue = distance_parcourue % (distance_totale + self.espacement_elimination)
-
-        position = [
-            pos_min[0] + distance_parcourue * dir_x,
-            pos_min[1] + distance_parcourue * dir_y,
-            pos_min[2],
-            pos_min[3],
-            pos_min[4],
-            pos_min[5],
-        ]
-
-        return position
-
-    def _pos_avec_z(self, tcp, delta_z):
-        """Retourne une position TCP avec un décalage en Z"""
-        pos = list(tcp)
-        pos[2] += delta_z
-        return pos
-
-    async def _prendre_piece(self, case: str):
-        """Prend une pièce sur une case"""
-        case = case.lower()
-        if case not in self.cases:
-            await self.log("error", f"Case {case} non mappée!")
-            return False
-
-        tcp = self.cases[case]["tcp"]
-
-        # Identifier la pièce (sera définie par l'appelant)
-        await self.log("robot", f"Approche {case.upper()}...")
-        self.rtde_c.moveL(self._pos_avec_z(tcp, DELTA_TRANSIT), VITESSE, ACCELERATION)
-        time.sleep(0.1)
-
-        self.rtde_c.moveL(self._pos_avec_z(tcp, DELTA_APPROCHE), VITESSE, ACCELERATION)
-        time.sleep(0.1)
-
-        await self.log("robot", f"Descente...")
-        self.rtde_c.moveL(tcp, VITESSE, ACCELERATION)
-        time.sleep(0.2)
-
-        await self.log("robot", f"Fermeture gripper...")
-        self.gripper.close()
-        time.sleep(0.3)
-
-        await self.log("robot", f"Remontée...")
-        self.rtde_c.moveL(self._pos_avec_z(tcp, DELTA_APPROCHE), VITESSE, ACCELERATION)
-        time.sleep(0.1)
-
-        self.rtde_c.moveL(self._pos_avec_z(tcp, DELTA_TRANSIT), VITESSE, ACCELERATION)
-        time.sleep(0.1)
-
-        return True
-
-    async def _poser_piece(self, case: str):
-        """Pose une pièce sur une case"""
-        case = case.lower()
-        if case not in self.cases:
-            await self.log("error", f"Case {case} non mappée!")
-            return False
-
-        tcp = self.cases[case]["tcp"]
-
-        delta_relache = DELTA_RELACHE_BASE
-
-        await self.log("robot", f"Transit vers {case.upper()}...")
-        self.rtde_c.moveL(self._pos_avec_z(tcp, DELTA_TRANSIT), VITESSE, ACCELERATION)
-        time.sleep(0.2)
-
-        self.rtde_c.moveL(self._pos_avec_z(tcp, DELTA_APPROCHE), VITESSE, ACCELERATION)
-        time.sleep(0.1)
-
-        await self.log("robot", f"Dépose...")
-        self.rtde_c.moveL(self._pos_avec_z(tcp, delta_relache), VITESSE, ACCELERATION)
-        time.sleep(0.2)
-
-        self.gripper.move(GRIPPER_OUVERTURE)
-        time.sleep(0.3)
-
-        self.rtde_c.moveL(self._pos_avec_z(tcp, DELTA_APPROCHE), VITESSE, ACCELERATION)
-        time.sleep(0.1)
-
-        self.rtde_c.moveL(self._pos_avec_z(tcp, DELTA_TRANSIT), VITESSE, ACCELERATION)
-        time.sleep(0.1)
-
-        return True
-
-    async def _deposer_elimination(self, piece_symbol: str, color: bool, case_origine: str):
-        """
-        Dépose une pièce capturée dans la zone d'élimination
-        Enregistre la position pour pouvoir la récupérer plus tard
-        """
-        pos_elimination = self._get_position_elimination(color)
-
-        if pos_elimination:
-            await self.log("robot",
-                           f"Dépôt pièce {'blanche' if color == chess.WHITE else 'noire'} en zone d'élimination...")
-
-            pos_haute = self._pos_avec_z(pos_elimination, DELTA_TRANSIT)
-            self.rtde_c.moveL(pos_haute, VITESSE, ACCELERATION)
-            time.sleep(0.2)
-
-            pos_relache = self._pos_avec_z(pos_elimination, DELTA_RELACHE_BASE + 0.01)
-            self.rtde_c.moveL(pos_relache, VITESSE, ACCELERATION)
-            time.sleep(0.2)
-
-            self.gripper.move(GRIPPER_OUVERTURE)
-            time.sleep(0.3)
-
-            self.rtde_c.moveL(pos_haute, VITESSE, ACCELERATION)
-            time.sleep(0.2)
-
-            # Enregistrer la pièce éliminée
-            if color == chess.WHITE:
-                piece_eliminee = PieceEliminee(
-                    piece_symbol=piece_symbol.upper(),
-                    color=color,
-                    case_origine=case_origine,
-                    position_elimination=pos_elimination,
-                    index=self.index_elimination_blancs
-                )
-                self.pieces_blanches_eliminees.append(piece_eliminee)
-                self.index_elimination_blancs += 1
-                await self.log("info", f"Pièce blanche {piece_symbol} stockée (index {piece_eliminee.index})")
-            else:
-                piece_eliminee = PieceEliminee(
-                    piece_symbol=piece_symbol.upper(),
-                    color=color,
-                    case_origine=case_origine,
-                    position_elimination=pos_elimination,
-                    index=self.index_elimination_noirs
-                )
-                self.pieces_noires_eliminees.append(piece_eliminee)
-                self.index_elimination_noirs += 1
-                await self.log("info", f"Pièce noire {piece_symbol} stockée (index {piece_eliminee.index})")
-        else:
-            pose = self.rtde_r.getActualTCPPose()
-            pose_haute = list(pose)
-            pose_haute[2] += 0.05
-            self.rtde_c.moveL(pose_haute, VITESSE, ACCELERATION)
-            self.gripper.move(GRIPPER_OUVERTURE)
-            time.sleep(0.3)
-            await self.log("warning", "Pas de zone d'élimination configurée!")
-
-    async def _prendre_piece_elimination(self, position: List[float]):
-        """Prend une pièce dans la zone d'élimination"""
-        await self.log("robot", "Récupération pièce en zone d'élimination...")
-
-        pos_haute = self._pos_avec_z(position, DELTA_TRANSIT)
-        self.rtde_c.moveL(pos_haute, VITESSE, ACCELERATION)
-        time.sleep(0.2)
-
-        pos_approche = self._pos_avec_z(position, DELTA_APPROCHE)
-        self.rtde_c.moveL(pos_approche, VITESSE, ACCELERATION)
-        time.sleep(0.1)
-
-        self.rtde_c.moveL(position, VITESSE, ACCELERATION)
-        time.sleep(0.2)
-
-        self.gripper.close()
-        time.sleep(0.3)
-
-        self.rtde_c.moveL(pos_approche, VITESSE, ACCELERATION)
-        time.sleep(0.1)
-
-        self.rtde_c.moveL(pos_haute, VITESSE, ACCELERATION)
-        time.sleep(0.2)
-
-        return True
+            await self.log("debug", f"Simu Move: {target_pose}")
+            time.sleep(0.1)
 
     async def execute_move(self, from_sq: str, to_sq: str, is_capture: bool, captured_piece=None):
-        """Exécute un mouvement sur le robot"""
-        if not self.connected:
-            await self.log("warning", "Robot non connecté - Simulation")
-            return True
-
-        try:
-            if is_capture and captured_piece:
-                await self.log("robot", f"Capture: {from_sq.upper()} prend {to_sq.upper()}")
-
-                piece_symbol = captured_piece.symbol()
-                piece_color = captured_piece.color
-
-                await self._prendre_piece(to_sq)
-                await self._deposer_elimination(piece_symbol, piece_color, to_sq)
-
-                await self._prendre_piece(from_sq)
-                await self._poser_piece(to_sq)
-            else:
-                await self.log("robot", f"Déplacement: {from_sq.upper()} → {to_sq.upper()}")
-                await self._prendre_piece(from_sq)
-                await self._poser_piece(to_sq)
-
-            if self.position_depart:
-                self.rtde_c.moveL(self.position_depart, VITESSE, ACCELERATION)
-
-            return True
-
-        except Exception as e:
-            await self.log("error", f"Erreur robot: {e}")
+        """Exécute un coup complet"""
+        if not self.is_calibrated:
+            await self.log("error", "Robot non calibré !")
             return False
 
-    async def reset_plateau(self):
-        """
-        Remet toutes les pièces à leur position initiale
-        """
-        if not self.connected:
-            await self.log("warning", "Robot non connecté - Simulation du reset")
-            self.reset_tracking()
-            return {"success": True, "message": "Reset simulé (robot non connecté)"}
-
         try:
-            await self.log("info", "=== DÉBUT RESET PLATEAU ===")
+            # 1. Calculer les positions Robot
 
-            # Replacer les pièces blanches éliminées
-            await self.log("info", f"Pièces blanches à replacer: {len(self.pieces_blanches_eliminees)}")
-            for piece in self.pieces_blanches_eliminees:
-                await self.log("robot", f"Replacement {piece.piece_symbol} blanc → {piece.case_origine}")
+            # Départ : On prend la pièce, donc on utilise la hauteur de la pièce
+            cx1, cy1 = self.get_square_center(from_sq)
+            p_start = self.cam_to_robot(cx1, cy1, use_piece_height=True)
 
-                await self._prendre_piece_elimination(piece.position_elimination)
-                self.piece_courante = PIECE_TYPE_MAP.get(piece.piece_symbol, chess.PAWN)
+            # Arrivée : On pose la pièce, on utilise aussi la hauteur de la pièce (pour ne pas la lâcher de trop haut)
+            cx2, cy2 = self.get_square_center(to_sq)
+            p_end = self.cam_to_robot(cx2, cy2, use_piece_height=True)
 
-                await self._poser_piece(piece.case_origine)
+            # 2. Gérer la Capture (D'abord retirer la pièce adverse)
+            if is_capture and captured_piece:
+                await self.log("robot", f"Capture en {to_sq}...")
 
-            # Replacer les pièces noires éliminées
-            await self.log("info", f"Pièces noires à replacer: {len(self.pieces_noires_eliminees)}")
-            for piece in self.pieces_noires_eliminees:
-                await self.log("robot", f"Replacement {piece.piece_symbol} noir → {piece.case_origine}")
+                # Pour la capture, il faut temporairement changer la "pièce courante"
+                # pour ajuster la hauteur de prise en fonction de la pièce attaquée
+                piece_attaquante = self.piece_courante
+                self.piece_courante = captured_piece.piece_type
 
-                await self._prendre_piece_elimination(piece.position_elimination)
-                self.piece_courante = PIECE_TYPE_MAP.get(piece.piece_symbol, chess.PAWN)
+                # Recalcul de la cible avec la bonne hauteur pour la pièce capturée
+                p_capture = self.cam_to_robot(cx2, cy2, use_piece_height=True)
 
-                await self._poser_piece(piece.case_origine)
+                await self._sequence_elimination(p_capture, captured_piece, to_sq)
 
-            if self.position_depart:
-                self.rtde_c.moveL(self.position_depart, VITESSE, ACCELERATION)
+                # On rétablit la pièce attaquante
+                self.piece_courante = piece_attaquante
 
-            await self.log("info", "=== FIN RESET PLATEAU ===")
+            # 3. Déplacer la Pièce
+            await self.log("robot", f"Mouvement {from_sq} -> {to_sq}")
+            await self._sequence_pick_and_place(p_start, p_end)
 
-            self.reset_tracking()
+            # Retour position home ou sécurité
+            p_safe = list(p_end)
+            p_safe[2] = self.calib_origin[2] + DELTA_TRANSIT  # Retour hauteur transit absolue
+            await self._move_tcp(p_safe)
 
-            return {"success": True, "message": "Plateau remis en place"}
+            return True
 
         except Exception as e:
-            await self.log("error", f"Erreur reset: {e}")
-            return {"success": False, "error": str(e)}
+            await self.log("error", f"Erreur mouvement: {e}")
+            import traceback
+            traceback.print_exc()
+            return False
 
-    def reset_tracking(self):
-        """Réinitialise le suivi des pièces éliminées"""
-        self.pieces_blanches_eliminees = []
-        self.pieces_noires_eliminees = []
-        self.index_elimination_blancs = 0
-        self.index_elimination_noirs = 0
+    async def _sequence_pick_and_place(self, p_pick, p_place):
+        """Séquence générique Prendre et Poser"""
+        # Approche (Hauteur absolue relative au plateau)
+        z_transit_absolu = self.calib_origin[2] + DELTA_TRANSIT
+
+        p_high_pick = list(p_pick)
+        p_high_pick[2] = z_transit_absolu
+
+        p_app_pick = list(p_pick)
+        p_app_pick[2] += DELTA_APPROCHE
+
+        # PICK
+        self.gripper.move(GRIPPER_OUVERTURE)  # On s'assure d'être ouvert
+        await self._move_tcp(p_high_pick)  # Transit
+        await self._move_tcp(p_app_pick)  # Approche
+        await self._move_tcp(p_pick, VITESSE / 2)  # Descente finale (Z précis)
+        self.gripper.close()
+        time.sleep(0.5)
+        await self._move_tcp(p_app_pick)  # Remontée
+        await self._move_tcp(p_high_pick)  # Haut
+
+        # PLACE
+        p_high_place = list(p_place)
+        p_high_place[2] = z_transit_absolu
+
+        p_app_place = list(p_place)
+        p_app_place[2] += DELTA_APPROCHE
+
+        p_deposit = list(p_place)
+        # On ajoute un petit delta pour lâcher sans cogner (défini dans config)
+        p_deposit[2] += DELTA_RELACHE_BASE
+
+        await self._move_tcp(p_high_place)
+        await self._move_tcp(p_app_place)
+        await self._move_tcp(p_deposit, VITESSE / 2)
+        self.gripper.move(GRIPPER_OUVERTURE)
+        time.sleep(0.3)
+        await self._move_tcp(p_app_place)
+
+    async def _sequence_elimination(self, p_capture, piece_obj, square_name):
+        """Prend une pièce et la met dans la zone d'élimination"""
+        is_white = (piece_obj.color == chess.WHITE)
+        start_zone = self.elim_white_start if is_white else self.elim_black_start
+        index = len(self.pieces_blanches_eliminees) if is_white else len(self.pieces_noires_eliminees)
+
+        x_angle = self.calib_rotation
+        offset_dist = index * ESPACEMENT_ELIMINATION
+
+        p_drop = list(start_zone)
+        p_drop[0] += offset_dist * math.cos(x_angle)
+        p_drop[1] += offset_dist * math.sin(x_angle)
+        # On dépose les pièces éliminées directement sur le plateau (Z origine + offset type pièce)
+        z_offset = HAUTEUR_PIECES.get(piece_obj.piece_type, 0.010)
+        p_drop[2] += z_offset
+
+        await self._sequence_pick_and_place(p_capture, p_drop)
+
+        elim = PieceEliminee(piece_obj.symbol(), piece_obj.color, square_name, p_drop, index)
+        if is_white:
+            self.pieces_blanches_eliminees.append(elim)
+        else:
+            self.pieces_noires_eliminees.append(elim)
+
+    async def reset_plateau(self):
+        """Remet les pièces éliminées à leur place"""
+        if not self.connected: return {"success": True}
+
+        # Pour le reset, on doit penser à ajuster la hauteur Z
+        # pour la pièce qu'on est en train de ramener
+
+        # 1. Remettre les Blanches
+        for piece in reversed(self.pieces_blanches_eliminees):
+            # On définit le type de pièce pour que cam_to_robot calcule le bon Z
+            self.piece_courante = PIECE_TYPE_MAP.get(piece.piece_symbol.upper(), chess.PAWN)
+
+            cx, cy = self.get_square_center(piece.case_origine)
+            p_origin = self.cam_to_robot(cx, cy, use_piece_height=True)
+
+            # La position d'élimination a déjà le bon Z (enregistré lors de l'élimination)
+            await self._sequence_pick_and_place(piece.position_elimination, p_origin)
+
+        # 2. Remettre les Noires
+        for piece in reversed(self.pieces_noires_eliminees):
+            self.piece_courante = PIECE_TYPE_MAP.get(piece.piece_symbol.upper(), chess.PAWN)
+
+            cx, cy = self.get_square_center(piece.case_origine)
+            p_origin = self.cam_to_robot(cx, cy, use_piece_height=True)
+            await self._sequence_pick_and_place(piece.position_elimination, p_origin)
+
+        self.pieces_blanches_eliminees.clear()
+        self.pieces_noires_eliminees.clear()
+        return {"success": True}
 
     def get_pieces_eliminees(self):
-        """Retourne la liste des pièces éliminées"""
         return {
             "blanches": [p.to_dict() for p in self.pieces_blanches_eliminees],
             "noires": [p.to_dict() for p in self.pieces_noires_eliminees]
         }
 
-    def get_position(self):
-        """Retourne la position actuelle du robot"""
-        if not self.connected or not self.rtde_r:
-            return None
-
-        pose = self.rtde_r.getActualTCPPose()
-        return {
-            "x": pose[0],
-            "y": pose[1],
-            "z": pose[2],
-            "rx": pose[3],
-            "ry": pose[4],
-            "rz": pose[5]
-        }
-
     def close(self):
-        """Ferme la connexion au robot"""
         if self.rtde_c:
             self.rtde_c.stopScript()
