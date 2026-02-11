@@ -2,7 +2,7 @@
 """
 Module de calibration dynamique à 2 points pour robot d'échecs.
 Détermine automatiquement : position, rotation et taille du plateau.
-Intègre une fonction d'Auto-Level pour garantir la verticalité.
+Intègre une fonction d'Auto-Level et une vitesse réduite pour la précision.
 """
 
 import json
@@ -94,15 +94,19 @@ class TwoPointCalibration:
         print("=" * 60)
         print("COMMANDES :")
         print("  [F]      : Activer/Désactiver FREEDRIVE (X/Y SEULEMENT)")
-        print("  [S] / [↓]: Descendre (Z-)")
-        print("  [W] / [↑]: Monter (Z+)")
+        print("  [S] / [↓]: Descendre (Z-) - Vitesse LENTE")
+        print("  [W] / [↑]: Monter (Z+)    - Vitesse LENTE")
         print("  [L]      : AUTO-LEVEL (Rendre le gripper parfaitement vertical)")
         print("  [Q]      : VALIDER la position et passer à la suite")
         print("  [ESC]    : Annuler")
         print("-" * 60)
 
         freedrive_active = False
-        velocity_z = 0.05
+
+        # --- MODIFICATION VITESSE ---
+        velocity_z = 0.01  # 1 cm/s (au lieu de 5 cm/s) pour plus de précision
+        # ----------------------------
+
         last_key_time = 0
         is_moving = False
         SSH_KEY_TIMEOUT = 0.25
@@ -145,7 +149,7 @@ class TwoPointCalibration:
                     time.sleep(0.3)
                     continue
 
-                # --- AUTO-LEVEL (NOUVEAU) ---
+                # --- AUTO-LEVEL ---
                 elif key.lower() == 'l':
                     if freedrive_active:
                         self.disable_freedrive()
@@ -154,19 +158,13 @@ class TwoPointCalibration:
                     print("\n⚖️  Correction de la verticalité...")
                     current = self.rtde_r.getActualTCPPose()
 
-                    # On force une orientation verticale standard UR [pi, 0, 0]
-                    # Cela pointe le gripper vers le bas, aligné avec la base du robot
-                    # Si votre robot est monté différemment, ajustez ces valeurs.
+                    # Vertical standard [pi, 0, 0]
                     vertical_pose = [current[0], current[1], current[2], 3.1415, 0.0, 0.0]
 
-                    # Mouvement lent vers la verticale (0.2 m/s, 0.2 m/s^2)
                     self.rtde_c.moveL(vertical_pose, 0.2, 0.2)
                     print("✅ Gripper verticalisé.")
-
-                    # On attend un peu pour éviter de lire une touche rémanente
                     time.sleep(0.5)
                     continue
-                # -----------------------------
 
             # --- GESTION DU MOUVEMENT Z (Continu) ---
             if not freedrive_active:
@@ -180,7 +178,8 @@ class TwoPointCalibration:
                         last_key_time = time.time()
 
                 if target_vel_z != 0:
-                    self.rtde_c.speedL([0, 0, target_vel_z, 0, 0, 0], ACCELERATION, 0.3)
+                    # On utilise ACCELERATION=0.5 pour que ça réagisse vite mais sans à-coups violents
+                    self.rtde_c.speedL([0, 0, target_vel_z, 0, 0, 0], 0.5, 0.3)
                     is_moving = True
                 elif is_moving:
                     if time.time() - last_key_time > SSH_KEY_TIMEOUT:
@@ -200,10 +199,10 @@ class TwoPointCalibration:
         # 2. Distance et Taille
         dist_trous = math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2)
 
-        # Le carré formé par les trous (Haut-Gauche -> Bas-Droite)
+        # Le carré formé par les trous
         side_inner = dist_trous / math.sqrt(2)
 
-        # Taille Totale = Carré Intérieur + (2 * Offset)
+        # Taille Totale
         board_size = side_inner + (2 * OFFSET_TROU_M)
         square_size = board_size / 8.0
 
