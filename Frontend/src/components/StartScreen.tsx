@@ -1,17 +1,15 @@
 import { useState } from 'react';
-import { Play, Zap, Brain, Crown, Bot, Lightbulb, ArrowLeft } from 'lucide-react';
+import { Play, Zap, Brain, Crown, Bot, ArrowLeft, User } from 'lucide-react';
 import type { DifficultyLevel } from '../App';
-import { Switch } from './ui/switch';
-import { Label } from './ui/label';
 
 interface StartScreenProps {
-  onStartGame: (difficulty: DifficultyLevel, aiHelpEnabled: boolean) => void;
+  onStartGame: (difficulty: DifficultyLevel, playerName: string) => void;
   onBack: () => void;
 }
 
 export function StartScreen({ onStartGame, onBack }: StartScreenProps) {
   const [selectedDifficulty, setSelectedDifficulty] = useState<DifficultyLevel>('beginner');
-  const [aiHelpEnabled, setAiHelpEnabled] = useState(false);
+  const [playerName, setPlayerName] = useState('');
 
   const difficulties = [
     {
@@ -119,44 +117,54 @@ export function StartScreen({ onStartGame, onBack }: StartScreenProps) {
           </div>
         </div>
 
-        {/* Option Aide & Prédictions */}
-        <div className="mb-8 flex justify-center">
-          <div className="bg-slate-800/50 border border-slate-700 rounded-xl p-6 inline-flex items-center gap-4">
-            <div className="flex items-center gap-3">
-              <Lightbulb className="w-6 h-6 text-cyan-400" />
-              <div className="text-left">
-                <Label htmlFor="ai-help" className="text-lg font-semibold text-white cursor-pointer">
-                  Aide & Prédictions
-                </Label>
-                <p className="text-sm text-slate-400 mt-1">
-                  Affiche les coups suggérés par l'IA et l'évaluation
-                </p>
+        {/* Player Name Input */}
+        <div className="mb-10">
+          <div className="max-w-xl mx-auto">
+            <label htmlFor="player-name" className="block text-white font-semibold text-lg mb-3 text-center">
+              Entrez votre pseudo
+            </label>
+            <div className="relative">
+              <div className="absolute left-4 top-1/2 -translate-y-1/2 text-cyan-400">
+                <User className="w-5 h-5" />
               </div>
+              <input
+                id="player-name"
+                type="text"
+                value={playerName}
+                onChange={(e) => setPlayerName(e.target.value)}
+                placeholder="Votre pseudo..."
+                maxLength={20}
+                className="w-full px-12 py-4 rounded-xl bg-slate-800/50 border-2 border-slate-700
+                  text-white placeholder-slate-500 text-lg
+                  focus:border-cyan-400 focus:outline-none focus:ring-2 focus:ring-cyan-400/20
+                  transition-all"
+              />
             </div>
-            <Switch 
-              id="ai-help"
-              checked={aiHelpEnabled}
-              onCheckedChange={setAiHelpEnabled}
-              className="data-[state=checked]:bg-cyan-500"
-            />
+            {playerName && (
+              <p className="text-slate-400 text-sm mt-2 text-center">
+                Bonne chance, <span className="text-cyan-400 font-semibold">{playerName}</span> !
+              </p>
+            )}
           </div>
         </div>
 
         {/* Start Button */}
         <div className="flex justify-center">
           <button
-            onClick={() => onStartGame(selectedDifficulty, aiHelpEnabled)}
-            className="
+            onClick={() => onStartGame(selectedDifficulty, playerName || 'Joueur')}
+            disabled={!playerName.trim()}
+            className={`
               group relative px-12 py-5 rounded-2xl font-bold text-xl
-              bg-gradient-to-r from-cyan-500 to-blue-600
-              hover:from-cyan-400 hover:to-blue-500
-              text-white shadow-2xl shadow-cyan-500/50
-              hover:shadow-cyan-400/60 hover:scale-105
-              transition-all duration-300
+              text-white shadow-2xl
               flex items-center gap-3
-            "
+              transition-all duration-300
+              ${playerName.trim() 
+                ? 'bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 shadow-cyan-500/50 hover:shadow-cyan-400/60 hover:scale-105'
+                : 'bg-slate-700 cursor-not-allowed opacity-50'
+              }
+            `}
           >
-            <Play className="w-6 h-6 group-hover:translate-x-1 transition-transform" fill="white" />
+            <Play className={`w-6 h-6 transition-transform ${playerName.trim() ? 'group-hover:translate-x-1' : ''}`} fill="white" />
             Lancer la partie
           </button>
         </div>

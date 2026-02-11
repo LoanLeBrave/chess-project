@@ -2,11 +2,19 @@ import { useState, useCallback } from 'react';
 
 export type RobotStatus = 'idle' | 'thinking' | 'moving' | 'error' | 'disconnected';
 
+export interface MoveEvaluation {
+  move: string;
+  centipawnLoss: number;
+}
+
 export interface UseChessRobotReturn {
   fen: string;
   isWhiteTurn: boolean;
   isGameOver: boolean;
+  gameResult: 'win' | 'lose' | 'draw' | null;
   robotStatus: RobotStatus;
+  acplScore: number;
+  moveEvaluations: MoveEvaluation[];
   setRobotStatus: (status: RobotStatus) => void;
   onMove: (from: string, to: string) => Promise<boolean>;
   getLegalMoves: (square: string) => Promise<string[]>;
@@ -97,7 +105,71 @@ export function useChessRobot(
   const [fen, setFen] = useState(INITIAL_FEN);
   const [isWhiteTurn, setIsWhiteTurn] = useState(true);
   const [isGameOver, setIsGameOver] = useState(false);
+  const [gameResult, setGameResult] = useState<'win' | 'lose' | 'draw' | null>(null);
   const [robotStatus, setRobotStatus] = useState<RobotStatus>('idle');
+  const [moveEvaluations, setMoveEvaluations] = useState<MoveEvaluation[]>([]);
+  const [acplScore, setAcplScore] = useState(0);
+
+  /**
+   * Vérifie si la partie est terminée
+   */
+  const checkGameOver = useCallback((board: { [key: string]: string }) => {
+    // Compter les pièces
+    const pieces = Object.values(board);
+    const whitePieces = pieces.filter(p => ['K', 'Q', 'R', 'B', 'N', 'P'].includes(p));
+    const blackPieces = pieces.filter(p => ['k', 'q', 'r', 'b', 'n', 'p'].includes(p));
+    
+    const whiteKing = pieces.find(p => p === 'K');
+    const blackKing = pieces.find(p => p === 'k');
+    
+    // Vérifier mat (pas de roi)
+    if (!whiteKing) {
+      setIsGameOver(true);
+      setGameResult('lose');
+      addLog('robot', '❌ Échec et mat ! Le robot a gagné.');
+      return true;
+    }
+    
+    if (!blackKing) {
+      setIsGameOver(true);
+      setGameResult('win');
+      addLog('player', '✅ Échec et mat ! Vous avez gagné !');
+      return true;
+    }
+    
+    // Vérifier pat (très peu de pièces)
+    if (whitePieces.length <= 2 && blackPieces.length <= 2) {
+      setIsGameOver(true);
+      setGameResult('draw');
+      addLog('info', '⚖️ Match nul - Matériel insuffisant');
+      return true;
+    }
+    
+    return false;
+  }, [addLog]);
+
+  /**
+   * Calcule la perte en centipawns pour un coup (simulation)
+   * TODO: Intégrer avec Stockfish pour l'évaluation réelle
+   */
+  const calculateCentipawnLoss = useCallback((): number => {
+    // Simulation: perte aléatoire entre 5 et 80 centipawns
+    return Math.floor(Math.random() * 75) + 5;
+  }, []);
+
+  /**
+   * Met à jour le score ACPL
+   */
+  const updateACPL = useCallback((newEvaluations: MoveEvaluation[]) => {
+    if (newEvaluations.length === 0) {
+      setAcplScore(0);
+      return;
+    }
+    
+    const totalLoss = newEvaluations.reduce((sum, moveEval) => sum + moveEval.centipawnLoss, 0);
+    const average = Math.round(totalLoss / newEvaluations.length);
+    setAcplScore(average);
+  }, []);
 
   /**
    * Effectue un mouvement sur l'échiquier
@@ -123,6 +195,20 @@ export function useChessRobot(
       const capturedPiece = board[to];
       board[to] = piece;
       delete board[from];
+
+      // Calculer la perte en centipawns pour ce coup
+      const cpLoss = calculateCentipawnLoss();
+      const newEvaluations = [...moveEvaluations, {
+        move: `${from}-${to}`,
+        centipawnLoss: cpLoss
+      }];
+      setMoveEvaluations(newEvaluations);
+      updateACPL(newEvaluations);
+
+      // Vérifier si la partie est terminée
+      if (checkGameOver(board)) {
+        return true;
+      }
 
       // Mettre à jour le FEN
       const newFen = boardToFEN(board, false);
@@ -157,7 +243,7 @@ export function useChessRobot(
       addLog('error', 'Erreur lors du mouvement');
       return false;
     }
-  }, [fen, addLog, onMoveComplete]);
+  }, [fen, addLog, onMoveComplete, moveEvaluations, calculateCentipawnLoss, updateACPL, checkGameOver]);
 
   /**
    * Simule un coup du robot
@@ -202,6 +288,12 @@ export function useChessRobot(
         board[toSquare] = piece;
         delete board[fromSquare];
 
+        // Vérifier si la partie est terminée
+        if (checkGameOver(board)) {
+          setRobotStatus('idle');
+          return;
+        }
+
         // Mettre à jour le FEN
         const newFen = boardToFEN(board, true);
         setFen(newFen);
@@ -228,7 +320,7 @@ export function useChessRobot(
         setIsWhiteTurn(true);
       }
     }
-  }, [addLog, onMoveComplete]);
+  }, [addLog, onMoveComplete, checkGameOver]);
 
   /**
    * Récupère tous les coups légaux pour une case donnée
@@ -297,7 +389,10 @@ export function useChessRobot(
     setFen(INITIAL_FEN);
     setIsWhiteTurn(true);
     setIsGameOver(false);
+    setGameResult(null);
     setRobotStatus('idle');
+    setMoveEvaluations([]);
+    setAcplScore(0);
     addLog('info', 'Nouvelle partie initialisée');
   }, [addLog]);
 
@@ -305,7 +400,10 @@ export function useChessRobot(
     fen,
     isWhiteTurn,
     isGameOver,
+    gameResult,
     robotStatus,
+    acplScore,
+    moveEvaluations,
     setRobotStatus,
     onMove,
     getLegalMoves,

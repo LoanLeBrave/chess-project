@@ -4,6 +4,8 @@ import { ControlPanel } from './ControlPanel';
 import { MoveHistory } from './MoveHistory';
 import { RobotStatus } from './RobotStatus';
 import { PlayerTurnStatus } from './PlayerTurnStatus';
+import { GameOverModal } from './GameOverModal';
+import { ScoreSavedNotification } from './ScoreSavedNotification';
 import { useChessRobot } from '../hooks/useChessRobot';
 import type { DifficultyLevel, GameState, LogEntry } from '../App';
 
@@ -12,7 +14,7 @@ interface GameScreenProps {
   gameState: GameState;
   setGameState: (state: GameState) => void;
   onReturnToMenu: () => void;
-  aiHelpEnabled: boolean;
+  playerName: string;
 }
 
 export interface ChessMove {
@@ -24,10 +26,11 @@ export interface ChessMove {
   timestamp: Date;
 }
 
-export function GameScreen({ difficulty, gameState, setGameState, onReturnToMenu, aiHelpEnabled }: GameScreenProps) {
+export function GameScreen({ difficulty, gameState, setGameState, onReturnToMenu, playerName }: GameScreenProps) {
   const [elapsedTime, setElapsedTime] = useState(0);
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [moves, setMoves] = useState<ChessMove[]>([]);
+  const [showScoreSaved, setShowScoreSaved] = useState(false);
 
   const addLog = (type: LogEntry['type'], message: string) => {
     const newLog: LogEntry = {
@@ -53,12 +56,50 @@ export function GameScreen({ difficulty, gameState, setGameState, onReturnToMenu
     fen,
     isWhiteTurn,
     isGameOver,
+    gameResult,
     robotStatus,
+    acplScore,
     onMove,
     getLegalMoves,
     getBestMove,
     resetGame
   } = useChessRobot(addLog, addMove);
+
+  // Fonction pour sauvegarder le score dans le classement
+  const saveScoreToLeaderboard = (result: 'win' | 'lose' | 'draw' | 'abandoned') => {
+    // Compter uniquement les coups du joueur
+    const playerMoves = moves.filter(m => m.player === 'human');
+    
+    // Ne sauvegarder que si le joueur a fait au moins un coup
+    if (playerMoves.length === 0) return;
+    
+    const leaderboardData = localStorage.getItem('chessLeaderboard');
+    const leaderboard = leaderboardData ? JSON.parse(leaderboardData) : [];
+    
+    // Ajouter la nouvelle partie
+    leaderboard.push({
+      playerName,
+      acpl: acplScore,
+      result,
+      timestamp: new Date().toISOString(),
+      moves: playerMoves.length, // Uniquement les coups du joueur
+      elapsedTime
+    });
+    
+    localStorage.setItem('chessLeaderboard', JSON.stringify(leaderboard));
+  };
+
+  // Sauvegarder le résultat dans localStorage quand la partie se termine naturellement
+  useEffect(() => {
+    if (isGameOver && gameResult) {
+      saveScoreToLeaderboard(gameResult);
+    }
+  }, [isGameOver, gameResult]);
+
+  const handleViewLeaderboard = () => {
+    // Cette fonction devra être passée depuis App.tsx pour changer d'écran
+    onReturnToMenu();
+  };
 
   // Timer
   useEffect(() => {
@@ -89,8 +130,24 @@ export function GameScreen({ difficulty, gameState, setGameState, onReturnToMenu
   };
 
   const handleStop = () => {
-    addLog('warning', 'Partie arrêtée par l\'utilisateur');
-    onReturnToMenu();
+    // Compter uniquement les coups du joueur
+    const playerMoves = moves.filter(m => m.player === 'human');
+    
+    // Sauvegarder le score avant de quitter si le joueur a joué au moins un coup
+    if (playerMoves.length > 0 && !isGameOver) {
+      saveScoreToLeaderboard('abandoned');
+      addLog('warning', 'Partie arrêtée - Score enregistré');
+      setShowScoreSaved(true);
+      
+      // Fermer la notification après 3 secondes
+      setTimeout(() => {
+        setShowScoreSaved(false);
+        onReturnToMenu();
+      }, 3000);
+    } else {
+      addLog('warning', 'Partie arrêtée par l\'utilisateur');
+      onReturnToMenu();
+    }
   };
 
   const handleNewGame = () => {
@@ -117,14 +174,10 @@ export function GameScreen({ difficulty, gameState, setGameState, onReturnToMenu
               Partie en cours
             </h1>
             <p className="text-sm text-slate-400">
+              Joueur: <span className="text-cyan-400 font-semibold">{playerName}</span> • 
               Difficulté: <span className="text-cyan-400 font-semibold">
                 {difficulty === 'beginner' ? 'Débutant' : difficulty === 'intermediate' ? 'Intermédiaire' : 'Difficile'}
               </span>
-              {aiHelpEnabled && (
-                <span className="ml-2 text-xs bg-cyan-500/20 text-cyan-400 px-2 py-1 rounded">
-                  Aide IA activée
-                </span>
-              )}
             </p>
           </div>
           <div className="text-right">
@@ -160,7 +213,6 @@ export function GameScreen({ difficulty, gameState, setGameState, onReturnToMenu
                 onMove={onMove}
                 getLegalMoves={getLegalMoves}
                 getBestMove={getBestMove}
-                aiHelpEnabled={aiHelpEnabled}
               />
             </div>
           </div>
@@ -174,6 +226,27 @@ export function GameScreen({ difficulty, gameState, setGameState, onReturnToMenu
           </div>
         </div>
       </div>
+
+      {/* Game Over Modal */}
+      <GameOverModal
+        isVisible={isGameOver}
+        result={gameResult || 'draw'}
+        acplScore={acplScore}
+        totalMoves={moves.length}
+        elapsedTime={elapsedTime}
+        playerName={playerName}
+        onReturnToMenu={handleStop}
+        onViewLeaderboard={handleViewLeaderboard}
+      />
+
+      {/* Score Saved Notification */}
+      <ScoreSavedNotification
+        isVisible={showScoreSaved}
+        onClose={() => setShowScoreSaved(false)}
+        playerName={playerName}
+        acplScore={acplScore}
+        moves={moves.length}
+      />
     </div>
   );
 }

@@ -4,10 +4,11 @@ import { CalibrationScreen } from './components/CalibrationScreen';
 import { SafetyScreen } from './components/SafetyScreen';
 import { StartScreen } from './components/StartScreen';
 import { GameScreen } from './components/GameScreen';
+import { LeaderboardScreen } from './components/LeaderboardScreen';
 
 export type DifficultyLevel = 'beginner' | 'intermediate' | 'advanced';
 export type GameState = 'menu' | 'playing' | 'paused' | 'finished';
-export type AppScreen = 'welcome' | 'calibration' | 'safety' | 'difficulty' | 'game';
+export type AppScreen = 'welcome' | 'leaderboard' | 'calibration' | 'safety' | 'difficulty' | 'game';
 
 export interface LogEntry {
   id: string;
@@ -20,10 +21,18 @@ function App() {
   const [currentScreen, setCurrentScreen] = useState<AppScreen>('welcome');
   const [gameState, setGameState] = useState<GameState>('menu');
   const [difficulty, setDifficulty] = useState<DifficultyLevel>('beginner');
-  const [aiHelpEnabled, setAiHelpEnabled] = useState(false);
+  const [playerName, setPlayerName] = useState('');
 
   const handleWelcomeContinue = () => {
     setCurrentScreen('calibration');
+  };
+
+  const handleViewLeaderboard = () => {
+    setCurrentScreen('leaderboard');
+  };
+
+  const handleLeaderboardBack = () => {
+    setCurrentScreen('welcome');
   };
 
   const handleCalibrationComplete = () => {
@@ -42,9 +51,9 @@ function App() {
     setCurrentScreen('calibration');
   };
 
-  const handleStartGame = (selectedDifficulty: DifficultyLevel, aiHelp: boolean) => {
+  const handleStartGame = (selectedDifficulty: DifficultyLevel, name: string) => {
     setDifficulty(selectedDifficulty);
-    setAiHelpEnabled(aiHelp);
+    setPlayerName(name);
     setGameState('playing');
     setCurrentScreen('game');
   };
@@ -61,7 +70,13 @@ function App() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900">
       {currentScreen === 'welcome' && (
-        <WelcomeScreen onContinue={handleWelcomeContinue} />
+        <WelcomeScreen 
+          onContinue={handleWelcomeContinue}
+          onViewLeaderboard={handleViewLeaderboard}
+        />
+      )}
+      {currentScreen === 'leaderboard' && (
+        <LeaderboardScreen onBack={handleLeaderboardBack} />
       )}
       {currentScreen === 'calibration' && (
         <CalibrationScreen 
@@ -87,7 +102,7 @@ function App() {
           gameState={gameState}
           setGameState={setGameState}
           onReturnToMenu={handleReturnToMenu}
-          aiHelpEnabled={aiHelpEnabled}
+          playerName={playerName}
         />
       )}
     </div>

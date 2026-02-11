@@ -1,11 +1,12 @@
-import { Bot } from 'lucide-react';
+import { Bot, Trophy } from 'lucide-react';
 import { Button } from './ui/button';
 
 interface WelcomeScreenProps {
   onContinue: () => void;
+  onViewLeaderboard: () => void;
 }
 
-export function WelcomeScreen({ onContinue }: WelcomeScreenProps) {
+export function WelcomeScreen({ onContinue, onViewLeaderboard }: WelcomeScreenProps) {
   return (
     <div className="min-h-screen flex items-center justify-center p-8">
       <div className="max-w-2xl w-full text-center">
@@ -26,7 +27,7 @@ export function WelcomeScreen({ onContinue }: WelcomeScreenProps) {
         </p>
 
         {/* Bouton Central */}
-        <div className="flex justify-center">
+        <div className="flex flex-col items-center gap-4">
           <Button
             onClick={onContinue}
             size="lg"
@@ -42,6 +43,15 @@ export function WelcomeScreen({ onContinue }: WelcomeScreenProps) {
           >
             Jouer
           </Button>
+
+          {/* Bouton Classement */}
+          <button
+            onClick={onViewLeaderboard}
+            className="flex items-center gap-2 text-slate-400 hover:text-yellow-400 transition-colors group px-6 py-3 rounded-lg hover:bg-slate-800/50"
+          >
+            <Trophy className="w-5 h-5 group-hover:scale-110 transition-transform" />
+            <span className="font-medium">Voir le classement</span>
+          </button>
         </div>
 
         {/* Sous-texte subtil */}
