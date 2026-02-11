@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Script de TEST et DEBUG de calibration.
-Version corrigée pour éviter le spam console et gérer correctement la saisie.
+Version CLAVIER FRANÇAIS (AZERTY : Z/Q/S/D)
 """
 
 import sys
@@ -13,9 +13,8 @@ import chess
 from robot_controller import RobotController
 from config import DELTA_TRANSIT, DELTA_APPROCHE
 
-# Codes ANSI pour effacer l'écran et bouger le curseur
+# Codes ANSI pour l'interface
 CLEAR_SCREEN = "\033[2J\033[H"
-MOVE_UP = "\033[F"
 
 
 def get_key():
@@ -27,11 +26,6 @@ def get_key():
         rlist, _, _ = select.select([sys.stdin], [], [], 0.05)
         if rlist:
             ch = sys.stdin.read(1)
-            # Gestion des flèches
-            if ch == '\x1b':
-                ch2 = sys.stdin.read(1)
-                ch3 = sys.stdin.read(1)
-                return ch + ch2 + ch3
             return ch
         return None
     finally:
@@ -42,17 +36,22 @@ def print_interface(case, off_x, off_y):
     """Affiche l'interface proprement"""
     print(CLEAR_SCREEN)
     print("=" * 60)
-    print("🔧 TEST & DEBUG CALIBRATION (Mode Ajustement)")
+    print("🔧 TEST & DEBUG CALIBRATION (Mode AZERTY)")
     print("=" * 60)
     print(f"🎯 CASE VISÉE          : {case}")
     print(f"📏 OFFSET MANUEL       : X={off_x * 1000:+.1f} mm | Y={off_y * 1000:+.1f} mm")
     print("-" * 60)
     print("COMMANDES :")
-    print("  [ENTER]   : Déplacer le robot sur la case")
+    print("  [ENTRÉE]  : Déplacer le robot sur la case")
     print("  [C]       : Changer de case")
     print("  [R]       : Reset offset à 0")
-    print("  [Q]       : Quitter")
-    print("  [Flèches] : Ajuster l'offset (1mm)")
+    print("  [X]       : Quitter le script")
+    print("-" * 60)
+    print("AJUSTEMENT :")
+    print("  [Z] : Haut   (Y +1mm)")
+    print("  [S] : Bas    (Y -1mm)")
+    print("  [D] : Droite (X +1mm)")
+    print("  [Q] : Gauche (X -1mm)")
     print("=" * 60)
 
 
@@ -70,7 +69,6 @@ def main():
     manual_offset_y = 0.0
     current_case = "a1"
 
-    # On force un premier affichage
     need_refresh = True
 
     while True:
@@ -81,10 +79,13 @@ def main():
         key = get_key()
 
         if key:
-            if key == 'q':
+            # --- QUITTER ---
+            if key.lower() == 'x':
+                print("\n👋 Fin du test.")
                 break
 
-            elif key == '\r':  # ENTER
+            # --- DÉPLACEMENT ---
+            elif key == '\r':  # Touche ENTRÉE
                 print(f"\n🚀 Déplacement vers {current_case}...")
                 try:
                     cx, cy = robot.get_square_center(current_case)
@@ -104,40 +105,47 @@ def main():
                     robot.rtde_c.moveL(pose_haute, 0.5, 0.3)
                     robot.rtde_c.moveL(pose_basse, 0.1, 0.1)
                     print("✅ Arrivé sur position.")
-                    time.sleep(1)  # Pause pour lire
+                    time.sleep(1)
                     need_refresh = True
                 except Exception as e:
                     print(f"❌ Erreur: {e}")
                     time.sleep(2)
                     need_refresh = True
 
-            elif key == 'c':
-                # On sort temporairement du mode raw pour utiliser input()
-                print("\n⌨️  Entrez la nouvelle case (ex: e4) : ", end='', flush=True)
+            # --- CHANGER CASE ---
+            elif key.lower() == 'c':
+                print("\n⌨️  Entrez la case (ex: e4) : ", end='', flush=True)
+                # Restauration temporaire du terminal pour input()
+                fd = sys.stdin.fileno()
+                old_settings = termios.tcgetattr(fd)
                 try:
+                    termios.tcsetattr(fd, termios.TCSADRAIN, termios.tcgetattr(1))
                     new_case = sys.stdin.readline().strip().lower()
-                    if len(new_case) == 2:
-                        current_case = new_case
-                except:
+                finally:
+                    # On ne remet pas en raw ici, get_key le fera
                     pass
+
+                if len(new_case) == 2:
+                    current_case = new_case
                 need_refresh = True
 
-            elif key == 'r':
+            # --- RESET ---
+            elif key.lower() == 'r':
                 manual_offset_x = 0.0
                 manual_offset_y = 0.0
                 need_refresh = True
 
-            # Flèches
-            elif key == '\x1b[A':  # Haut (Y+)
+            # --- MOUVEMENTS AZERTY ---
+            elif key.lower() == 'z':  # Haut (Y+)
                 manual_offset_y += 0.001
                 need_refresh = True
-            elif key == '\x1b[B':  # Bas (Y-)
+            elif key.lower() == 's':  # Bas (Y-)
                 manual_offset_y -= 0.001
                 need_refresh = True
-            elif key == '\x1b[C':  # Droite (X+)
+            elif key.lower() == 'd':  # Droite (X+)
                 manual_offset_x += 0.001
                 need_refresh = True
-            elif key == '\x1b[D':  # Gauche (X-)
+            elif key.lower() == 'q':  # Gauche (X-)
                 manual_offset_x -= 0.001
                 need_refresh = True
 
