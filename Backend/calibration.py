@@ -51,11 +51,13 @@ class TwoPointCalibration:
             return False
 
     def enable_freedrive(self):
-        """Active le mode Freedrive"""
-        self.rtde_c.freedriveMode()
+        """Active le mode Freedrive CONTRAINT sur X et Y uniquement"""
+        # [X, Y, Z, Rx, Ry, Rz] -> 1=Libre, 0=Bloqué
+        # On libère X et Y pour le centrage, on bloque Z (hauteur) et rotations
+        self.rtde_c.freedriveMode([1, 1, 0, 0, 0, 0])
 
     def disable_freedrive(self):
-        """Désactive Freedrive et recharge le script (Correctif vital)"""
+        """Désactive Freedrive et recharge le script"""
         self.rtde_c.endFreedriveMode()
         time.sleep(0.1)
         self.rtde_c.reuploadScript()
@@ -67,7 +69,8 @@ class TwoPointCalibration:
         old_settings = termios.tcgetattr(fd)
         try:
             tty.setraw(sys.stdin.fileno())
-            rlist, _, _ = select.select([sys.stdin], [], [], 0.05)
+            # Timeout très court
+            rlist, _, _ = select.select([sys.stdin], [], [], 0.01)
             if rlist:
                 ch = sys.stdin.read(1)
                 if ch == '\x1b':
@@ -91,7 +94,8 @@ class TwoPointCalibration:
         print(f"🎯 ÉTAPE : {step_name}")
         print("=" * 60)
         print("COMMANDES :")
-        print("  [F]      : Activer/Désactiver FREEDRIVE (Bouger à la main)")
+        print("  [F]      : Activer/Désactiver FREEDRIVE (X/Y SEULEMENT)")
+        print("             -> Z est bloqué en freedrive, utilisez S/W pour descendre.")
         print("  [S] / [↓]: Descendre (Z-)")
         print("  [W] / [↑]: Monter (Z+)")
         print("  [Q]      : VALIDER la position et passer à la suite")
@@ -100,17 +104,21 @@ class TwoPointCalibration:
 
         freedrive_active = False
         velocity_z = 0.05  # Vitesse jogging Z
-        current_vel = [0, 0, 0, 0, 0, 0]
+
+        # Variables pour lissage mouvement SSH
+        last_key_time = 0
+        is_moving = False
+        SSH_KEY_TIMEOUT = 0.25  # 250ms de tolérance entre deux répétitions de touche
 
         while True:
             # Affichage status
             pose = self.rtde_r.getActualTCPPose()
-            state_str = "LIBRE (Main)" if freedrive_active else "BLOQUÉ (Clavier)"
-            print(f"\r📍 Z={pose[2]:.4f} | Mode: {state_str} | [Q] pour valider   ", end="", flush=True)
+            state_str = "LIBRE (X/Y)" if freedrive_active else "BLOQUÉ (Clavier)"
+            print(f"\r📍 Z={pose[2]:.4f} | Mode: {state_str} | [Q] Valider   ", end="", flush=True)
 
             key = self.get_key_non_blocking()
-            target_vel = [0, 0, 0, 0, 0, 0]
 
+            # Gestion des commandes uniques (non maintenues)
             if key:
                 if key == '\x1b':  # ESC
                     self.rtde_c.speedStop()
@@ -126,6 +134,7 @@ class TwoPointCalibration:
 
                 elif key.lower() == 'f':  # Toggle Freedrive
                     self.rtde_c.speedStop()
+                    is_moving = False
                     if freedrive_active:
                         self.disable_freedrive()
                         freedrive_active = False
@@ -133,20 +142,38 @@ class TwoPointCalibration:
                         self.enable_freedrive()
                         freedrive_active = True
                     time.sleep(0.3)
+                    continue
 
-                elif not freedrive_active:
-                    if key.lower() == 's':
-                        target_vel[2] = -velocity_z
-                    elif key.lower() == 'w':
-                        target_vel[2] = velocity_z
-
-            # Application vélocité (si pas en freedrive)
+            # Gestion du mouvement continu (Z)
+            # On ignore les mouvements clavier si le freedrive est actif (sécurité)
             if not freedrive_active:
-                if any(v != 0 for v in target_vel):
-                    self.rtde_c.speedL(target_vel, ACCELERATION, 0.1)
-                elif any(v != 0 for v in current_vel):
-                    self.rtde_c.speedStop()
-                current_vel = target_vel
+                target_vel_z = 0.0
+
+                if key:
+                    if key.lower() == 's':
+                        target_vel_z = -velocity_z
+                        last_key_time = time.time()
+                    elif key.lower() == 'w':
+                        target_vel_z = velocity_z
+                        last_key_time = time.time()
+
+                # Logique de maintien mouvement
+                if target_vel_z != 0:
+                    # Une touche est pressée maintenant
+                    # On envoie la commande avec une durée un peu plus longue que la boucle (0.3s)
+                    self.rtde_c.speedL([0, 0, target_vel_z, 0, 0, 0], ACCELERATION, 0.3)
+                    is_moving = True
+
+                elif is_moving:
+                    # Aucune touche détectée dans ce cycle
+                    # On vérifie si ça fait longtemps depuis la dernière touche
+                    if time.time() - last_key_time > SSH_KEY_TIMEOUT:
+                        self.rtde_c.speedStop()
+                        is_moving = False
+                    else:
+                        # On est dans le "trou" entre deux paquets SSH, on laisse le robot continuer
+                        # sur sa lancée précédente (gérée par le paramètre temps de speedL)
+                        pass
 
     def calculate_geometry(self, p1, p2):
         """
@@ -165,26 +192,16 @@ class TwoPointCalibration:
         # 2. Distance et Taille
         dist_trous = math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2)
 
-        # Formule : DiagonaleCarré = Côté * sqrt(2)
-        # Le carré formé par les trous a pour diagonale dist_trous.
-        # Son côté est donc dist_trous / sqrt(2).
-        # La taille totale = Côté_Entre_Trous + 2 * Marge
         side_inner = dist_trous / math.sqrt(2)
         board_size = side_inner + (2 * OFFSET_TROU_M)
 
         # 3. Rotation
-        # Vecteur P1 -> P2
         dx = x2 - x1
         dy = y2 - y1
         angle_diag = math.atan2(dy, dx)
-
-        # La diagonale A8->H1 pointe vers -45° (ou 315°) dans le repère plateau
-        # Rotation = AngleMesuré - (-45°) = AngleMesuré + 45°
         rotation = angle_diag + (math.pi / 4)
 
         # 4. Échelle Caméra
-        # La caméra renvoie des coordonnées entre -10 et +10 (donc largeur 20)
-        # Scale = TailleRéelle / 20
         camera_scale = board_size / 20.0
 
         print("\n📊 RÉSULTATS :")
