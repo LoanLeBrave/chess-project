@@ -10,29 +10,31 @@ import chess
 # ============================================================================
 
 ROBOT_IP = "192.168.0.11"
-VITESSE = 0.2          # Légèrement augmentée pour fluidité
+VITESSE = 0.2
 ACCELERATION = 0.4
 GRIPPER_OUVERTURE = 25
-DELTA_APPROCHE = 0.03  # 3cm - hauteur d'approche avant descente
-DELTA_TRANSIT = 0.12   # 12cm - hauteur de déplacement à vide
-DELTA_RELACHE_BASE = 0.001  # 1mm - hauteur de relâche
-ESPACEMENT_ELIMINATION = 0.02  # 2cm entre les pièces éliminées
+DELTA_APPROCHE = 0.03   # 3cm
+DELTA_TRANSIT = 0.12    # 12cm
+DELTA_RELACHE_BASE = 0.001
+ESPACEMENT_ELIMINATION = 0.02
 
 # ============================================================================
 #                         FICHIERS DE DONNÉES
 # ============================================================================
 
 FICHIER_POSITION_DEPART = "position_depart_robot.json"
-# FICHIER_MAPPING est supprimé car remplacé par la calibration dynamique
 FICHIER_CALIBRATION = "robot_calibration.json"
 
 # ============================================================================
 #                         DIMENSIONS & CALIBRATION
 # ============================================================================
 
-# Distance physique entre le bord de la case (A8 ou H1) et le centre du trou de calibration
-OFFSET_TROU_MM = 10.0
-OFFSET_TROU_M = 0.010
+# CORRECTION DU DÉCALAGE 18MM
+# Le robot allait 18mm trop loin (Total largeur erreur = 36mm).
+# Ancien Offset (10mm) - Erreur (18mm) = -8.0mm
+# Cela va "rétrécir" la grille virtuelle du robot pour qu'elle colle à la réalité.
+OFFSET_TROU_MM = -8.0
+OFFSET_TROU_M = OFFSET_TROU_MM / 1000.0
 
 # ============================================================================
 #                         HAUTEURS PAR TYPE DE PIÈCE
