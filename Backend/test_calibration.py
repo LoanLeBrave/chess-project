@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Script de TEST et DEBUG de calibration.
-Permet d'ajuster manuellement l'offset pour trouver la valeur parfaite.
+Version corrigée pour éviter le spam console et gérer correctement la saisie.
 """
 
 import sys
@@ -13,6 +13,10 @@ import chess
 from robot_controller import RobotController
 from config import DELTA_TRANSIT, DELTA_APPROCHE
 
+# Codes ANSI pour effacer l'écran et bouger le curseur
+CLEAR_SCREEN = "\033[2J\033[H"
+MOVE_UP = "\033[F"
+
 
 def get_key():
     """Lecture d'une touche non bloquante"""
@@ -23,6 +27,7 @@ def get_key():
         rlist, _, _ = select.select([sys.stdin], [], [], 0.05)
         if rlist:
             ch = sys.stdin.read(1)
+            # Gestion des flèches
             if ch == '\x1b':
                 ch2 = sys.stdin.read(1)
                 ch3 = sys.stdin.read(1)
@@ -33,12 +38,25 @@ def get_key():
         termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
 
 
-def main():
+def print_interface(case, off_x, off_y):
+    """Affiche l'interface proprement"""
+    print(CLEAR_SCREEN)
     print("=" * 60)
-    print("🔧 TEST & DEBUG CALIBRATION")
+    print("🔧 TEST & DEBUG CALIBRATION (Mode Ajustement)")
     print("=" * 60)
-    print("Ce script vous permet de corriger l'offset en temps réel.")
+    print(f"🎯 CASE VISÉE          : {case}")
+    print(f"📏 OFFSET MANUEL       : X={off_x * 1000:+.1f} mm | Y={off_y * 1000:+.1f} mm")
+    print("-" * 60)
+    print("COMMANDES :")
+    print("  [ENTER]   : Déplacer le robot sur la case")
+    print("  [C]       : Changer de case")
+    print("  [R]       : Reset offset à 0")
+    print("  [Q]       : Quitter")
+    print("  [Flèches] : Ajuster l'offset (1mm)")
+    print("=" * 60)
 
+
+def main():
     robot = RobotController()
     if not robot.init_robot(): return
     if not robot.is_calibrated:
@@ -48,81 +66,80 @@ def main():
     print("\n📍 Fermeture du gripper pour précision...")
     robot.gripper.close()
 
-    # Offset temporaire accumulé
     manual_offset_x = 0.0
     manual_offset_y = 0.0
+    current_case = "a1"
 
-    current_case = "a1"  # Case par défaut
+    # On force un premier affichage
+    need_refresh = True
 
     while True:
-        print("\n" + "-" * 60)
-        print(f"CASE VISÉE : {current_case}")
-        print(f"OFFSET ACTUEL APPLIQUÉ : X={manual_offset_x * 1000:.1f}mm, Y={manual_offset_y * 1000:.1f}mm")
-        print("-" * 60)
-        print("COMMANDES :")
-        print("  [ENTER] : Aller à la case (avec l'offset actuel)")
-        print("  [C]     : Changer de case")
-        print("  [R]     : Reset offset à 0")
-        print("  [Q]     : Quitter")
-        print("  ↑/↓/←/→ : Ajuster l'offset (1mm)")
-        print("-" * 60)
+        if need_refresh:
+            print_interface(current_case, manual_offset_x, manual_offset_y)
+            need_refresh = False
 
-        # Calculer la position théorique + offset manuel
-        cx, cy = robot.get_square_center(current_case)
-        # On triche en ajoutant l'offset manuel aux coordonnées caméra avant conversion
-        # Attention: c'est une approximation, idéalement on l'ajoute en mètres après
-        # Mais pour debug visuel c'est suffisant.
-
-        # Conversion
-        target_pose = robot.cam_to_robot(cx, cy, use_piece_height=True)
-
-        # Appliquer l'offset manuel (en mètres) sur le repère robot
-        target_pose[0] += manual_offset_x
-        target_pose[1] += manual_offset_y
-
-        # Afficher menu et attendre touche
         key = get_key()
 
         if key:
-            if key == '\r':  # ENTER -> Mouvement
-                print(f"🚀 Déplacement vers {current_case}...")
+            if key == 'q':
+                break
 
-                pose_haute = list(target_pose)
-                pose_haute[2] = robot.calib_origin[2] + DELTA_TRANSIT
+            elif key == '\r':  # ENTER
+                print(f"\n🚀 Déplacement vers {current_case}...")
+                try:
+                    cx, cy = robot.get_square_center(current_case)
+                    target_pose = robot.cam_to_robot(cx, cy, use_piece_height=True)
 
-                pose_basse = list(target_pose)
-                # On vise ras du plateau pour bien voir
-                pose_basse[2] = robot.calib_origin[2] + 0.005
+                    # Appliquer l'offset manuel
+                    target_pose[0] += manual_offset_x
+                    target_pose[1] += manual_offset_y
 
-                robot.rtde_c.moveL(pose_haute, 0.5, 0.3)
-                robot.rtde_c.moveL(pose_basse, 0.1, 0.1)
-                print("✅ Arrivé.")
+                    pose_haute = list(target_pose)
+                    pose_haute[2] = robot.calib_origin[2] + DELTA_TRANSIT
+
+                    pose_basse = list(target_pose)
+                    # On vise ras du plateau (5mm au dessus du 0 calibré)
+                    pose_basse[2] = robot.calib_origin[2] + 0.005
+
+                    robot.rtde_c.moveL(pose_haute, 0.5, 0.3)
+                    robot.rtde_c.moveL(pose_basse, 0.1, 0.1)
+                    print("✅ Arrivé sur position.")
+                    time.sleep(1)  # Pause pour lire
+                    need_refresh = True
+                except Exception as e:
+                    print(f"❌ Erreur: {e}")
+                    time.sleep(2)
+                    need_refresh = True
 
             elif key == 'c':
-                new_case = input("Entrez la case (ex: h8): ").strip().lower()
-                if len(new_case) == 2: current_case = new_case
+                # On sort temporairement du mode raw pour utiliser input()
+                print("\n⌨️  Entrez la nouvelle case (ex: e4) : ", end='', flush=True)
+                try:
+                    new_case = sys.stdin.readline().strip().lower()
+                    if len(new_case) == 2:
+                        current_case = new_case
+                except:
+                    pass
+                need_refresh = True
 
             elif key == 'r':
                 manual_offset_x = 0.0
                 manual_offset_y = 0.0
-                print("🔄 Offset remis à zéro.")
+                need_refresh = True
 
-            elif key == 'q':
-                break
-
-            # Flèches (Code ANSI)
-            elif key == '\x1b[A':  # Haut (Y+ ou X- selon orientation base)
+            # Flèches
+            elif key == '\x1b[A':  # Haut (Y+)
                 manual_offset_y += 0.001
-                print("⬆️  Y +1mm")
-            elif key == '\x1b[B':  # Bas
+                need_refresh = True
+            elif key == '\x1b[B':  # Bas (Y-)
                 manual_offset_y -= 0.001
-                print("⬇️  Y -1mm")
-            elif key == '\x1b[C':  # Droite
+                need_refresh = True
+            elif key == '\x1b[C':  # Droite (X+)
                 manual_offset_x += 0.001
-                print("➡️  X +1mm")
-            elif key == '\x1b[D':  # Gauche
+                need_refresh = True
+            elif key == '\x1b[D':  # Gauche (X-)
                 manual_offset_x -= 0.001
-                print("⬅️  X -1mm")
+                need_refresh = True
 
         time.sleep(0.05)
 
