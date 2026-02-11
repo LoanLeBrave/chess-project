@@ -2,6 +2,7 @@
 """
 Module de calibration dynamique à 2 points pour robot d'échecs.
 Détermine automatiquement : position, rotation et taille du plateau.
+Intègre une fonction d'Auto-Level pour garantir la verticalité.
 """
 
 import json
@@ -84,7 +85,10 @@ class TwoPointCalibration:
             termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
 
     def interactive_positioning(self, step_name):
-        """Permet à l'utilisateur de positionner le robot dans le trou."""
+        """
+        Permet à l'utilisateur de positionner le robot dans le trou.
+        Combine Freedrive, Ajustement clavier et Auto-Level.
+        """
         print("\n" + "=" * 60)
         print(f"🎯 ÉTAPE : {step_name}")
         print("=" * 60)
@@ -92,6 +96,7 @@ class TwoPointCalibration:
         print("  [F]      : Activer/Désactiver FREEDRIVE (X/Y SEULEMENT)")
         print("  [S] / [↓]: Descendre (Z-)")
         print("  [W] / [↑]: Monter (Z+)")
+        print("  [L]      : AUTO-LEVEL (Rendre le gripper parfaitement vertical)")
         print("  [Q]      : VALIDER la position et passer à la suite")
         print("  [ESC]    : Annuler")
         print("-" * 60)
@@ -103,25 +108,31 @@ class TwoPointCalibration:
         SSH_KEY_TIMEOUT = 0.25
 
         while True:
+            # Lecture position et affichage info orientation
             pose = self.rtde_r.getActualTCPPose()
             state_str = "LIBRE (X/Y)" if freedrive_active else "BLOQUÉ (Clavier)"
-            print(f"\r📍 Z={pose[2]:.4f} | Mode: {state_str} | [Q] Valider   ", end="", flush=True)
+            # On affiche Rx et Ry pour aider à voir si on est droit
+            print(f"\r📍 Z={pose[2]:.4f} | RX={pose[3]:.2f} RY={pose[4]:.2f} | {state_str}   ", end="", flush=True)
 
             key = self.get_key_non_blocking()
 
+            # --- GESTION DES COMMANDES UNIQUES ---
             if key:
+                # Annulation
                 if key == '\x1b':
                     self.rtde_c.speedStop()
                     if freedrive_active: self.disable_freedrive()
                     print("\n❌ Annulation.")
                     sys.exit(0)
 
+                # Validation
                 elif key.lower() == 'q':
                     self.rtde_c.speedStop()
                     if freedrive_active: self.disable_freedrive()
                     print(f"\n✅ Position {step_name} enregistrée.")
                     return pose
 
+                # Toggle Freedrive
                 elif key.lower() == 'f':
                     self.rtde_c.speedStop()
                     is_moving = False
@@ -134,6 +145,30 @@ class TwoPointCalibration:
                     time.sleep(0.3)
                     continue
 
+                # --- AUTO-LEVEL (NOUVEAU) ---
+                elif key.lower() == 'l':
+                    if freedrive_active:
+                        self.disable_freedrive()
+                        freedrive_active = False
+
+                    print("\n⚖️  Correction de la verticalité...")
+                    current = self.rtde_r.getActualTCPPose()
+
+                    # On force une orientation verticale standard UR [pi, 0, 0]
+                    # Cela pointe le gripper vers le bas, aligné avec la base du robot
+                    # Si votre robot est monté différemment, ajustez ces valeurs.
+                    vertical_pose = [current[0], current[1], current[2], 3.1415, 0.0, 0.0]
+
+                    # Mouvement lent vers la verticale (0.2 m/s, 0.2 m/s^2)
+                    self.rtde_c.moveL(vertical_pose, 0.2, 0.2)
+                    print("✅ Gripper verticalisé.")
+
+                    # On attend un peu pour éviter de lire une touche rémanente
+                    time.sleep(0.5)
+                    continue
+                # -----------------------------
+
+            # --- GESTION DU MOUVEMENT Z (Continu) ---
             if not freedrive_active:
                 target_vel_z = 0.0
                 if key:
@@ -169,7 +204,6 @@ class TwoPointCalibration:
         side_inner = dist_trous / math.sqrt(2)
 
         # Taille Totale = Carré Intérieur + (2 * Offset)
-        # Si Offset est négatif (correction), cela réduit la taille.
         board_size = side_inner + (2 * OFFSET_TROU_M)
         square_size = board_size / 8.0
 
@@ -179,10 +213,10 @@ class TwoPointCalibration:
         angle_diag = math.atan2(dy, dx)
         rotation = angle_diag + (math.pi / 4)
 
-        # 4. Échelle Caméra (pour info)
+        # 4. Échelle Caméra
         camera_scale = board_size / 20.0
 
-        # === AFFICHAGE DÉTAILLÉ POUR L'UTILISATEUR ===
+        # === AFFICHAGE DÉTAILLÉ ===
         print("\n" + "=" * 50)
         print("📊 RÉSULTATS DE LA CALIBRATION")
         print("=" * 50)
