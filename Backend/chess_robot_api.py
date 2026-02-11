@@ -547,7 +547,6 @@ class ChessRobotManager:
         return "Partie en cours"
 
     async def toggle_pause(self):
-<<<<<<< HEAD
         """Bascule l'état de pause"""
         self.is_paused = not self.is_paused
         
@@ -569,7 +568,7 @@ class ChessRobotManager:
                     await self.log("info", "Partie reprise - Robot réactivé")
                 except:
                     await self.log("warning", "Impossible de reprendre le robot")
-=======
+
         """Bascule l'état de pause (pause d'urgence)"""
         self.is_paused = not self.is_paused
         
@@ -592,7 +591,6 @@ class ChessRobotManager:
                     await self.log("info", "Partie reprise - Robot réactivé")
                 except Exception as e:
                     await self.log("warning", f"Erreur lors de la reprise: {e}")
->>>>>>> f1fcb8f1f62939482b1413aea04188d10acdf0d8
             self.set_status("idle")
             return {"success": True, "paused": False, "message": "Partie reprise"}
 
