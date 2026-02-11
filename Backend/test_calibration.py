@@ -1,113 +1,131 @@
 #!/usr/bin/env python3
 """
-Script de vérification de la calibration.
-Permet d'envoyer le robot sur des cases spécifiques pour vérifier l'alignement.
+Script de TEST et DEBUG de calibration.
+Permet d'ajuster manuellement l'offset pour trouver la valeur parfaite.
 """
 
 import sys
 import time
+import termios
+import tty
+import select
 import chess
 from robot_controller import RobotController
 from config import DELTA_TRANSIT, DELTA_APPROCHE
 
 
+def get_key():
+    """Lecture d'une touche non bloquante"""
+    fd = sys.stdin.fileno()
+    old_settings = termios.tcgetattr(fd)
+    try:
+        tty.setraw(sys.stdin.fileno())
+        rlist, _, _ = select.select([sys.stdin], [], [], 0.05)
+        if rlist:
+            ch = sys.stdin.read(1)
+            if ch == '\x1b':
+                ch2 = sys.stdin.read(1)
+                ch3 = sys.stdin.read(1)
+                return ch + ch2 + ch3
+            return ch
+        return None
+    finally:
+        termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+
+
 def main():
     print("=" * 60)
-    print("🤖 TEST DE CALIBRATION ROBOT")
+    print("🔧 TEST & DEBUG CALIBRATION")
     print("=" * 60)
+    print("Ce script vous permet de corriger l'offset en temps réel.")
 
-    # 1. Initialisation
     robot = RobotController()
-    if not robot.init_robot():
-        print("❌ Impossible de connecter le robot ou de charger la calibration.")
-        return
-
+    if not robot.init_robot(): return
     if not robot.is_calibrated:
-        print("❌ Le robot n'est pas calibré ! Lancez calibration.py d'abord.")
+        print("❌ Lancez calibration.py d'abord.")
         return
 
-    print("\n✅ Robot prêt.")
-    print("   Le gripper va se fermer pour servir de pointeur.")
+    print("\n📍 Fermeture du gripper pour précision...")
     robot.gripper.close()
-    time.sleep(1.0)
 
-    # Liste des coins pour tester rapidement
-    coins = ['a1', 'h1', 'h8', 'a8', 'e4', 'e5']
-    print(f"\n💡 Cases suggérées pour le test : {', '.join(coins)}")
+    # Offset temporaire accumulé
+    manual_offset_x = 0.0
+    manual_offset_y = 0.0
+
+    current_case = "a1"  # Case par défaut
 
     while True:
-        print("\n" + "-" * 40)
-        user_input = input("👉 Entrez une case (ex: 'a1') ou 'q' pour quitter : ").strip().lower()
+        print("\n" + "-" * 60)
+        print(f"CASE VISÉE : {current_case}")
+        print(f"OFFSET ACTUEL APPLIQUÉ : X={manual_offset_x * 1000:.1f}mm, Y={manual_offset_y * 1000:.1f}mm")
+        print("-" * 60)
+        print("COMMANDES :")
+        print("  [ENTER] : Aller à la case (avec l'offset actuel)")
+        print("  [C]     : Changer de case")
+        print("  [R]     : Reset offset à 0")
+        print("  [Q]     : Quitter")
+        print("  ↑/↓/←/→ : Ajuster l'offset (1mm)")
+        print("-" * 60)
 
-        if user_input == 'q':
-            print("👋 Fin du test.")
-            break
+        # Calculer la position théorique + offset manuel
+        cx, cy = robot.get_square_center(current_case)
+        # On triche en ajoutant l'offset manuel aux coordonnées caméra avant conversion
+        # Attention: c'est une approximation, idéalement on l'ajoute en mètres après
+        # Mais pour debug visuel c'est suffisant.
 
-        # Vérification format case
-        if len(user_input) != 2 or user_input[0] not in "abcdefgh" or user_input[1] not in "12345678":
-            print("⚠ Format invalide. Utilisez le format échecs (ex: a1, h8).")
-            continue
+        # Conversion
+        target_pose = robot.cam_to_robot(cx, cy, use_piece_height=True)
 
-        try:
-            print(f"🔄 Calcul de la position pour {user_input}...")
+        # Appliquer l'offset manuel (en mètres) sur le repère robot
+        target_pose[0] += manual_offset_x
+        target_pose[1] += manual_offset_y
 
-            # 1. Récupérer les coordonnées théoriques caméra
-            cx, cy = robot.get_square_center(user_input)
+        # Afficher menu et attendre touche
+        key = get_key()
 
-            # 2. Convertir en coordonnées Robot
-            # On demande la position sans offset de pièce pour viser le "sol" ou juste au-dessus
-            # Mais comme cam_to_robot ajoute par défaut un offset, on va gérer le Z manuellement pour le test
+        if key:
+            if key == '\r':  # ENTER -> Mouvement
+                print(f"🚀 Déplacement vers {current_case}...")
 
-            # On force le type de pièce à PAWN pour avoir une référence basse standard
-            robot.piece_courante = chess.PAWN
-            target_pose = robot.cam_to_robot(cx, cy, use_piece_height=True)
+                pose_haute = list(target_pose)
+                pose_haute[2] = robot.calib_origin[2] + DELTA_TRANSIT
 
-            # --- SÉQUENCE DE MOUVEMENT SÉCURISÉE ---
+                pose_basse = list(target_pose)
+                # On vise ras du plateau pour bien voir
+                pose_basse[2] = robot.calib_origin[2] + 0.005
 
-            # A. Position de Transit (Haute)
-            pose_haute = list(target_pose)
-            pose_haute[2] = robot.calib_origin[2] + DELTA_TRANSIT
+                robot.rtde_c.moveL(pose_haute, 0.5, 0.3)
+                robot.rtde_c.moveL(pose_basse, 0.1, 0.1)
+                print("✅ Arrivé.")
 
-            # B. Position d'Approche (Moyenne)
-            pose_approche = list(target_pose)
-            pose_approche[2] = robot.calib_origin[2] + DELTA_APPROCHE
+            elif key == 'c':
+                new_case = input("Entrez la case (ex: h8): ").strip().lower()
+                if len(new_case) == 2: current_case = new_case
 
-            # C. Position de Visée (Basse - au niveau d'un pion)
-            pose_visee = list(target_pose)
-            # On garde le Z calculé par cam_to_robot (qui inclut la hauteur du pion)
+            elif key == 'r':
+                manual_offset_x = 0.0
+                manual_offset_y = 0.0
+                print("🔄 Offset remis à zéro.")
 
-            print(f"📍 Déplacement au-dessus de {user_input}...")
+            elif key == 'q':
+                break
 
-            # Mouvement 1 : Monter en sécurité (si on est bas)
-            current_pose = robot.rtde_r.getActualTCPPose()
-            if current_pose[2] < pose_haute[2]:
-                current_pose[2] = pose_haute[2]
-                robot.rtde_c.moveL(current_pose, 0.5, 0.3)
+            # Flèches (Code ANSI)
+            elif key == '\x1b[A':  # Haut (Y+ ou X- selon orientation base)
+                manual_offset_y += 0.001
+                print("⬆️  Y +1mm")
+            elif key == '\x1b[B':  # Bas
+                manual_offset_y -= 0.001
+                print("⬇️  Y -1mm")
+            elif key == '\x1b[C':  # Droite
+                manual_offset_x += 0.001
+                print("➡️  X +1mm")
+            elif key == '\x1b[D':  # Gauche
+                manual_offset_x -= 0.001
+                print("⬅️  X -1mm")
 
-            # Mouvement 2 : Aller au-dessus de la case (Haut)
-            robot.rtde_c.moveL(pose_haute, 0.5, 0.3)
+        time.sleep(0.05)
 
-            # Mouvement 3 : Descendre à l'approche
-            robot.rtde_c.moveL(pose_approche, 0.3, 0.3)
-
-            print("⬇️  Descente de précision...")
-            # Mouvement 4 : Descendre doucement pour viser
-            robot.rtde_c.moveL(pose_visee, 0.1, 0.1)  # Vitesse lente
-
-            print(f"✅ Robot sur {user_input}. Vérifiez l'alignement.")
-            time.sleep(1.0)
-
-            input("   [Appuyez sur ENTRÉE pour remonter]")
-
-            # Mouvement 5 : Remonter
-            robot.rtde_c.moveL(pose_haute, 0.5, 0.3)
-
-        except Exception as e:
-            print(f"❌ Erreur lors du mouvement : {e}")
-            # En cas d'erreur, on essaie de stopper
-            robot.rtde_c.stopScript()
-
-    # Fin du script
     robot.close()
 
 
