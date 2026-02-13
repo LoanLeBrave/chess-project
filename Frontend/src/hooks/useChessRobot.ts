@@ -41,11 +41,12 @@ function fenToBoard(fen: string): { [key: string]: string } {
     const rank = 8 - rowIndex;
     let fileIndex = 0;
     for (const char of row) {
-      if (isNaN(parseInt(char))) {
+      const parsed = Number.parseInt(char, 10);
+      if (Number.isNaN(parsed)) {
         board[`${files[fileIndex]}${rank}`] = char;
         fileIndex++;
       } else {
-        fileIndex += parseInt(char);
+        fileIndex += parsed;
       }
     }
   });

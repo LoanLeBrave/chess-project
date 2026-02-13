@@ -84,6 +84,9 @@ export function StartScreen({ onStartGame, onBack }: StartScreenProps) {
                 <button
                   key={diff.id}
                   onClick={() => setSelectedDifficulty(diff.id)}
+                  role="button"
+                  tabIndex={0}
+                  onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') setSelectedDifficulty(diff.id); }}
                   className={`
                     relative p-6 rounded-2xl border-2 transition-all duration-300
                     ${isSelected 

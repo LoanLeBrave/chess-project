@@ -41,11 +41,12 @@ function fenToBoard(fen: string): BoardState {
     const rank = 8 - rowIndex;
     let fileIndex = 0;
     for (const char of row) {
-      if (isNaN(parseInt(char))) {
+        const parsed = Number.parseInt(char, 10);
+        if (Number.isNaN(parsed)) {
         board[`${files[fileIndex]}${rank}`] = char as PieceType;
         fileIndex++;
       } else {
-        fileIndex += parseInt(char);
+          fileIndex += parsed;
       }
     }
   });
@@ -226,6 +227,9 @@ export function ChessBoard({
                   <div
                     key={square}
                     onClick={() => handleSquareClick(square)}
+                    role="button"
+                    tabIndex={0}
+                    onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') handleSquareClick(square); }}
                     className={`w-16 h-16 flex items-center justify-center relative
                       ${canInteract ? 'cursor-pointer' : 'cursor-default'}
                       transition-colors duration-100`}
