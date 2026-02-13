@@ -224,15 +224,14 @@ export function ChessBoard({
                 }
 
                 return (
-                  <div
+                  <button
                     key={square}
+                    type="button"
                     onClick={() => handleSquareClick(square)}
-                    role="button"
-                    tabIndex={0}
-                    onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') handleSquareClick(square); }}
                     className={`w-16 h-16 flex items-center justify-center relative
                       ${canInteract ? 'cursor-pointer' : 'cursor-default'}
-                      transition-colors duration-100`}
+                      transition-colors duration-100`
+                    }
                     style={{ backgroundColor: bgColor }}
                   >
                     {/* Indicateur coup légal - point ou cercle */}
@@ -286,7 +285,7 @@ export function ChessBoard({
                         {file}
                       </span>
                     )}
-                  </div>
+                  </button>
                 );
               })
             )}
