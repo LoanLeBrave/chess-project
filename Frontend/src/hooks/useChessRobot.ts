@@ -158,6 +158,23 @@ export function useChessRobot(
     return Math.floor(Math.random() * 75) + 5;
   }, []);
 
+  // Small helpers
+  const pickRandom = <T,>(arr: T[]): T | null => (arr.length ? arr[Math.floor(Math.random() * arr.length)] : null);
+
+  const getAllSquares = () => {
+    const files = ['a','b','c','d','e','f','g','h'];
+    const ranks = ['1','2','3','4','5','6','7','8'];
+    return files.flatMap(f => ranks.map(r => `${f}${r}`));
+  };
+
+  const possibleDestinationsForBlackPiece = (board: { [key: string]: string }, square: string) => {
+    const allSquares = getAllSquares();
+    return allSquares.filter(sq => {
+      const targetPiece = board[sq];
+      return !targetPiece || ['K','Q','R','B','N','P'].includes(targetPiece);
+    });
+  };
+
   /**
    * Met à jour le score ACPL
    */
@@ -171,6 +188,35 @@ export function useChessRobot(
     const average = Math.round(totalLoss / newEvaluations.length);
     setAcplScore(average);
   }, []);
+
+  // Helper: append evaluation and update ACPL
+  const appendEvaluation = useCallback((from: string, to: string) => {
+    const cpLoss = calculateCentipawnLoss();
+    const newEvaluations = [...moveEvaluations, { move: `${from}-${to}`, centipawnLoss: cpLoss }];
+    setMoveEvaluations(newEvaluations);
+    updateACPL(newEvaluations);
+  }, [moveEvaluations, calculateCentipawnLoss, updateACPL]);
+
+  // Helper: finalize move state after a successful move
+  const finalizeMove = useCallback((from: string, to: string, board: { [key: string]: string }, piece: string, capturedPiece: string | undefined) => {
+    appendEvaluation(from, to);
+    // Vérifier si la partie est terminée
+    if (checkGameOver(board)) return;
+    // Mettre à jour le FEN (le tour passe au robot donc false)
+    const newFen = boardToFEN(board, false);
+    setFen(newFen);
+
+    const pieceName = getPieceName(piece);
+    let moveDesc = `${pieceName} ${from.toUpperCase()} → ${to.toUpperCase()}`;
+    if (capturedPiece) moveDesc += ` (capture ${getPieceName(capturedPiece)})`;
+
+    addLog('player', `Vous jouez: ${moveDesc}`);
+
+    onMoveComplete({ from, to, piece: pieceName, player: 'human' });
+    setIsWhiteTurn(false);
+    // lancer le robot après un délai
+    setTimeout(() => { simulateRobotMove(newFen); }, 500);
+  }, [appendEvaluation, checkGameOver, onMoveComplete, addLog]);
 
   /**
    * Effectue un mouvement sur l'échiquier
@@ -197,47 +243,8 @@ export function useChessRobot(
       board[to] = piece;
       delete board[from];
 
-      // Calculer la perte en centipawns pour ce coup
-      const cpLoss = calculateCentipawnLoss();
-      const newEvaluations = [...moveEvaluations, {
-        move: `${from}-${to}`,
-        centipawnLoss: cpLoss
-      }];
-      setMoveEvaluations(newEvaluations);
-      updateACPL(newEvaluations);
-
-      // Vérifier si la partie est terminée
-      if (checkGameOver(board)) {
-        return true;
-      }
-
-      // Mettre à jour le FEN
-      const newFen = boardToFEN(board, false);
-      setFen(newFen);
-
-      const pieceName = getPieceName(piece);
-      let moveDesc = `${pieceName} ${from.toUpperCase()} → ${to.toUpperCase()}`;
-      if (capturedPiece) {
-        moveDesc += ` (capture ${getPieceName(capturedPiece)})`;
-      }
-      
-      addLog('player', `Vous jouez: ${moveDesc}`);
-
-      // Notifier le coup
-      onMoveComplete({
-        from,
-        to,
-        piece: pieceName,
-        player: 'human'
-      });
-
-      // Changer de tour
-      setIsWhiteTurn(false);
-
-      // Déclencher le coup du robot après un délai
-      setTimeout(() => {
-        simulateRobotMove(newFen);
-      }, 500);
+      // handle evaluation, fen update, logging and switching turn
+      finalizeMove(from, to, board, piece, capturedPiece);
 
       return true;
     } catch (error) {
@@ -259,68 +266,53 @@ export function useChessRobot(
     setRobotStatus('moving');
     addLog('robot', 'Mouvement du bras robotique en cours...');
 
-    // Trouver un coup aléatoire pour le robot (pièces noires)
     const board = fenToBoard(currentFen);
-    const blackPieces = Object.entries(board).filter(([_, piece]) => 
-      ['k', 'q', 'r', 'b', 'n', 'p'].includes(piece)
-    );
+    const blackPieces = Object.entries(board).filter(([_, piece]) => ['k','q','r','b','n','p'].includes(piece));
 
-    if (blackPieces.length > 0) {
-      // Choisir une pièce aléatoire
-      const [fromSquare, piece] = blackPieces[Math.floor(Math.random() * blackPieces.length)];
-      
-      // Trouver les cases vides ou avec des pièces blanches (pour capturer)
-      const files = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'];
-      const ranks = ['1', '2', '3', '4', '5', '6', '7', '8'];
-      const allSquares = files.flatMap(f => ranks.map(r => `${f}${r}`));
-      const possibleMoves = allSquares.filter(sq => {
-        const targetPiece = board[sq];
-        return !targetPiece || ['K', 'Q', 'R', 'B', 'N', 'P'].includes(targetPiece);
-      });
-
-      if (possibleMoves.length > 0) {
-        const toSquare = possibleMoves[Math.floor(Math.random() * possibleMoves.length)];
-        
-        // Simuler le mouvement physique
-        await new Promise(resolve => setTimeout(resolve, 2000));
-
-        // Effectuer le mouvement
-        const capturedPiece = board[toSquare];
-        board[toSquare] = piece;
-        delete board[fromSquare];
-
-        // Vérifier si la partie est terminée
-        if (checkGameOver(board)) {
-          setRobotStatus('idle');
-          return;
-        }
-
-        // Mettre à jour le FEN
-        const newFen = boardToFEN(board, true);
-        setFen(newFen);
-
-        const pieceName = getPieceName(piece);
-        let moveDesc = `${pieceName} ${fromSquare.toUpperCase()} → ${toSquare.toUpperCase()}`;
-        if (capturedPiece) {
-          moveDesc += ` (capture ${getPieceName(capturedPiece)})`;
-        }
-
-        onMoveComplete({
-          from: fromSquare,
-          to: toSquare,
-          piece: pieceName,
-          player: 'robot'
-        });
-
-        addLog('robot', `Robot joue: ${moveDesc}`);
-        setRobotStatus('idle');
-        setIsWhiteTurn(true);
-      } else {
-        addLog('error', 'Aucun coup possible pour le robot');
-        setRobotStatus('idle');
-        setIsWhiteTurn(true);
-      }
+    const choice = pickRandom(blackPieces as [string,string][]);
+    if (!choice) {
+      setRobotStatus('idle');
+      setIsWhiteTurn(true);
+      return;
     }
+
+    const [fromSquare, piece] = choice;
+    const possibleMoves = possibleDestinationsForBlackPiece(board, fromSquare);
+    const toSquare = pickRandom(possibleMoves);
+
+    if (!toSquare) {
+      addLog('error', 'Aucun coup possible pour le robot');
+      setRobotStatus('idle');
+      setIsWhiteTurn(true);
+      return;
+    }
+
+    // Simuler le mouvement physique
+    await new Promise(resolve => setTimeout(resolve, 2000));
+
+    // Effectuer le mouvement
+    const capturedPiece = board[toSquare];
+    board[toSquare] = piece;
+    delete board[fromSquare];
+
+    // Vérifier si la partie est terminée
+    if (checkGameOver(board)) {
+      setRobotStatus('idle');
+      return;
+    }
+
+    // Mettre à jour le FEN
+    const newFen = boardToFEN(board, true);
+    setFen(newFen);
+
+    const pieceName = getPieceName(piece);
+    let moveDesc = `${pieceName} ${fromSquare.toUpperCase()} → ${toSquare.toUpperCase()}`;
+    if (capturedPiece) moveDesc += ` (capture ${getPieceName(capturedPiece)})`;
+
+    onMoveComplete({ from: fromSquare, to: toSquare, piece: pieceName, player: 'robot' });
+    addLog('robot', `Robot joue: ${moveDesc}`);
+    setRobotStatus('idle');
+    setIsWhiteTurn(true);
   }, [addLog, onMoveComplete, checkGameOver]);
 
   /**
