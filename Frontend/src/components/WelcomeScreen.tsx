@@ -30,9 +30,6 @@ export function WelcomeScreen({ onContinue, onViewLeaderboard }: WelcomeScreenPr
         <div className="flex flex-col items-center gap-4">
           <Button
             onClick={onContinue}
-            role="button"
-            tabIndex={0}
-            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') onContinue(); }}
             size="lg"
             className="
               group relative px-16 py-8 rounded-2xl text-2xl font-bold
@@ -50,9 +47,6 @@ export function WelcomeScreen({ onContinue, onViewLeaderboard }: WelcomeScreenPr
           {/* Bouton Classement */}
           <button
             onClick={onViewLeaderboard}
-            role="button"
-            tabIndex={0}
-            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') onViewLeaderboard(); }}
             className="flex items-center gap-2 text-slate-400 hover:text-yellow-400 transition-colors group px-6 py-3 rounded-lg hover:bg-slate-800/50"
           >
             <Trophy className="w-5 h-5 group-hover:scale-110 transition-transform" />

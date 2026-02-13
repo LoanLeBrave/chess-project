@@ -45,9 +45,6 @@ export function SafetyScreen({ onContinue, onBack }: SafetyScreenProps) {
       {/* Back Button */}
       <button
         onClick={onBack}
-        role="button"
-        tabIndex={0}
-        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') onBack(); }}
         className="absolute top-6 left-6 flex items-center gap-2 text-slate-400 hover:text-white transition-colors group"
       >
         <div className="w-10 h-10 rounded-full bg-slate-800/50 border border-slate-700 flex items-center justify-center group-hover:border-cyan-400 transition-all">
@@ -140,9 +137,6 @@ export function SafetyScreen({ onContinue, onBack }: SafetyScreenProps) {
         <div className="flex justify-center">
           <Button
             onClick={onContinue}
-            role="button"
-            tabIndex={0}
-            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') onContinue(); }}
             disabled={!hasAccepted}
             size="lg"
             className={`
