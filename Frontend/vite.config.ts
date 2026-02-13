@@ -1,8 +1,9 @@
 
-  import { defineConfig } from 'vite';
+  import { defineConfig } from 'vitest/config';
   import react from '@vitejs/plugin-react-swc';
   import path from 'path';
 
+  
   export default defineConfig({
     plugins: [react()],
     resolve: {
@@ -53,8 +54,14 @@
       target: 'esnext',
       outDir: 'build',
     },
+    test: {
+      environment: 'jsdom',
+      setupFiles: './src/setupTests.ts',
+  
+    },
     server: {
       port: 3000,
       open: true,
     },
+    
   });
