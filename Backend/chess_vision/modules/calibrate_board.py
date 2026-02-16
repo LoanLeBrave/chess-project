@@ -366,7 +366,7 @@ def main():
     
     # Mode 3 (par défaut): Capture photo en direct
     else:
-        from chess_vision.camera import take_photo
+        from chess_vision.modules.camera import take_photo
         print("\n📸 Capture d'une photo en direct...")
         print("   (Assurez-vous que le plateau est bien visible)")
         input("   Appuyez sur ENTRÉE pour capturer...")
