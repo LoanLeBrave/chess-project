@@ -99,6 +99,14 @@ class RobotController:
             self.connected = False
             return False
 
+    def get_position(self):
+        """Retourne la position actuelle du TCP via l'interface de réception"""
+        if self.connected and self.rtde_r:
+            pose = self.rtde_r.getActualTCPPose()
+            return {"x": pose[0], "y": pose[1], "z": pose[2], "rx": pose[3], "ry": pose[4], "rz": pose[5]}
+        return None
+
+
     def _calculate_dynamic_zones(self):
         """Définit les zones d'élimination"""
         y_angle = self.calib_rotation + (math.pi / 2)
