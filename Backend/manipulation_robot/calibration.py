@@ -201,19 +201,23 @@ class TwoPointCalibration:
         dy_robot = y2 - y1
         angle_robot = math.atan2(dy_robot, dx_robot)
 
+        # === NOUVELLES VALEURS DU DXF 269.6 mm ===
         # Vecteur théorique d'après le DXF en MÈTRES
-        dx_dxf = 0.3125
-        dy_dxf = -0.2585
+        dx_dxf = 0.3021  # 302.1 mm
+        dy_dxf = -0.2481  # -248.1 mm
         angle_dxf = math.atan2(dy_dxf, dx_dxf)
 
         rotation = angle_robot - angle_dxf
 
         # 3. Taille et Échelle
         dist_mesuree = math.sqrt(dx_robot ** 2 + dy_robot ** 2)
-        dist_theorique = math.sqrt(dx_dxf ** 2 + dy_dxf ** 2)
+        dist_theorique = math.sqrt(dx_dxf ** 2 + dy_dxf ** 2)  # Environ 0.3909 m
 
         scale = dist_mesuree / dist_theorique
-        board_size = 0.280 * scale
+
+        # === NOUVELLE TAILLE DU PLATEAU ===
+        # 8 cases de 33.7 mm = 269.6 mm (0.2696 m)
+        board_size = 0.2696 * scale
         square_size = board_size / 8.0
         camera_scale = board_size / 20.0
 
