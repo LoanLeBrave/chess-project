@@ -22,10 +22,10 @@ JSON_FILE = os.path.join(LATEST_DIR, "game_state.json")
 
 def main():
     print("=" * 60)
-    print("🔍 TEST LECTURE HAUTE FREQUENCE - latest/game_state.json")
+    print("🔍 TEST LECTURE ULTRA HAUTE FREQUENCE - latest/game_state.json")
     print("=" * 60)
     print(f"\nFichier surveillé: {JSON_FILE}")
-    print("⚡ Lecture toutes les 50ms")
+    print("⚡ Lecture maximale (aucun sleep)")
     print("🛑 Arrêt: Ctrl+C\n")
 
     reads = 0
@@ -46,16 +46,25 @@ def main():
                         data = json.load(f)
                     success += 1
                     # Vérifier structure minimale
-                    if 'board_state' not in data and 'pieces' not in data:
+                    if 'pieces' not in data and 'board_state' not in data:
                         status = "⚠️  JSON INCOMPLET"
                         info = ""
                         errors += 1
                     else:
                         status = "✅"
                         # Compter les pièces sur le plateau
-                        board = data.get('board_state', {})
-                        occupied = {k: v for k, v in board.items() if v}
-                        info = f"| {len(occupied)} pièces sur le plateau"
+                        if 'pieces' in data:
+                            # Compter depuis la liste pieces (zone == board)
+                            pieces = data.get('pieces', [])
+                            on_board = sum(1 for p in pieces if p.get('zone') == 'board')
+                            info = f"| {on_board} pièces sur le plateau"
+                        elif 'board_state' in data:
+                            # Compter depuis board_state (cases occupées)
+                            board = data.get('board_state', {})
+                            occupied = sum(1 for v in board.values() if v)
+                            info = f"| {occupied} pièces sur le plateau"
+                        else:
+                            info = "| ? pièces"
             except json.JSONDecodeError:
                 errors += 1
                 status = "❌ JSON CORROMPU"
@@ -69,10 +78,12 @@ def main():
                 status = f"❌ {type(e).__name__}: {e}"
                 info = ""
 
-            ts = time.strftime("%H:%M:%S")
-            print(f"[{ts}] #{reads:>6d} {status} {info} (ok={success} err={errors} miss={missing})")
+            # Afficher seulement tous les 100 lectures pour ne pas saturer le terminal
+            if reads % 100 == 0 or "❌" in status or "⚠️" in status:
+                ts = time.strftime("%H:%M:%S.%f")[:-3]  # Avec millisecondes
+                print(f"[{ts}] #{reads:>7d} {status} {info} (ok={success} err={errors} miss={missing})")
 
-            time.sleep(0.05)  # 50ms = 20 lectures/sec
+            # Pas de sleep = vitesse maximale (centaines/milliers de lectures par seconde)
 
     except KeyboardInterrupt:
         print(f"\n{'=' * 60}")
