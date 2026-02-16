@@ -163,9 +163,19 @@ class ChessVisionPipeline:
             Dict avec tous les résultats de l'analyse
         """
         import cv2
+        import os
+        from datetime import datetime
         
-        # Capturer la photo
-        photo_path = take_photo()
+        # Créer le dossier de sortie si nécessaire
+        if output_dir is None:
+            from .config import OUTPUT_DIR
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            output_dir = os.path.join(OUTPUT_DIR, f"analysis_{timestamp}")
+        
+        os.makedirs(output_dir, exist_ok=True)
+        
+        # Capturer la photo directement dans le dossier de sortie
+        photo_path = take_photo(output_dir=output_dir, filename="0_captured_photo.jpg")
         
         # Charger et analyser
         image = cv2.imread(photo_path)
