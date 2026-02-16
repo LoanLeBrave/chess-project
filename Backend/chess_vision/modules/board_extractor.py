@@ -19,7 +19,7 @@ import cv2
 import numpy as np
 from typing import Dict, List, Tuple, Any, Optional
 
-from .config import (
+from ..config import (
     FIXED_BOARD_CORNERS,
     EXTRACTED_BOARD_SIZE,
     COLORS,

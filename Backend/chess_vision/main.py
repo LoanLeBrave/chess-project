@@ -291,7 +291,7 @@ def analyze_and_display(pipeline: ChessVisionPipeline, image_path=None, take_new
 
 def run_calibration(pipeline):
     """Exécute la calibration et met à jour le pipeline."""
-    from chess_vision.calibrate_board import main as calibrate_main
+    from chess_vision.modules.calibrate_board import main as calibrate_main
     calibrate_main()
     # Recharger la calibration
     from chess_vision.config import load_board_corners

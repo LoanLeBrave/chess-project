@@ -15,7 +15,7 @@ import shutil
 from datetime import datetime
 from typing import Optional
 
-from .config import (
+from ..config import (
     CAMERA_CONFIG,
     USE_DEFAULT_CAMERA_PARAMS,
     IMAGES_DIR,

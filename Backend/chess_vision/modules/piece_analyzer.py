@@ -18,7 +18,7 @@ import cv2
 import numpy as np
 from typing import Dict, List, Tuple, Any, Optional
 
-from .config import (
+from ..config import (
     EXTRACTED_BOARD_SIZE,
     BOARD_COORD_MIN,
     BOARD_COORD_MAX,

@@ -16,7 +16,7 @@ import cv2
 import numpy as np
 from typing import Dict, List, Tuple, Any
 
-from .config import (
+from ..config import (
     ARUCO_DICT_TYPE,
     ARUCO_PARAMS,
     USE_DEFAULT_ARUCO_PARAMS,

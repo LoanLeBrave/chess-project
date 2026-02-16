@@ -17,7 +17,7 @@ import os
 from datetime import datetime
 from typing import Dict, List, Optional, Any
 
-from .config import PIECES, PIECE_IDS, GRID_COLUMNS, GRID_ROWS, CEMETERY_FILL_ORDER
+from ..config import PIECES, PIECE_IDS, GRID_COLUMNS, GRID_ROWS, CEMETERY_FILL_ORDER
 
 
 class GameStateGenerator:

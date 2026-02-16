@@ -50,34 +50,35 @@ from .config import (
     load_board_corners,
 )
 
-from .aruco_detector import (
+from .modules.aruco_detector import (
     ArucoDetector,
     detect_piece_markers,
+    detect_calibration_markers,
     get_detection_summary,
 )
 
-from .board_extractor import (
+from .modules.board_extractor import (
     BoardExtractor,
     draw_chess_grid,
     draw_board_visualization,
     get_cell_bounds,
 )
 
-from .piece_analyzer import (
+from .modules.piece_analyzer import (
     PieceAnalyzer,
     draw_pieces_on_board,
     draw_pieces_aruco,
     get_pieces_summary,
 )
 
-from .game_state import (
+from .modules.game_state import (
     GameStateGenerator,
     load_game_state,
     compare_states,
     format_move,
 )
 
-from .camera import (
+from .modules.camera import (
     take_photo,
     get_camera_mode,
 )
