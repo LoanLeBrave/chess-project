@@ -314,6 +314,57 @@ class ChessVisionPipeline:
         return result
 
 
+# Fonction simplifiée tout-en-un
+def chess_vision():
+    """
+    Fonction tout-en-un : photo → analyse → JSON.
+    Aucune interaction utilisateur requise.
+    
+    Prend une photo en direct, l'analyse et génère tous les JSON.
+    Vérifie automatiquement la présence du fichier board_calibration.json.
+    
+    Returns:
+        dict avec:
+            - success (bool): True si réussi
+            - error (str): Message d'erreur si échec
+            - pieces (list): Liste des pièces détectées
+            - game_state (dict): État complet du jeu
+            - board_state (dict): État du plateau (a1-h8)
+            - robot_coordinates (dict): Coordonnées pour le robot
+            - output_dir (str): Dossier où sont sauvegardés les fichiers
+            - photo_path (str): Chemin de la photo capturée
+    
+    Usage:
+        from chess_vision import chess_vision
+        
+        result = chess_vision()
+        
+        if result['success']:
+            print("✅ Analyse terminée")
+            print(f"Pièces: {len(result['pieces'])}")
+        else:
+            print(f"❌ {result['error']}")
+    """
+    pipeline = ChessVisionPipeline()
+    
+    # Vérifier la calibration AVANT de prendre la photo
+    if not pipeline.extractor.is_calibrated:
+        return {
+            'success': False,
+            'error': (
+                "❌ Fichier board_calibration.json manquant!\n"
+                "Lancez: python -m chess_vision.modules.calibrate_board"
+            ),
+            'pieces': [],
+            'game_state': None,
+        }
+    
+    # Tout automatique : photo + analyse + JSON
+    result = pipeline.capture_and_analyze()
+    
+    return result
+
+
 __all__ = [
     # Config
     'OFFSETS',
@@ -364,4 +415,7 @@ __all__ = [
     
     # Pipeline
     'ChessVisionPipeline',
+    
+    # Fonction simplifiée
+    'chess_vision',
 ]
