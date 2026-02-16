@@ -200,10 +200,28 @@ class ChessVisionPipeline:
         # Remplacement atomique : si tout s'est bien passé ET qu'on utilise le mode 'latest'
         if use_atomic_replace and result.get('success'):
             try:
-                # Remplacement atomique du dossier 'latest' par 'latest.tmp'
-                # os.replace() est atomique sur Linux/Unix
-                os.replace(output_dir, latest_dir)
+                # Pour garantir l'atomicité avec des dossiers :
+                # 1. Renommer latest en latest.old (si existe)
+                # 2. Renommer latest.tmp en latest (atomique)
+                # 3. Supprimer latest.old
+                
+                latest_old = os.path.join(OUTPUT_DIR, "latest.old")
+                
+                # Étape 1 : Sauvegarder l'ancien latest
+                if os.path.exists(latest_dir):
+                    # Supprimer latest.old s'il existe déjà
+                    if os.path.exists(latest_old):
+                        shutil.rmtree(latest_old)
+                    os.rename(latest_dir, latest_old)
+                
+                # Étape 2 : Renommer latest.tmp en latest (atomique)
+                os.rename(output_dir, latest_dir)
                 result['output_dir'] = latest_dir
+                
+                # Étape 3 : Nettoyer latest.old (non-bloquant)
+                if os.path.exists(latest_old):
+                    shutil.rmtree(latest_old)
+                    
             except Exception as e:
                 result['atomic_replace_error'] = str(e)
                 # Pas grave, les données sont dans latest.tmp
