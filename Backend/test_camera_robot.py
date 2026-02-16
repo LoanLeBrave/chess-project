@@ -26,6 +26,12 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "man
 
 import chess
 from chess_vision import chess_vision
+
+# Changer le cwd vers manipulation_robot/ pour que les chemins relatifs
+# de config.py (robot_calibration.json, etc.) fonctionnent correctement
+MANIP_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "manipulation_robot")
+os.chdir(MANIP_DIR)
+
 from manipulation_robot.robot_controller import RobotController
 
 # Mapping type vision -> type chess (pour hauteur de piece)
@@ -213,9 +219,19 @@ async def main():
     # Initialiser le robot
     print("Initialisation du robot...")
     robot = RobotController()
+
+    # Verifier que le fichier de calibration existe
+    from manipulation_robot.config import FICHIER_CALIBRATION
+    calib_path = os.path.join(MANIP_DIR, FICHIER_CALIBRATION)
+    if not os.path.exists(calib_path):
+        print(f"ERREUR: Fichier de calibration introuvable: {calib_path}")
+        print("Vous devez d'abord calibrer le robot en executant:")
+        print(f"  cd {MANIP_DIR} && python calibration.py")
+        return
+
     if not robot.init_robot():
         print("ERREUR: Impossible de se connecter au robot.")
-        print("Verifiez que le robot est allume et accessible sur le reseau.")
+        print("Verifiez que le robot est allume et accessible sur 192.168.0.11.")
         return
 
     print()
