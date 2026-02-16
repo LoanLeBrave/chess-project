@@ -9,6 +9,8 @@ import chess.engine
 from pathlib import Path
 from typing import List, Optional
 from datetime import datetime
+import asyncio
+import time
 
 from config import DIFFICULTY_PRESETS, POSITION_INITIALE, PIECE_TYPE_MAP, STOCKFISH_PATHS
 from robot_controller import RobotController
@@ -56,6 +58,15 @@ class ChessManager:
         if self.status_callback:
             self.status_callback(status, message)
 
+    async def _wait_with_pause_check(self, duration):
+        """Attend avec vérifications fréquentes de la pause (toutes les 10ms)"""
+        start = time.time()
+        while time.time() - start < duration:
+            if self.is_paused:
+                return False
+            await asyncio.sleep(0.01)  # Vérifier toutes les 10ms
+        return True
+
     def init_stockfish(self):
         """Initialise Stockfish"""
         for path in STOCKFISH_PATHS:
@@ -74,6 +85,7 @@ class ChessManager:
         self.board.reset()
         self.difficulty = difficulty
         self.robot.reset_tracking()
+        self.is_paused = False
         self.set_status("idle")
         return {"success": True, "fen": self.board.fen()}
 
@@ -96,11 +108,12 @@ class ChessManager:
             return []
 
     def get_best_move(self):
-        """Retourne le meilleur coup pour le joueur actuel"""
+        """Retourne le meilleur coup pour le joueur actuel avec évaluation"""
         if not self.engine:
             return {"success": False, "error": "Stockfish non disponible"}
 
         try:
+            # Utiliser le niveau maximum pour les suggestions
             self.engine.configure({"Skill Level": 20})
 
             info = self.engine.analyse(
@@ -112,11 +125,15 @@ class ChessManager:
             if not move:
                 return {"success": False, "error": "Pas de coup trouvé"}
 
+            # Calculer l'évaluation
             score = info.get("score")
             if score:
                 if score.is_mate():
-                    evaluation = f"M{score.relative.mate()}"
+                    # Mat forcé
+                    mate_in = score.relative.mate()
+                    evaluation = f"M{mate_in}"
                 else:
+                    # Score en centipawns converti en pawns
                     evaluation = round(score.relative.score() / 100.0, 2)
             else:
                 evaluation = 0.0
@@ -128,7 +145,8 @@ class ChessManager:
                 "success": True,
                 "from": from_sq,
                 "to": to_sq,
-                "evaluation": evaluation  # <--- Ajouté
+                "evaluation": evaluation,
+                "san": self.board.san(move)
             }
         except Exception as e:
             return {"success": False, "error": str(e)}
@@ -138,13 +156,15 @@ class ChessManager:
         self.is_paused = not self.is_paused
 
         if self.is_paused:
+            # PAUSE D'URGENCE
             self.robot.pause_urgence()
-            await self.log("warning", "🛑 PAUSE D'URGENCE - Robot arrêté !")
+            await self.log("warning", "🛑 PAUSE D'URGENCE - Robot arrêté immédiatement!")
             self.set_status("paused", "PAUSE D'URGENCE")
-            return {"success": True, "paused": True, "message": "Robot arrêté !"}
+            return {"success": True, "paused": True, "message": "PAUSE D'URGENCE - Robot arrêté!"}
         else:
+            # Reprise
             self.robot.reprendre_script()
-            await self.log("info", "▶️ Partie reprise")
+            await self.log("info", "▶️ Partie reprise - Robot réactivé")
             self.set_status("idle", "Partie reprise")
             return {"success": True, "paused": False, "message": "Partie reprise"}
 
@@ -179,7 +199,9 @@ class ChessManager:
             if captured_piece is None and piece and piece.piece_type == chess.PAWN:
                 ep_square = self.board.ep_square
                 if ep_square:
-                    captured_piece = self.board.piece_at(ep_square - 8 if piece.color == chess.WHITE else ep_square + 8)
+                    captured_piece = self.board.piece_at(
+                        ep_square - 8 if piece.color == chess.WHITE else ep_square + 8
+                    )
 
         # Définir la pièce courante pour le robot
         if piece:
@@ -187,7 +209,11 @@ class ChessManager:
 
         # Exécuter sur le robot
         self.set_status("moving", f"Déplacement {from_sq} → {to_sq}")
-        await self.robot.execute_move(from_sq, to_sq, is_capture, captured_piece)
+        success = await self.robot.execute_move(from_sq, to_sq, is_capture, captured_piece)
+        
+        if not success:
+            await self.log("warning", "Mouvement interrompu par PAUSE")
+            return {"success": False, "error": "Mouvement interrompu"}
 
         # Jouer sur le plateau virtuel
         san = self.board.san(move)
@@ -213,7 +239,7 @@ class ChessManager:
         return {"success": True, "san": san}
 
     async def play_robot_move(self):
-        """Calcule et joue le coup du robot"""
+        """Calcule et joue le coup du robot avec évaluation"""
         if not self.engine:
             return {"success": False, "error": "Stockfish non disponible"}
 
@@ -248,23 +274,23 @@ class ChessManager:
                         ep_square = self.board.ep_square
                         if ep_square:
                             captured_piece = self.board.piece_at(
-                                ep_square - 8 if piece.color == chess.WHITE else ep_square + 8)
+                                ep_square - 8 if piece.color == chess.WHITE else ep_square + 8
+                            )
 
             # Définir la pièce courante pour le robot
             piece = self.board.piece_at(move.from_square)
             if piece:
                 self.robot.piece_courante = piece.piece_type
 
-            # Évaluation
+            # Calculer l'évaluation
             score = info.get("score")
             if score:
                 if score.is_mate():
-                    # S'il y a un mat forcé, on renvoie une string (ex: "M3" ou "-M2")
+                    # Mat forcé - retourne une string (ex: "M3" ou "-M2")
                     mate_in = score.relative.mate()
                     evaluation = f"M{mate_in}"
                 else:
-                    # Sinon, on convertit les centipawns en score classique (ex: +1.25)
-                    # On utilise round pour éviter les nombres à virgule infinis
+                    # Score en centipawns converti en pawns
                     evaluation = round(score.relative.score() / 100.0, 2)
             else:
                 evaluation = 0.0
@@ -273,7 +299,12 @@ class ChessManager:
 
             # Exécuter sur le robot
             self.set_status("moving", f"Déplacement {from_sq} → {to_sq}")
-            await self.robot.execute_move(from_sq, to_sq, is_capture, captured_piece)
+            success = await self.robot.execute_move(from_sq, to_sq, is_capture, captured_piece)
+            
+            if not success:
+                await self.log("warning", "Mouvement interrompu par PAUSE")
+                self.set_status("idle")
+                return {"success": False, "error": "Mouvement interrompu"}
 
             # Jouer sur le plateau virtuel
             san = self.board.san(move)
@@ -295,12 +326,27 @@ class ChessManager:
             if self.board.is_game_over():
                 result = self.get_game_result()
                 await self.broadcast({"type": "game_over", "result": result})
-                return {"success": True, "from": from_sq, "to": to_sq, "san": san, "game_over": True, "result": result}
+                return {
+                    "success": True,
+                    "from": from_sq,
+                    "to": to_sq,
+                    "san": san,
+                    "evaluation": evaluation,
+                    "game_over": True,
+                    "result": result
+                }
 
-            return {"success": True, "from": from_sq, "to": to_sq, "san": san, "evaluation": evaluation}
+            return {
+                "success": True,
+                "from": from_sq,
+                "to": to_sq,
+                "san": san,
+                "evaluation": evaluation
+            }
 
         except Exception as e:
             self.set_status("error", str(e))
+            await self.log("error", f"Erreur lors du calcul du coup: {e}")
             return {"success": False, "error": str(e)}
 
     def get_game_result(self):
@@ -320,29 +366,48 @@ class ChessManager:
 
     async def reset_plateau_with_board(self):
         """Remet le plateau en place et replace les pièces déplacées"""
+        await self.log("info", "Début du reset du plateau...")
         result = await self.robot.reset_plateau()
         
         if result.get("success"):
             # Replacer les pièces déplacées
             await self._replacer_pieces_deplacees()
+            # Réinitialiser le plateau virtuel
             self.board.reset()
+            await self.log("info", "✓ Plateau remis en position initiale")
+        else:
+            await self.log("error", "Échec du reset du plateau")
         
         return result
 
     async def _replacer_pieces_deplacees(self):
         """Replace les pièces encore sur le plateau à leur position initiale"""
+        await self.log("info", "Replacement des pièces déplacées...")
+        
         for case_init, (piece_symbol, color) in POSITION_INITIALE.items():
             square = chess.parse_square(case_init)
             piece_actuelle = self.board.piece_at(square)
 
+            # Si la case n'a pas la bonne pièce
             if piece_actuelle is None or piece_actuelle.symbol().upper() != piece_symbol.upper():
+                # Trouver où est la pièce
                 case_actuelle = self._trouver_piece_sur_plateau(piece_symbol, color, self.board)
 
                 if case_actuelle and case_actuelle != case_init:
                     await self.log("robot", f"Déplacement {piece_symbol} de {case_actuelle} → {case_init}")
+                    
+                    # Prendre la pièce
                     await self.robot._prendre_piece(case_actuelle)
+                    if self.is_paused:
+                        return
+                    
+                    # Définir le type de pièce
                     self.robot.piece_courante = PIECE_TYPE_MAP.get(piece_symbol.upper(), chess.PAWN)
+                    
+                    # Poser la pièce
                     await self.robot._poser_piece(case_init)
+                    if self.is_paused:
+                        return
 
     def _trouver_piece_sur_plateau(self, piece_symbol: str, color: bool, board: chess.Board):
         """Trouve la position actuelle d'une pièce sur le plateau"""
@@ -354,11 +419,15 @@ class ChessManager:
             piece = board.piece_at(square)
             if piece and piece.piece_type == piece_type and piece.color == color:
                 case_name = chess.square_name(square)
+                
+                # Ne pas retourner la pièce si elle est déjà à sa position initiale
                 if case_name in POSITION_INITIALE:
                     init_piece, init_color = POSITION_INITIALE[case_name]
                     if init_piece.upper() == piece_symbol.upper() and init_color == color:
                         continue
+                
                 return case_name
+        
         return None
 
     def close(self):
