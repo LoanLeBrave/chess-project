@@ -400,7 +400,9 @@ def chess_vision():
         else:
             print(f"❌ {result['error']}")
     """
-    pipeline = ChessVisionPipeline()
+    # Désactiver la génération d'images pour maximiser la vitesse
+    # Seul le JSON game_state.json sera généré
+    pipeline = ChessVisionPipeline(save_visualization_images=False)
     
     # Vérifier la calibration AVANT de prendre la photo
     if not pipeline.extractor.is_calibrated:
