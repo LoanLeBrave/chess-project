@@ -22,10 +22,10 @@ JSON_FILE = os.path.join(LATEST_DIR, "game_state.json")
 
 def main():
     print("=" * 60)
-    print("🔍 TEST LECTURE HAUTE FREQUENCE - latest/game_state.json")
+    print("🔍 TEST LECTURE ULTRA HAUTE FREQUENCE - latest/game_state.json")
     print("=" * 60)
     print(f"\nFichier surveillé: {JSON_FILE}")
-    print("⚡ Lecture toutes les 50ms")
+    print("⚡ Lecture maximale (aucun sleep)")
     print("🛑 Arrêt: Ctrl+C\n")
 
     reads = 0
@@ -78,10 +78,12 @@ def main():
                 status = f"❌ {type(e).__name__}: {e}"
                 info = ""
 
-            ts = time.strftime("%H:%M:%S")
-            print(f"[{ts}] #{reads:>6d} {status} {info} (ok={success} err={errors} miss={missing})")
+            # Afficher seulement tous les 100 lectures pour ne pas saturer le terminal
+            if reads % 100 == 0 or "❌" in status or "⚠️" in status:
+                ts = time.strftime("%H:%M:%S.%f")[:-3]  # Avec millisecondes
+                print(f"[{ts}] #{reads:>7d} {status} {info} (ok={success} err={errors} miss={missing})")
 
-            time.sleep(0.05)  # 50ms = 20 lectures/sec
+            # Pas de sleep = vitesse maximale (centaines/milliers de lectures par seconde)
 
     except KeyboardInterrupt:
         print(f"\n{'=' * 60}")
