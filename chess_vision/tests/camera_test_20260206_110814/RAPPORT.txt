@@ -1,0 +1,235 @@
+RAPPORT DE TEST DES PARAMÈTRES CAMÉRA
+============================================================
+
+Date: 2026-02-06 11:09:44
+Configurations testées: 26
+
+RÉSULTATS CLASSÉS PAR NOMBRE D'ARUCO DÉTECTÉS:
+------------------------------------------------------------
+
+1. 15_focus_10.0_proche
+   Fichier: 15_focus_10.0_proche_20260206_110900.jpg
+   ArUco détectés: 10
+   IDs: [1, 7, 20, 23, 28, 30, 32, 33, 34, 35]
+   Paramètres:
+     - focus_mode: 0
+     - lens_position: 10.0
+
+2. 17_autofocus_continuous
+   Fichier: 17_autofocus_continuous_20260206_110906.jpg
+   ArUco détectés: 10
+   IDs: [1, 7, 20, 23, 28, 30, 32, 33, 34, 35]
+   Paramètres:
+     - focus_mode: 2
+
+3. 16_autofocus_auto
+   Fichier: 16_autofocus_auto_20260206_110903.jpg
+   ArUco détectés: 9
+   IDs: [1, 7, 20, 23, 28, 30, 32, 34, 35]
+   Paramètres:
+     - focus_mode: 1
+
+4. 14_focus_8.0
+   Fichier: 14_focus_8.0_20260206_110856.jpg
+   ArUco détectés: 6
+   IDs: [7, 23, 32, 33, 34, 35]
+   Paramètres:
+     - focus_mode: 0
+     - lens_position: 8.0
+
+5. 12_focus_6.0
+   Fichier: 12_focus_6.0_20260206_110849.jpg
+   ArUco détectés: 5
+   IDs: [7, 23, 33, 34, 35]
+   Paramètres:
+     - focus_mode: 0
+     - lens_position: 6.0
+
+6. 10_focus_4.0
+   Fichier: 10_focus_4.0_20260206_110842.jpg
+   ArUco détectés: 4
+   IDs: [23, 33, 34, 35]
+   Paramètres:
+     - focus_mode: 0
+     - lens_position: 4.0
+
+7. 13_focus_7.0
+   Fichier: 13_focus_7.0_20260206_110853.jpg
+   ArUco détectés: 4
+   IDs: [23, 33, 34, 35]
+   Paramètres:
+     - focus_mode: 0
+     - lens_position: 7.0
+
+8. 20_focus_4.0+sharp
+   Fichier: 20_focus_4.0+sharp_20260206_110919.jpg
+   ArUco détectés: 4
+   IDs: [23, 33, 34, 35]
+   Paramètres:
+     - focus_mode: 0
+     - lens_position: 4.0
+     - sharpness: 1.5
+
+9. 08_focus_3.0
+   Fichier: 08_focus_3.0_20260206_110836.jpg
+   ArUco détectés: 3
+   IDs: [23, 33, 35]
+   Paramètres:
+     - focus_mode: 0
+     - lens_position: 3.0
+
+10. 09_focus_3.5
+   Fichier: 09_focus_3.5_20260206_110839.jpg
+   ArUco détectés: 3
+   IDs: [23, 33, 35]
+   Paramètres:
+     - focus_mode: 0
+     - lens_position: 3.5
+
+11. 11_focus_5.0
+   Fichier: 11_focus_5.0_20260206_110846.jpg
+   ArUco détectés: 3
+   IDs: [23, 33, 35]
+   Paramètres:
+     - focus_mode: 0
+     - lens_position: 5.0
+
+12. 22_focus_3.0+contrast
+   Fichier: 22_focus_3.0+contrast_20260206_110926.jpg
+   ArUco détectés: 3
+   IDs: [33, 34, 35]
+   Paramètres:
+     - focus_mode: 0
+     - lens_position: 3.0
+     - contrast: 1.3
+
+13. 23_focus_4.0+contrast
+   Fichier: 23_focus_4.0+contrast_20260206_110929.jpg
+   ArUco détectés: 3
+   IDs: [23, 33, 35]
+   Paramètres:
+     - focus_mode: 0
+     - lens_position: 4.0
+     - contrast: 1.3
+
+14. 01_baseline
+   Fichier: 01_baseline_20260206_110815.jpg
+   ArUco détectés: 2
+   IDs: [33, 35]
+   Paramètres: par défaut
+
+15. 02_focus_0.0_infini
+   Fichier: 02_focus_0.0_infini_20260206_110818.jpg
+   ArUco détectés: 2
+   IDs: [33, 35]
+   Paramètres:
+     - focus_mode: 0
+     - lens_position: 0.0
+
+16. 03_focus_0.5
+   Fichier: 03_focus_0.5_20260206_110821.jpg
+   ArUco détectés: 2
+   IDs: [33, 35]
+   Paramètres:
+     - focus_mode: 0
+     - lens_position: 0.5
+
+17. 04_focus_1.0
+   Fichier: 04_focus_1.0_20260206_110825.jpg
+   ArUco détectés: 2
+   IDs: [33, 35]
+   Paramètres:
+     - focus_mode: 0
+     - lens_position: 1.0
+
+18. 05_focus_1.5
+   Fichier: 05_focus_1.5_20260206_110828.jpg
+   ArUco détectés: 2
+   IDs: [33, 35]
+   Paramètres:
+     - focus_mode: 0
+     - lens_position: 1.5
+
+19. 06_focus_2.0
+   Fichier: 06_focus_2.0_20260206_110831.jpg
+   ArUco détectés: 2
+   IDs: [33, 35]
+   Paramètres:
+     - focus_mode: 0
+     - lens_position: 2.0
+
+20. 07_focus_2.5
+   Fichier: 07_focus_2.5_20260206_110834.jpg
+   ArUco détectés: 2
+   IDs: [33, 35]
+   Paramètres:
+     - focus_mode: 0
+     - lens_position: 2.5
+
+21. 19_focus_3.0+sharp
+   Fichier: 19_focus_3.0+sharp_20260206_110915.jpg
+   ArUco détectés: 2
+   IDs: [33, 35]
+   Paramètres:
+     - focus_mode: 0
+     - lens_position: 3.0
+     - sharpness: 1.5
+
+22. 21_focus_2.0+contrast
+   Fichier: 21_focus_2.0+contrast_20260206_110922.jpg
+   ArUco détectés: 2
+   IDs: [33, 35]
+   Paramètres:
+     - focus_mode: 0
+     - lens_position: 2.0
+     - contrast: 1.3
+
+23. 24_combo_focus_2.0
+   Fichier: 24_combo_focus_2.0_20260206_110933.jpg
+   ArUco détectés: 2
+   IDs: [33, 35]
+   Paramètres:
+     - focus_mode: 0
+     - lens_position: 2.0
+     - sharpness: 1.5
+     - contrast: 1.3
+
+24. 25_combo_focus_3.0
+   Fichier: 25_combo_focus_3.0_20260206_110937.jpg
+   ArUco détectés: 2
+   IDs: [33, 35]
+   Paramètres:
+     - focus_mode: 0
+     - lens_position: 3.0
+     - sharpness: 1.5
+     - contrast: 1.3
+
+25. 26_combo_focus_4.0
+   Fichier: 26_combo_focus_4.0_20260206_110941.jpg
+   ArUco détectés: 2
+   IDs: [33, 35]
+   Paramètres:
+     - focus_mode: 0
+     - lens_position: 4.0
+     - sharpness: 1.5
+     - contrast: 1.3
+
+26. 18_focus_2.0+sharp
+   Fichier: 18_focus_2.0+sharp_20260206_110911.jpg
+   ArUco détectés: 1
+   IDs: [35]
+   Paramètres:
+     - focus_mode: 0
+     - lens_position: 2.0
+     - sharpness: 1.5
+
+
+============================================================
+RECOMMANDATION:
+------------------------------------------------------------
+
+✅ Meilleure configuration: 15_focus_10.0_proche
+   ArUco détectés: 10
+   Paramètres à utiliser:
+     - focus_mode = 0
+     - lens_position = 10.0

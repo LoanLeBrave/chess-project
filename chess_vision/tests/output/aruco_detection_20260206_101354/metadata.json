@@ -1,0 +1,232 @@
+{
+  "test_name": "aruco_detection",
+  "timestamp": "20260206_101354",
+  "steps": [
+    {
+      "step": 1,
+      "name": "01_original_input",
+      "filename": "01_01_original_input.jpg",
+      "shape": [
+        2592,
+        4608,
+        3
+      ],
+      "data": {
+        "path": "/home/robot/ur_modbus/chess-project/chess_vision/images/photo_20260206_101352.jpg",
+        "shape": [
+          2592,
+          4608,
+          3
+        ]
+      }
+    },
+    {
+      "step": 2,
+      "name": "01_original_with_info",
+      "filename": "02_01_original_with_info.jpg",
+      "shape": [
+        2592,
+        4608,
+        3
+      ]
+    },
+    {
+      "step": 3,
+      "name": "02_all_markers_detected",
+      "filename": "03_02_all_markers_detected.jpg",
+      "shape": [
+        2592,
+        4608,
+        3
+      ],
+      "data": {
+        "count": 9,
+        "ids": [
+          35,
+          34,
+          33,
+          32,
+          7,
+          20,
+          1,
+          28,
+          30
+        ]
+      }
+    },
+    {
+      "step": 4,
+      "name": "03_calibration_markers_detail",
+      "filename": "04_03_calibration_markers_detail.jpg",
+      "shape": [
+        2592,
+        4608,
+        3
+      ],
+      "data": {
+        "detected": [
+          35,
+          34,
+          33,
+          32
+        ],
+        "expected": [
+          32,
+          33,
+          34,
+          35
+        ],
+        "complete": true
+      }
+    },
+    {
+      "step": 5,
+      "name": "04_piece_markers_annotated",
+      "filename": "05_04_piece_markers_annotated.jpg",
+      "shape": [
+        2592,
+        4608,
+        3
+      ],
+      "data": {
+        "total_pieces": 5,
+        "white": 0,
+        "black": 0
+      }
+    },
+    {
+      "step": 6,
+      "name": "05_detection_parameters",
+      "filename": "06_05_detection_parameters.jpg",
+      "shape": [
+        2592,
+        4608,
+        3
+      ]
+    },
+    {
+      "step": 7,
+      "name": "quality_1_original",
+      "filename": "07_quality_1_original.jpg",
+      "shape": [
+        2592,
+        4608,
+        3
+      ],
+      "data": {
+        "count": 9
+      }
+    },
+    {
+      "step": 8,
+      "name": "quality_2_grayscale",
+      "filename": "08_quality_2_grayscale.jpg",
+      "shape": [
+        2592,
+        4608,
+        3
+      ],
+      "data": {
+        "count": 9
+      }
+    },
+    {
+      "step": 9,
+      "name": "quality_3_equalized",
+      "filename": "09_quality_3_equalized.jpg",
+      "shape": [
+        2592,
+        4608,
+        3
+      ],
+      "data": {
+        "count": 6
+      }
+    },
+    {
+      "step": 10,
+      "name": "quality_4_clahe",
+      "filename": "10_quality_4_clahe.jpg",
+      "shape": [
+        2592,
+        4608,
+        3
+      ],
+      "data": {
+        "count": 8
+      }
+    },
+    {
+      "step": 11,
+      "name": "quality_5_blurred",
+      "filename": "11_quality_5_blurred.jpg",
+      "shape": [
+        2592,
+        4608,
+        3
+      ],
+      "data": {
+        "count": 9
+      }
+    },
+    {
+      "step": 12,
+      "name": "quality_6_sharpened",
+      "filename": "12_quality_6_sharpened.jpg",
+      "shape": [
+        2592,
+        4608,
+        3
+      ],
+      "data": {
+        "count": 8
+      }
+    },
+    {
+      "step": 13,
+      "name": "quality_comparison_1",
+      "filename": "13_quality_comparison_1.jpg",
+      "shape": [
+        5184,
+        9216,
+        3
+      ]
+    },
+    {
+      "step": 14,
+      "name": "quality_comparison_2",
+      "filename": "14_quality_comparison_2.jpg",
+      "shape": [
+        2592,
+        9216,
+        3
+      ]
+    },
+    {
+      "step": 15,
+      "name": "07_marker_corners_analysis",
+      "filename": "15_07_marker_corners_analysis.jpg",
+      "shape": [
+        2592,
+        4608,
+        3
+      ]
+    }
+  ],
+  "quality_tests": {
+    "original": 9,
+    "grayscale": 9,
+    "equalized": 6,
+    "clahe": 8,
+    "blurred": 9,
+    "sharpened": 8
+  },
+  "summary": {
+    "total_markers": 9,
+    "calibration_markers": 4,
+    "piece_markers": 5,
+    "calibration_complete": true,
+    "white_pieces": 0,
+    "black_pieces": 0
+  }
+}
