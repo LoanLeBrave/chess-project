@@ -157,22 +157,34 @@ class ChessVisionPipeline:
         
         Args:
             save_outputs: Sauvegarder les images et JSONs intermédiaires
-            output_dir: Dossier de sortie (auto-généré si None)
+            output_dir: Dossier de sortie (si None, utilise 'latest' qui se met à jour)
             
         Returns:
             Dict avec tous les résultats de l'analyse
         """
         import cv2
         import os
+        import shutil
         from datetime import datetime
+        from .config import OUTPUT_DIR
         
-        # Créer le dossier de sortie si nécessaire
+        # Si output_dir est None, utiliser le dossier 'latest'
         if output_dir is None:
-            from .config import OUTPUT_DIR
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            output_dir = os.path.join(OUTPUT_DIR, f"analysis_{timestamp}")
-        
-        os.makedirs(output_dir, exist_ok=True)
+            output_dir = os.path.join(OUTPUT_DIR, "latest")
+            
+            # Nettoyer le dossier 'latest' AVANT de prendre la photo
+            os.makedirs(output_dir, exist_ok=True)
+            for item in os.listdir(output_dir):
+                item_path = os.path.join(output_dir, item)
+                try:
+                    if os.path.isfile(item_path):
+                        os.remove(item_path)
+                    elif os.path.isdir(item_path):
+                        shutil.rmtree(item_path)
+                except Exception:
+                    pass  # Ignorer les erreurs de suppression
+        else:
+            os.makedirs(output_dir, exist_ok=True)
         
         # Capturer la photo directement dans le dossier de sortie
         photo_path = take_photo(output_dir=output_dir, filename="0_captured_photo.jpg")
@@ -182,6 +194,7 @@ class ChessVisionPipeline:
         if image is None:
             raise ValueError(f"Impossible de charger la photo capturée: {photo_path}")
         
+        # Passer le dossier de sortie (pas None) pour éviter que _process_image ne le nettoie à nouveau
         result = self._process_image(image, save_outputs, output_dir)
         result['photo_path'] = photo_path
         
