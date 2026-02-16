@@ -46,16 +46,25 @@ def main():
                         data = json.load(f)
                     success += 1
                     # Vérifier structure minimale
-                    if 'board_state' not in data and 'pieces' not in data:
+                    if 'pieces' not in data and 'board_state' not in data:
                         status = "⚠️  JSON INCOMPLET"
                         info = ""
                         errors += 1
                     else:
                         status = "✅"
                         # Compter les pièces sur le plateau
-                        board = data.get('board_state', {})
-                        occupied = {k: v for k, v in board.items() if v}
-                        info = f"| {len(occupied)} pièces sur le plateau"
+                        if 'pieces' in data:
+                            # Compter depuis la liste pieces (zone == board)
+                            pieces = data.get('pieces', [])
+                            on_board = sum(1 for p in pieces if p.get('zone') == 'board')
+                            info = f"| {on_board} pièces sur le plateau"
+                        elif 'board_state' in data:
+                            # Compter depuis board_state (cases occupées)
+                            board = data.get('board_state', {})
+                            occupied = sum(1 for v in board.values() if v)
+                            info = f"| {occupied} pièces sur le plateau"
+                        else:
+                            info = "| ? pièces"
             except json.JSONDecodeError:
                 errors += 1
                 status = "❌ JSON CORROMPU"
