@@ -64,8 +64,4 @@
             "test": "vitest",
             "test:coverage": "vitest --coverage"
       }
-<<<<<<< HEAD
-}
-=======
-}
->>>>>>> e4dbb1a3515f5e376b1b76046a04cc956e911982
+    }
