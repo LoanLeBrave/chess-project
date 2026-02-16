@@ -4,7 +4,8 @@ import { CalibrationScreen } from './components/CalibrationScreen';
 import { SafetyScreen } from './components/SafetyScreen';
 import { StartScreen } from './components/StartScreen';
 import { GameScreen } from './components/GameScreen';
-import { LeaderboardScreen } from './components/LeaderboardScreen';
+import { LeaderboardScreen } from './components/LeaderboardSreen_API';
+
 
 export type DifficultyLevel = 'beginner' | 'intermediate' | 'advanced';
 export type GameState = 'menu' | 'playing' | 'paused' | 'finished';
