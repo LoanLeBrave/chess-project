@@ -187,34 +187,30 @@ class TwoPointCalibration:
                         is_moving = False
 
     def calculate_geometry(self, p1, p2):
-        """Calcule la géométrie du plateau d'après le DXF exact."""
+        """Calcule la géométrie du plateau d'après le DXF exact (Corrigé en mètres)."""
         x1, y1 = p1[0], p1[1]  # Trou A8 (Haut-Gauche)
         x2, y2 = p2[0], p2[1]  # Trou H1 (Bas-Droite)
 
-        # 1. Centre du plateau (Le milieu des trous est le centre mathématique du plateau)
+        # 1. Centre du plateau
         center_x = (x1 + x2) / 2
         center_y = (y1 + y2) / 2
         center_z = (p1[2] + p2[2]) / 2
 
         # 2. Rotation
-        # Vecteur mesuré par le robot
         dx_robot = x2 - x1
         dy_robot = y2 - y1
         angle_robot = math.atan2(dy_robot, dx_robot)
 
-        # Vecteur théorique d'après le DXF (Trou Bas-Droite par rapport au Haut-Gauche)
-        dx_dxf = 312.5  # 296.25 - (-16.25)
-        dy_dxf = -258.5  # 10.75 - 269.25
+        # ⚠️ CORRECTION : Vecteur théorique d'après le DXF en MÈTRES
+        dx_dxf = 0.3125  # 312.5 mm convertis en mètres
+        dy_dxf = -0.2585  # -258.5 mm convertis en mètres
         angle_dxf = math.atan2(dy_dxf, dx_dxf)
 
-        # L'angle réel du plateau est la différence entre l'angle physique et le plan théorique
         rotation = angle_robot - angle_dxf
 
         # 3. Taille et Échelle
-        # La taille du plateau est fixée par le DXF (280mm)
-        # On calcule juste un "scale" pour compenser une éventuelle dilatation/rétractation du matériau
         dist_mesuree = math.sqrt(dx_robot ** 2 + dy_robot ** 2)
-        dist_theorique = math.sqrt(dx_dxf ** 2 + dy_dxf ** 2)  # Environ 405.56 mm
+        dist_theorique = math.sqrt(dx_dxf ** 2 + dy_dxf ** 2)  # Environ 0.40556 m
 
         scale = dist_mesuree / dist_theorique
         board_size = 0.280 * scale  # 280 mm adaptés à la réalité physique
