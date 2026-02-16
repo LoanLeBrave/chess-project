@@ -9,6 +9,11 @@ Usage:
 
 import cv2
 import numpy as np
+import sys
+from pathlib import Path
+
+# Ajouter le dossier parent au path pour importer config
+sys.path.insert(0, str(Path(__file__).parent.parent))
 from config import ARUCO_DICT_TYPE, PIECES
 
 # Paramètres A4 et impression
@@ -27,9 +32,9 @@ A4_HEIGHT_PX = mm_to_pixels(A4_HEIGHT_MM)
 MARKER_SIZE_PX = mm_to_pixels(MARKER_SIZE_MM)
 
 # Marges et espacement
-MARGIN_PX = mm_to_pixels(10)  # 1cm de marge
-SPACING_PX = mm_to_pixels(5)  # 5mm entre marqueurs
-LABEL_HEIGHT_PX = mm_to_pixels(5)  # Hauteur pour le label
+MARGIN_PX = mm_to_pixels(15)  # 1.5cm de marge (plus d'espace pour le titre)
+SPACING_PX = mm_to_pixels(10)  # 10mm entre marqueurs (plus d'espace blanc)
+LABEL_HEIGHT_PX = mm_to_pixels(8)  # Hauteur pour le label (plus d'espace)
 
 # Calculer le nombre de colonnes et lignes
 CELL_WIDTH = MARKER_SIZE_PX + SPACING_PX
@@ -82,7 +87,7 @@ for idx, marker_id in enumerate(piece_ids):
     
     # Ajouter le label sous le marqueur
     label = f"{marker_id}: {piece_info['code']}"
-    label_y = y + MARKER_SIZE_PX + mm_to_pixels(3)
+    label_y = y + MARKER_SIZE_PX + mm_to_pixels(6)  # 6mm sous le marqueur (plus d'espace)
     
     # Calculer la taille du texte pour le centrer
     font = cv2.FONT_HERSHEY_SIMPLEX
