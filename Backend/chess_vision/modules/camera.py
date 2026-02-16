@@ -124,7 +124,7 @@ def _capture_with_rpicam(filepath: str):
     args = [cmd, '-n', '-o', filepath]
     
     # Timeout
-    timeout_ms = CAMERA_CONFIG.get('timeout', 2000)
+    timeout_ms = CAMERA_CONFIG.get('timeout', 50)
     args.extend(['--timeout', str(timeout_ms)])
     
     # Paramètres personnalisés
