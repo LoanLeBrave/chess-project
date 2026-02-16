@@ -33,8 +33,8 @@ FICHIER_CALIBRATION = "robot_calibration.json"
 # Le robot allait 18mm trop loin (Total largeur erreur = 36mm).
 # Ancien Offset (10mm) - Erreur (18mm) = -8.0mm
 # Cela va "rétrécir" la grille virtuelle du robot pour qu'elle colle à la réalité.
-OFFSET_TROU_MM = 15.3
-OFFSET_TROU_M = 0.0153
+OFFSET_TROU_MM = 0
+OFFSET_TROU_M = 0
 
 # ============================================================================
 #                         HAUTEURS PAR TYPE DE PIÈCE

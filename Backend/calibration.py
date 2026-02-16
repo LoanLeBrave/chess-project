@@ -187,45 +187,50 @@ class TwoPointCalibration:
                         is_moving = False
 
     def calculate_geometry(self, p1, p2):
-        """Calcule la géométrie du plateau."""
-        x1, y1 = p1[0], p1[1]
-        x2, y2 = p2[0], p2[1]
+        """Calcule la géométrie du plateau d'après le DXF exact."""
+        x1, y1 = p1[0], p1[1]  # Trou A8 (Haut-Gauche)
+        x2, y2 = p2[0], p2[1]  # Trou H1 (Bas-Droite)
 
-        # 1. Centre
+        # 1. Centre du plateau (Le milieu des trous est le centre mathématique du plateau)
         center_x = (x1 + x2) / 2
         center_y = (y1 + y2) / 2
         center_z = (p1[2] + p2[2]) / 2
 
-        # 2. Distance et Taille
-        dist_trous = math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2)
+        # 2. Rotation
+        # Vecteur mesuré par le robot
+        dx_robot = x2 - x1
+        dy_robot = y2 - y1
+        angle_robot = math.atan2(dy_robot, dx_robot)
 
-        # Le carré formé par les trous
-        side_inner = dist_trous / math.sqrt(2)
+        # Vecteur théorique d'après le DXF (Trou Bas-Droite par rapport au Haut-Gauche)
+        dx_dxf = 312.5  # 296.25 - (-16.25)
+        dy_dxf = -258.5  # 10.75 - 269.25
+        angle_dxf = math.atan2(dy_dxf, dx_dxf)
 
-        # Taille Totale
-        board_size = side_inner + (2 * OFFSET_TROU_M)
+        # L'angle réel du plateau est la différence entre l'angle physique et le plan théorique
+        rotation = angle_robot - angle_dxf
+
+        # 3. Taille et Échelle
+        # La taille du plateau est fixée par le DXF (280mm)
+        # On calcule juste un "scale" pour compenser une éventuelle dilatation/rétractation du matériau
+        dist_mesuree = math.sqrt(dx_robot ** 2 + dy_robot ** 2)
+        dist_theorique = math.sqrt(dx_dxf ** 2 + dy_dxf ** 2)  # Environ 405.56 mm
+
+        scale = dist_mesuree / dist_theorique
+        board_size = 0.280 * scale  # 280 mm adaptés à la réalité physique
         square_size = board_size / 8.0
 
-        # 3. Rotation
-        dx = x2 - x1
-        dy = y2 - y1
-        angle_diag = math.atan2(dy, dx)
-        rotation = angle_diag + (math.pi / 4)
-
-        # 4. Échelle Caméra
         camera_scale = board_size / 20.0
 
         # === AFFICHAGE DÉTAILLÉ ===
         print("\n" + "=" * 50)
-        print("📊 RÉSULTATS DE LA CALIBRATION")
+        print("📊 RÉSULTATS DE LA CALIBRATION CORRIGÉE")
         print("=" * 50)
-        print(f"📏 Distance mesurée entre trous : {dist_trous * 1000:.1f} mm")
-        print(f"📐 Angle de rotation calculé    : {math.degrees(rotation):.2f}°")
+        print(f"📏 Échelle calculée (DXF vs Réel) : {scale:.4f}")
+        print(f"📐 Angle de rotation corrigé    : {math.degrees(rotation):.2f}°")
         print("-" * 50)
         print(f"🔲 TAILLE DU PLATEAU ESTIMÉE    : {board_size * 1000:.1f} mm")
         print(f"⬜ TAILLE D'UNE CASE            : {square_size * 1000:.1f} mm")
-        print("-" * 50)
-        print(f"ℹ️  Offset utilisé (Config)     : {OFFSET_TROU_M * 1000:.1f} mm")
         print("=" * 50 + "\n")
 
         return {
