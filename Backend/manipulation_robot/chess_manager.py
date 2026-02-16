@@ -27,6 +27,7 @@ class ChessManager:
         self.broadcast_callback = None
         self.log_callback = None
         self.status_callback = None
+        self.is_paused = False
 
     def set_broadcast_callback(self, callback):
         """Définit le callback pour le broadcast"""
@@ -111,16 +112,41 @@ class ChessManager:
             if not move:
                 return {"success": False, "error": "Pas de coup trouvé"}
 
+            score = info.get("score")
+            if score:
+                if score.is_mate():
+                    evaluation = f"M{score.relative.mate()}"
+                else:
+                    evaluation = round(score.relative.score() / 100.0, 2)
+            else:
+                evaluation = 0.0
+
             from_sq = chess.square_name(move.from_square)
             to_sq = chess.square_name(move.to_square)
 
             return {
                 "success": True,
                 "from": from_sq,
-                "to": to_sq
+                "to": to_sq,
+                "evaluation": evaluation  # <--- Ajouté
             }
         except Exception as e:
             return {"success": False, "error": str(e)}
+
+    async def toggle_pause(self):
+        """Bascule l'état de pause (arrêt d'urgence)"""
+        self.is_paused = not self.is_paused
+
+        if self.is_paused:
+            self.robot.pause_urgence()
+            await self.log("warning", "🛑 PAUSE D'URGENCE - Robot arrêté !")
+            self.set_status("paused", "PAUSE D'URGENCE")
+            return {"success": True, "paused": True, "message": "Robot arrêté !"}
+        else:
+            self.robot.reprendre_script()
+            await self.log("info", "▶️ Partie reprise")
+            self.set_status("idle", "Partie reprise")
+            return {"success": True, "paused": False, "message": "Partie reprise"}
 
     async def play_human_move(self, from_sq: str, to_sq: str):
         """Joue le coup du joueur humain"""
@@ -231,11 +257,19 @@ class ChessManager:
 
             # Évaluation
             score = info.get("score")
-            evaluation = 0.0
-            if score and score.relative.score():
-                evaluation = score.relative.score() / 100
+            if score:
+                if score.is_mate():
+                    # S'il y a un mat forcé, on renvoie une string (ex: "M3" ou "-M2")
+                    mate_in = score.relative.mate()
+                    evaluation = f"M{mate_in}"
+                else:
+                    # Sinon, on convertit les centipawns en score classique (ex: +1.25)
+                    # On utilise round pour éviter les nombres à virgule infinis
+                    evaluation = round(score.relative.score() / 100.0, 2)
+            else:
+                evaluation = 0.0
 
-            await self.log("robot", f"Coup choisi: {from_sq} → {to_sq} (eval: {evaluation:+.2f})")
+            await self.log("robot", f"Coup choisi: {from_sq} → {to_sq} (eval: {evaluation})")
 
             # Exécuter sur le robot
             self.set_status("moving", f"Déplacement {from_sq} → {to_sq}")

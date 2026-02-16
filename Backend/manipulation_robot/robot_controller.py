@@ -53,6 +53,16 @@ class RobotController:
 
         self.log_callback = None
 
+    def pause_urgence(self):
+        """Met le robot en pause immédiate"""
+        if self.connected and self.rtde_c:
+            self.rtde_c.stopScript()  # Arrêt immédiat sécurisé
+
+    def reprendre_script(self):
+        """Tente de relancer le programme"""
+        if self.connected and self.rtde_c:
+            self.rtde_c.reuploadScript()  # Relance la connexion
+
     def set_log_callback(self, callback):
         self.log_callback = callback
 

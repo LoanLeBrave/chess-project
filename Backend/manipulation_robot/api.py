@@ -111,6 +111,7 @@ async def get_status():
     return {
         "connected": manager.robot.connected,
         "status": manager.status,
+        "paused": getattr(manager.chess, 'is_paused', False),
         "difficulty": manager.chess.difficulty,
         "fen": manager.chess.board.fen(),
         "turn": "white" if manager.chess.board.turn == chess.WHITE else "black",
@@ -131,6 +132,14 @@ async def new_game(config: GameConfig):
 async def get_fen():
     """Retourne la position FEN actuelle"""
     return {"fen": manager.chess.board.fen()}
+
+
+@app.post("/game/pause")
+async def toggle_pause():
+    """Bascule l'état de pause de la partie (Arrêt d'urgence)"""
+    await manager.log("info", "Demande de bascule de pause reçue")
+    result = await manager.chess.toggle_pause()
+    return result
 
 
 @app.get("/game/legal-moves/{square}")
@@ -206,6 +215,7 @@ async def websocket_endpoint(websocket: WebSocket):
         await websocket.send_json({
             "type": "connected",
             "status": manager.status,
+            "paused": getattr(manager.chess, 'is_paused', False),
             "fen": manager.chess.board.fen(),
             "robot_connected": manager.robot.connected,
             "pieces_eliminees": manager.robot.get_pieces_eliminees()
