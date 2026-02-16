@@ -1,19 +1,23 @@
 #!/usr/bin/env python3
 """
-Script de TEST et DEBUG de calibration.
-Version CLAVIER FRANÇAIS (AZERTY) + REMONTÉE SÉCURISÉE
+Script de TEST et DEBUG de calibration (Version Autonome)
+Calcule les coordonnées directement depuis robot_calibration.json
+pour bypasser les erreurs de robot_controller.py.
 """
 
 import sys
 import time
+import json
+import math
 import termios
 import tty
 import select
-import chess
-from robot_controller import RobotController
-from config import DELTA_TRANSIT, DELTA_APPROCHE
+from rtde_control import RTDEControlInterface
+from rtde_receive import RTDEReceiveInterface
+from robotiq_gripper_control import RobotiqGripper
 
-# Codes ANSI pour l'interface
+from config import ROBOT_IP, FICHIER_CALIBRATION, DELTA_TRANSIT
+
 CLEAR_SCREEN = "\033[2J\033[H"
 
 
@@ -32,13 +36,52 @@ def get_key():
         termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
 
 
+def load_calibration():
+    try:
+        with open(FICHIER_CALIBRATION, 'r') as f:
+            return json.load(f)
+    except FileNotFoundError:
+        print(f"❌ Fichier {FICHIER_CALIBRATION} introuvable. Lancez la calibration.")
+        sys.exit(1)
+
+
+def calculate_square_pose(case, calib_data, offset_x=0.0, offset_y=0.0):
+    """Calcule la position XYZ de la case à partir des données de calibration"""
+    col_char = case[0].lower()
+    row_char = case[1]
+
+    col = ord(col_char) - ord('a')  # 0 à 7 (a=0, h=7)
+    row = int(row_char) - 1  # 0 à 7 (1=0, 8=7)
+
+    # Taille d'une case
+    square_size = calib_data['board_size'] / 8.0
+
+    # Position relative au centre du plateau (avant rotation)
+    # Le centre du plateau est entre 3.5 et 3.5
+    rel_x = (col - 3.5) * square_size
+    rel_y = (row - 3.5) * square_size
+
+    # On applique la rotation du plateau mesurée lors de la calibration
+    theta = calib_data['rotation']
+    rot_x = rel_x * math.cos(theta) - rel_y * math.sin(theta)
+    rot_y = rel_x * math.sin(theta) + rel_y * math.cos(theta)
+
+    # On ajoute l'origine (centre du plateau) et les offsets manuels
+    origin = calib_data['origin']
+    target_x = origin[0] + rot_x + offset_x
+    target_y = origin[1] + rot_y + offset_y
+    target_z = origin[2]  # Le Z sera ajusté au moment du mouvement
+
+    # On retourne une pose avec le TCP parfaitement vertical (Rx=Pi, Ry=0, Rz=0)
+    return [target_x, target_y, target_z, 3.1415, 0.0, 0.0]
+
+
 def print_interface(case, off_x, off_y):
-    """Affiche l'interface proprement"""
     print(CLEAR_SCREEN)
     print("=" * 60)
-    print("🔧 TEST & DEBUG CALIBRATION (Mode AZERTY)")
+    print("🔧 TEST & DEBUG CALIBRATION (Indépendant)")
     print("=" * 60)
-    print(f"🎯 CASE VISÉE          : {case}")
+    print(f"🎯 CASE VISÉE          : {case.upper()}")
     print(f"📏 OFFSET MANUEL       : X={off_x * 1000:+.1f} mm | Y={off_y * 1000:+.1f} mm")
     print("-" * 60)
     print("COMMANDES PRINCIPALES :")
@@ -48,28 +91,28 @@ def print_interface(case, off_x, off_y):
     print("  [R]       : Reset offset à 0")
     print("  [X]       : Quitter")
     print("-" * 60)
-    print("AJUSTEMENT PRÉCIS (Quand le robot est en bas) :")
-    print("  [Z] : Haut   (Y +1mm)")
-    print("  [S] : Bas    (Y -1mm)")
-    print("  [D] : Droite (X +1mm)")
-    print("  [Q] : Gauche (X -1mm)")
+    print("AJUSTEMENT PRÉCIS :")
+    print("  [Z] Haut (+Y)  [S] Bas (-Y)  [Q] Gauche (-X)  [D] Droite (+X)")
     print("=" * 60)
 
 
 def main():
-    robot = RobotController()
-    if not robot.init_robot(): return
-    if not robot.is_calibrated:
-        print("❌ Lancez calibration.py d'abord.")
-        return
+    calib_data = load_calibration()
 
-    print("\n📍 Fermeture du gripper pour précision...")
-    robot.gripper.close()
+    print(f"🤖 Connexion au robot {ROBOT_IP}...")
+    try:
+        rtde_c = RTDEControlInterface(ROBOT_IP)
+        rtde_r = RTDEReceiveInterface(ROBOT_IP)
+        gripper = RobotiqGripper(rtde_c)
+        gripper.activate()
+        gripper.close()  # Pointe fine
+    except Exception as e:
+        print(f"❌ Erreur connexion: {e}")
+        return
 
     manual_offset_x = 0.0
     manual_offset_y = 0.0
     current_case = "a1"
-
     need_refresh = True
 
     while True:
@@ -80,107 +123,71 @@ def main():
         key = get_key()
 
         if key:
-            # --- QUITTER ---
             if key.lower() == 'x':
-                # Sécurité avant de quitter : on remonte si on est bas
-                pose = robot.rtde_r.getActualTCPPose()
-                safe_z = robot.calib_origin[2] + DELTA_TRANSIT
+                # Remontée de sécurité avant de quitter
+                pose = rtde_r.getActualTCPPose()
+                safe_z = calib_data['origin'][2] + DELTA_TRANSIT
                 if pose[2] < safe_z - 0.05:
-                    print("\n⬆️ Remontée avant de quitter...")
                     pose[2] = safe_z
-                    robot.rtde_c.moveL(pose, 0.5, 0.3)
+                    rtde_c.moveL(pose, 0.5, 0.3)
                 print("\n👋 Fin du test.")
                 break
 
-            # --- REMONTER (SÉCURITÉ) ---
             elif key == ' ':
-                print("\n⬆️  Remontée vers position de sécurité...")
-                # On récupère la pose actuelle pour garder X/Y, on change juste Z
-                current_pose = robot.rtde_r.getActualTCPPose()
-                target_up = list(current_pose)
-                # Hauteur de transit définie dans config (+12cm)
-                target_up[2] = robot.calib_origin[2] + DELTA_TRANSIT
-                robot.rtde_c.moveL(target_up, 0.5, 0.3)
+                pose = rtde_r.getActualTCPPose()
+                pose[2] = calib_data['origin'][2] + DELTA_TRANSIT
+                rtde_c.moveL(pose, 0.5, 0.3)
                 need_refresh = True
 
-            # --- DESCENDRE (VÉRIFICATION) ---
-            elif key == '\r':  # Touche ENTRÉE
-                print(f"\n🚀 Descente vers {current_case}...")
+            elif key == '\r':  # ENTRÉE
                 try:
-                    cx, cy = robot.get_square_center(current_case)
-                    target_pose = robot.cam_to_robot(cx, cy, use_piece_height=True)
-
-                    # Appliquer l'offset manuel
-                    target_pose[0] += manual_offset_x
-                    target_pose[1] += manual_offset_y
+                    # Calcul de la pose Cible
+                    target_pose = calculate_square_pose(current_case, calib_data, manual_offset_x, manual_offset_y)
 
                     pose_haute = list(target_pose)
-                    pose_haute[2] = robot.calib_origin[2] + DELTA_TRANSIT
+                    pose_haute[2] = calib_data['origin'][2] + DELTA_TRANSIT
 
                     pose_basse = list(target_pose)
-                    # On vise ras du plateau (5mm au dessus du 0 calibré)
-                    pose_basse[2] = robot.calib_origin[2] + 0.005
+                    pose_basse[2] = calib_data['origin'][2] + 0.005  # 5mm au dessus du plateau
 
-                    # Si on est déjà en haut, on se déplace en XY d'abord
-                    current_z = robot.rtde_r.getActualTCPPose()[2]
+                    # Déplacement XYZ en haut d'abord si on est bas
+                    current_z = rtde_r.getActualTCPPose()[2]
                     if current_z > pose_basse[2] + 0.05:
-                        robot.rtde_c.moveL(pose_haute, 0.5, 0.3)
+                        rtde_c.moveL(pose_haute, 0.5, 0.3)
 
-                    # Puis on descend
-                    robot.rtde_c.moveL(pose_basse, 0.1, 0.1)
-                    print("✅ Arrivé en bas.")
+                    # Descente
+                    rtde_c.moveL(pose_basse, 0.1, 0.1)
                     need_refresh = True
                 except Exception as e:
-                    print(f"❌ Erreur: {e}")
+                    print(f"❌ Erreur mouvement: {e}")
                     time.sleep(2)
                     need_refresh = True
 
-            # --- CHANGER CASE ---
             elif key.lower() == 'c':
                 print("\n⌨️  Entrez la case (ex: e4) : ", end='', flush=True)
                 fd = sys.stdin.fileno()
-                try:
-                    termios.tcsetattr(fd, termios.TCSADRAIN, termios.tcgetattr(1))
-                    new_case = sys.stdin.readline().strip().lower()
-                finally:
-                    pass
-
-                if len(new_case) == 2:
+                termios.tcsetattr(fd, termios.TCSADRAIN, termios.tcgetattr(1))
+                new_case = sys.stdin.readline().strip().lower()
+                if len(new_case) == 2 and new_case[0] in "abcdefgh" and new_case[1] in "12345678":
                     current_case = new_case
                 need_refresh = True
 
-            # --- RESET ---
             elif key.lower() == 'r':
                 manual_offset_x = 0.0
                 manual_offset_y = 0.0
                 need_refresh = True
-
-            # --- AJUSTEMENTS AZERTY ---
-            elif key.lower() == 'z':  # Haut (Y+)
-                manual_offset_y += 0.001
-                need_refresh = True
-            elif key.lower() == 's':  # Bas (Y-)
-                manual_offset_y -= 0.001
-                need_refresh = True
-            elif key.lower() == 'd':  # Droite (X+)
-                manual_offset_x += 0.001
-                need_refresh = True
-            elif key.lower() == 'q':  # Gauche (X-)
-                manual_offset_x -= 0.001
-                need_refresh = True
-
-            # Si on a bougé l'offset alors qu'on est en bas, on applique le mouvement tout de suite
-            if key.lower() in ['z', 'q', 's', 'd']:
-                # Petit mouvement relatif immédiat pour voir le résultat
-                # On ne recalcule pas tout le chemin, on bouge juste le TCP relatif
-                # (Optionnel mais plus fluide, sinon l'utilisateur doit refaire Entrée)
-                # Pour simplifier et éviter les erreurs, on ne bouge pas physiquement ici
-                # mais l'utilisateur verra la valeur changer et fera Entrée pour appliquer.
-                pass
+            elif key.lower() == 'z':
+                manual_offset_y += 0.001; need_refresh = True
+            elif key.lower() == 's':
+                manual_offset_y -= 0.001; need_refresh = True
+            elif key.lower() == 'd':
+                manual_offset_x += 0.001; need_refresh = True
+            elif key.lower() == 'q':
+                manual_offset_x -= 0.001; need_refresh = True
 
         time.sleep(0.05)
 
-    robot.close()
+    rtde_c.stopScript()
 
 
 if __name__ == "__main__":
