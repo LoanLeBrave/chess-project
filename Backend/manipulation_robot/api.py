@@ -12,10 +12,14 @@ import json
 import chess
 from datetime import datetime
 
+import math
+import time
+
 from models import MoveRequest, GameConfig
 from robot_controller import RobotController
 from chess_manager import ChessManager
 from leaderboard_manager import LeaderboardManager
+from config import FICHIER_CALIBRATION
 
 
 # ============================================================================
@@ -46,6 +50,9 @@ class ApplicationManager:
         self.leaderboard = LeaderboardManager()
         self.status = "idle"
         self.websocket_clients: List[WebSocket] = []
+
+        # Etat de calibration (points enregistres pendant la session)
+        self.calib_points: dict = {}  # 'a1', 'h8', 'z' -> [x, y, z, rx, ry, rz]
 
         # Connecter les callbacks
         self.robot.set_log_callback(self.log)
@@ -282,6 +289,167 @@ async def get_gripper_state():
         }
     except Exception as e:
         return {"error": str(e)}
+
+
+# ============================================================================
+#                         ROUTES CALIBRATION
+# ============================================================================
+
+@app.post("/robot/calibrate/freedrive")
+async def calibrate_freedrive(data: dict):
+    """Active ou desactive le mode freedrive (XY uniquement)"""
+    if not manager.robot.connected or not manager.robot.rtde_c:
+        return {"success": False, "error": "Robot non connecte"}
+
+    enable = data.get("enable", True)
+    try:
+        if enable:
+            # Freedrive contraint sur X et Y uniquement
+            manager.robot.rtde_c.freedriveMode([1, 1, 0, 0, 0, 0])
+            await manager.log("info", "Mode FreeDrive active (X/Y)")
+        else:
+            manager.robot.rtde_c.endFreedriveMode()
+            time.sleep(0.1)
+            manager.robot.rtde_c.reuploadScript()
+            time.sleep(0.1)
+            await manager.log("info", "Mode FreeDrive desactive")
+        return {"success": True, "freedrive": enable}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@app.post("/robot/calibrate/move-z")
+async def calibrate_move_z(data: dict):
+    """Deplace le robot en Z (monter/descendre) pour la calibration"""
+    if not manager.robot.connected or not manager.robot.rtde_c:
+        return {"success": False, "error": "Robot non connecte"}
+
+    direction = data.get("direction", "down")
+    velocity = 0.01  # 1 cm/s - vitesse lente pour precision
+    duration = 0.3   # Mouvement de 0.3 seconde par clic
+
+    try:
+        vel_z = velocity if direction == "up" else -velocity
+        manager.robot.rtde_c.speedL([0, 0, vel_z, 0, 0, 0], 0.5, duration)
+        # Attendre la fin du mouvement
+        time.sleep(duration + 0.1)
+        manager.robot.rtde_c.speedStop()
+
+        pose = manager.robot.rtde_r.getActualTCPPose()
+        return {
+            "success": True,
+            "z": round(pose[2], 4),
+            "direction": direction
+        }
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@app.post("/robot/calibrate/point")
+async def calibrate_point(data: dict):
+    """Enregistre la position actuelle du robot comme point de calibration"""
+    if not manager.robot.connected or not manager.robot.rtde_r:
+        return {"success": False, "error": "Robot non connecte"}
+
+    point = data.get("point")  # 'a1', 'h8', ou 'z'
+    if point not in ('a1', 'h8', 'z'):
+        return {"success": False, "error": f"Point invalide: {point}"}
+
+    try:
+        pose = manager.robot.rtde_r.getActualTCPPose()
+        manager.calib_points[point] = list(pose)
+        await manager.log("info", f"Point {point.upper()} enregistre: X={pose[0]:.4f} Y={pose[1]:.4f} Z={pose[2]:.4f}")
+
+        # Remontee de securite apres A1 ou H8
+        if point in ('a1', 'h8'):
+            safe_pose = list(pose)
+            safe_pose[2] += 0.1  # +10cm en Z
+            manager.robot.rtde_c.moveL(safe_pose, 0.5, 0.3)
+            await manager.log("info", "Remontee de securite effectuee")
+
+        return {
+            "success": True,
+            "point": point,
+            "position": {"x": pose[0], "y": pose[1], "z": pose[2]}
+        }
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@app.post("/robot/calibrate/save")
+async def calibrate_save():
+    """Calcule la geometrie du plateau et sauvegarde la calibration"""
+    required = ['a1', 'h8', 'z']
+    missing = [p for p in required if p not in manager.calib_points]
+    if missing:
+        return {"success": False, "error": f"Points manquants: {missing}"}
+
+    try:
+        p1 = manager.calib_points['a1']   # Trou A8/A1
+        p2 = manager.calib_points['h8']   # Trou H1/H8
+        p_z = manager.calib_points['z']   # Surface Z
+
+        # Calcul de la geometrie (meme logique que calibration.py)
+        x1, y1 = p1[0], p1[1]
+        x2, y2 = p2[0], p2[1]
+
+        center_x = (x1 + x2) / 2
+        center_y = (y1 + y2) / 2
+        center_z = p_z[2]
+
+        dx_robot = x2 - x1
+        dy_robot = y2 - y1
+        angle_robot = math.atan2(dy_robot, dx_robot)
+
+        # Vecteur theorique DXF
+        dx_dxf = 0.3021
+        dy_dxf = -0.2481
+        angle_dxf = math.atan2(dy_dxf, dx_dxf)
+        rotation = angle_robot - angle_dxf
+
+        dist_mesuree = math.sqrt(dx_robot ** 2 + dy_robot ** 2)
+        dist_theorique = math.sqrt(dx_dxf ** 2 + dy_dxf ** 2)
+        scale = dist_mesuree / dist_theorique
+
+        board_size = 0.2696 * scale
+        camera_scale = board_size / 20.0
+
+        calib_data = {
+            "origin": [center_x, center_y, center_z],
+            "rotation": rotation,
+            "board_size": board_size,
+            "camera_scale": camera_scale,
+            "timestamp": time.time()
+        }
+
+        with open(FICHIER_CALIBRATION, 'w') as f:
+            json.dump(calib_data, f, indent=4)
+
+        # Recharger la calibration dans le robot controller
+        manager.robot.calib_origin = calib_data["origin"]
+        manager.robot.calib_rotation = calib_data["rotation"]
+        manager.robot.calib_scale = calib_data["camera_scale"]
+        manager.robot.is_calibrated = True
+
+        # Remontee finale de securite
+        pose = manager.robot.rtde_r.getActualTCPPose()
+        safe_pose = list(pose)
+        safe_pose[2] += 0.1
+        manager.robot.rtde_c.moveL(safe_pose, 0.5, 0.3)
+
+        await manager.log("info", f"Calibration sauvegardee (scale={scale:.4f}, rotation={math.degrees(rotation):.2f}deg)")
+
+        # Reinitialiser les points de calibration
+        manager.calib_points.clear()
+
+        return {
+            "success": True,
+            "board_size_mm": round(board_size * 1000, 1),
+            "scale": round(scale, 4),
+            "rotation_deg": round(math.degrees(rotation), 2)
+        }
+    except Exception as e:
+        return {"success": False, "error": str(e)}
 
 
 @app.get("/game/history")

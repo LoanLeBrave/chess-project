@@ -51,7 +51,9 @@ export function GameScreen({ difficulty, gameState, setGameState, onReturnToMenu
     setMoves(prev => [...prev, newMove]);
   };
 
-  // Hook personnalisé pour gérer la logique d'échecs
+  const API_BASE = `http://${window.location.hostname}:8000`;
+
+  // Hook personnalise pour gerer la logique d'echecs
   const {
     fen,
     isWhiteTurn,
@@ -62,39 +64,51 @@ export function GameScreen({ difficulty, gameState, setGameState, onReturnToMenu
     onMove,
     getLegalMoves,
     getBestMove,
-    resetGame
+    resetGame,
+    initGame,
   } = useChessRobot(addLog, addMove);
 
-  // Fonction pour sauvegarder le score dans le classement
-  const saveScoreToLeaderboard = (result: 'win' | 'lose' | 'draw' | 'abandoned') => {
-    // Compter uniquement les coups du joueur
+  // Initialiser la partie via l'API au montage
+  useEffect(() => {
+    initGame(difficulty);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Sauvegarder le score via l'API quand la partie se termine
+  const saveScoreToLeaderboard = async (result: 'win' | 'lose' | 'draw' | 'abandoned') => {
     const playerMoves = moves.filter(m => m.player === 'human');
-    
-    // Ne sauvegarder que si le joueur a fait au moins un coup
     if (playerMoves.length === 0) return;
-    
-    const leaderboardData = localStorage.getItem('chessLeaderboard');
-    const leaderboard = leaderboardData ? JSON.parse(leaderboardData) : [];
-    
-    // Ajouter la nouvelle partie
-    leaderboard.push({
-      playerName,
-      acpl: acplScore,
-      result,
-      timestamp: new Date().toISOString(),
-      moves: playerMoves.length, // Uniquement les coups du joueur
-      elapsedTime
-    });
-    
-    localStorage.setItem('chessLeaderboard', JSON.stringify(leaderboard));
+
+    try {
+      await fetch(`${API_BASE}/leaderboard/add-game`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          player_name: playerName,
+          acpl: acplScore,
+          result,
+          difficulty,
+          moves_played: playerMoves.length,
+          game_duration: elapsedTime,
+        }),
+      });
+    } catch {
+      // Fallback localStorage si API indisponible
+      const leaderboardData = localStorage.getItem('chessLeaderboard');
+      const leaderboard = leaderboardData ? JSON.parse(leaderboardData) : [];
+      leaderboard.push({
+        playerName, acpl: acplScore, result,
+        timestamp: new Date().toISOString(),
+        moves: playerMoves.length, elapsedTime,
+      });
+      localStorage.setItem('chessLeaderboard', JSON.stringify(leaderboard));
+    }
   };
 
-  // Sauvegarder le résultat dans localStorage quand la partie se termine naturellement
   useEffect(() => {
     if (isGameOver && gameResult) {
       saveScoreToLeaderboard(gameResult);
     }
-  }, [isGameOver, gameResult]);
+  }, [isGameOver, gameResult]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleViewLeaderboard = () => {
     // Cette fonction devra être passée depuis App.tsx pour changer d'écran
@@ -124,21 +138,38 @@ export function GameScreen({ difficulty, gameState, setGameState, onReturnToMenu
     }, 1500);
   }, []);
 
-  const handlePause = () => {
-    setGameState(gameState === 'playing' ? 'paused' : 'playing');
-    addLog('info', gameState === 'playing' ? 'Partie en pause' : 'Partie reprise');
+  const handlePause = async () => {
+    try {
+      const res = await fetch(`${API_BASE}/game/pause`, { method: 'POST' });
+      const data = await res.json();
+      if (data.paused !== undefined) {
+        setGameState(data.paused ? 'paused' : 'playing');
+        addLog('info', data.paused ? 'Partie en pause' : 'Partie reprise');
+      }
+    } catch {
+      // Fallback local si API indisponible
+      setGameState(gameState === 'playing' ? 'paused' : 'playing');
+      addLog('info', gameState === 'playing' ? 'Partie en pause' : 'Partie reprise');
+    }
   };
 
-  const handleStop = () => {
+  const handleStop = async () => {
     // Compter uniquement les coups du joueur
     const playerMoves = moves.filter(m => m.player === 'human');
-    
+
+    // Notifier l'API de l'arrêt
+    try {
+      await fetch(`${API_BASE}/game/stop`, { method: 'POST' });
+    } catch {
+      // Continue même si l'API est indisponible
+    }
+
     // Sauvegarder le score avant de quitter si le joueur a joué au moins un coup
     if (playerMoves.length > 0 && !isGameOver) {
       saveScoreToLeaderboard('abandoned');
       addLog('warning', 'Partie arrêtée - Score enregistré');
       setShowScoreSaved(true);
-      
+
       // Fermer la notification après 3 secondes
       setTimeout(() => {
         setShowScoreSaved(false);
@@ -150,11 +181,12 @@ export function GameScreen({ difficulty, gameState, setGameState, onReturnToMenu
     }
   };
 
-  const handleNewGame = () => {
+  const handleNewGame = async () => {
     setElapsedTime(0);
     setLogs([]);
     setMoves([]);
     resetGame();
+    await initGame(difficulty);
     addLog('info', 'Nouvelle partie démarrée');
   };
 

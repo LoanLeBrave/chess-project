@@ -7,6 +7,8 @@ interface CalibrationScreenProps {
   onBack: () => void;
 }
 
+const API_BASE = `http://${window.location.hostname}:8000`;
+
 export function CalibrationScreen({ onCalibrationComplete, onBack }: CalibrationScreenProps) {
   const [pin, setPin] = useState(['', '', '', '']);
   const [isUnlocked, setIsUnlocked] = useState(false);
@@ -37,6 +39,12 @@ export function CalibrationScreen({ onCalibrationComplete, onBack }: Calibration
     if (newPin.every(digit => digit !== '')) {
       const enteredPin = newPin.join('');
       if (enteredPin === CORRECT_PIN) {
+        // Activer le freedrive sur le robot
+        fetch(`${API_BASE}/robot/calibrate/freedrive`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ enable: true }),
+        }).catch(() => {});
         setTimeout(() => {
           setIsUnlocked(true);
         }, 300);
@@ -57,32 +65,67 @@ export function CalibrationScreen({ onCalibrationComplete, onBack }: Calibration
     }
   };
 
-  const handleValidateA1 = () => {
+  const handleValidateA1 = async () => {
+    try {
+      await fetch(`${API_BASE}/robot/calibrate/point`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ point: 'a1' }),
+      });
+    } catch { /* continue meme si API indisponible */ }
     setA1Calibrated(true);
     setCalibrationStep('h8');
   };
 
-  const handleValidateH8 = () => {
+  const handleValidateH8 = async () => {
+    try {
+      await fetch(`${API_BASE}/robot/calibrate/point`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ point: 'h8' }),
+      });
+      // Desactiver freedrive pour passer aux controles Z
+      await fetch(`${API_BASE}/robot/calibrate/freedrive`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enable: false }),
+      });
+    } catch { /* continue */ }
     setH8Calibrated(true);
     setCalibrationStep('z');
   };
 
-  const handleValidateZ = () => {
+  const handleValidateZ = async () => {
+    try {
+      // Enregistrer le point Z de surface
+      await fetch(`${API_BASE}/robot/calibrate/point`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ point: 'z' }),
+      });
+      // Calculer et sauvegarder la calibration
+      await fetch(`${API_BASE}/robot/calibrate/save`, { method: 'POST' });
+    } catch { /* continue */ }
     setZCalibrated(true);
-    // Petite pause pour l'effet visuel puis transition directe
     setTimeout(() => {
       onCalibrationComplete();
     }, 500);
   };
 
   const handleMoveUp = () => {
-    // TODO: API call to move robot up in Z axis
-    console.log('Moving robot UP (Z+)');
+    fetch(`${API_BASE}/robot/calibrate/move-z`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ direction: 'up' }),
+    }).catch(() => {});
   };
 
   const handleMoveDown = () => {
-    // TODO: API call to move robot down in Z axis
-    console.log('Moving robot DOWN (Z-)');
+    fetch(`${API_BASE}/robot/calibrate/move-z`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ direction: 'down' }),
+    }).catch(() => {});
   };
 
   return (

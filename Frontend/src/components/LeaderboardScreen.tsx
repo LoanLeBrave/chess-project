@@ -18,59 +18,56 @@ interface PlayerScore {
 export function LeaderboardScreen({ onBack }: LeaderboardScreenProps) {
   const [leaderboard, setLeaderboard] = useState<PlayerScore[]>([]);
 
-  // Charger et calculer le classement depuis localStorage
+  const API_BASE = `http://${window.location.hostname}:8000`;
+
+  // Charger le classement depuis l'API
   useEffect(() => {
-    const leaderboardData = localStorage.getItem('chessLeaderboard');
-    if (!leaderboardData) {
-      setLeaderboard([]);
-      return;
-    }
-
-    const games = JSON.parse(leaderboardData);
-    
-    // Grouper par joueur et calculer les statistiques
-    const playerStats: { [name: string]: { 
-      totalAcpl: number; 
-      count: number;
-      wins: number;
-      losses: number;
-      abandoned: number;
-    } } = {};
-    
-    games.forEach((game: any) => {
-      if (!playerStats[game.playerName]) {
-        playerStats[game.playerName] = { 
-          totalAcpl: 0, 
-          count: 0,
-          wins: 0,
-          losses: 0,
-          abandoned: 0
-        };
+    const fetchLeaderboard = async () => {
+      try {
+        const res = await fetch(`${API_BASE}/leaderboard`);
+        const data = await res.json();
+        if (data.leaderboard) {
+          setLeaderboard(data.leaderboard.map((p: any) => ({
+            rank: p.rank,
+            name: p.name,
+            acpl: Math.round(p.acpl),
+            games: p.games,
+            wins: p.wins,
+            losses: p.losses,
+            abandoned: p.abandoned,
+          })));
+        }
+      } catch {
+        // Fallback localStorage si API indisponible
+        const leaderboardData = localStorage.getItem('chessLeaderboard');
+        if (!leaderboardData) {
+          setLeaderboard([]);
+          return;
+        }
+        const games = JSON.parse(leaderboardData);
+        const playerStats: { [name: string]: { totalAcpl: number; count: number; wins: number; losses: number; abandoned: number } } = {};
+        games.forEach((game: any) => {
+          if (!playerStats[game.playerName]) {
+            playerStats[game.playerName] = { totalAcpl: 0, count: 0, wins: 0, losses: 0, abandoned: 0 };
+          }
+          playerStats[game.playerName].totalAcpl += game.acpl;
+          playerStats[game.playerName].count += 1;
+          if (game.result === 'win') playerStats[game.playerName].wins += 1;
+          else if (game.result === 'lose') playerStats[game.playerName].losses += 1;
+          else if (game.result === 'abandoned') playerStats[game.playerName].abandoned += 1;
+        });
+        const rankings: PlayerScore[] = Object.entries(playerStats)
+          .map(([name, stats]) => ({
+            rank: 0, name,
+            acpl: Math.round(stats.totalAcpl / stats.count),
+            games: stats.count, wins: stats.wins, losses: stats.losses, abandoned: stats.abandoned
+          }))
+          .sort((a, b) => a.acpl - b.acpl)
+          .map((player, index) => ({ ...player, rank: index + 1 }));
+        setLeaderboard(rankings);
       }
-      playerStats[game.playerName].totalAcpl += game.acpl;
-      playerStats[game.playerName].count += 1;
-      
-      // Compter les résultats
-      if (game.result === 'win') playerStats[game.playerName].wins += 1;
-      else if (game.result === 'lose') playerStats[game.playerName].losses += 1;
-      else if (game.result === 'abandoned') playerStats[game.playerName].abandoned += 1;
-    });
-
-    // Créer le tableau de classement
-    const rankings: PlayerScore[] = Object.entries(playerStats)
-      .map(([name, stats]) => ({
-        rank: 0,
-        name,
-        acpl: Math.round(stats.totalAcpl / stats.count),
-        games: stats.count,
-        wins: stats.wins,
-        losses: stats.losses,
-        abandoned: stats.abandoned
-      }))
-      .sort((a, b) => a.acpl - b.acpl) // Trier par ACPL croissant (plus bas = meilleur)
-      .map((player, index) => ({ ...player, rank: index + 1 }));
-
-    setLeaderboard(rankings);
+    };
+    fetchLeaderboard();
   }, []);
   const getRankIcon = (rank: number) => {
     switch (rank) {
