@@ -1,4 +1,4 @@
-import { ArrowLeft, Trophy, Medal, Award, TrendingDown } from 'lucide-react';
+import { ArrowLeft, Trophy, Medal, Award, TrendingDown, RefreshCw } from 'lucide-react';
 import { useState, useEffect } from 'react';
 
 interface LeaderboardScreenProps {
@@ -13,65 +13,41 @@ interface PlayerScore {
   wins: number;
   losses: number;
   abandoned: number;
+  best_acpl: number;
+  worst_acpl: number;
 }
 
 export function LeaderboardScreen({ onBack }: LeaderboardScreenProps) {
   const [leaderboard, setLeaderboard] = useState<PlayerScore[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  // Charger et calculer le classement depuis localStorage
-  useEffect(() => {
-    const leaderboardData = localStorage.getItem('chessLeaderboard');
-    if (!leaderboardData) {
-      setLeaderboard([]);
-      return;
-    }
-
-    const games = JSON.parse(leaderboardData);
+  // Charger le leaderboard depuis l'API
+  const loadLeaderboard = async () => {
+    setLoading(true);
+    setError(null);
     
-    // Grouper par joueur et calculer les statistiques
-    const playerStats: { [name: string]: { 
-      totalAcpl: number; 
-      count: number;
-      wins: number;
-      losses: number;
-      abandoned: number;
-    } } = {};
-    
-    games.forEach((game: any) => {
-      if (!playerStats[game.playerName]) {
-        playerStats[game.playerName] = { 
-          totalAcpl: 0, 
-          count: 0,
-          wins: 0,
-          losses: 0,
-          abandoned: 0
-        };
-      }
-      playerStats[game.playerName].totalAcpl += game.acpl;
-      playerStats[game.playerName].count += 1;
+    try {
+      const response = await fetch('http://localhost:8000/leaderboard');
       
-      // Compter les résultats
-      if (game.result === 'win') playerStats[game.playerName].wins += 1;
-      else if (game.result === 'lose') playerStats[game.playerName].losses += 1;
-      else if (game.result === 'abandoned') playerStats[game.playerName].abandoned += 1;
-    });
+      if (!response.ok) {
+        throw new Error('Erreur lors du chargement du classement');
+      }
+      
+      const data = await response.json();
+      setLeaderboard(data.leaderboard || []);
+    } catch (err) {
+      console.error('Erreur:', err);
+      setError(err instanceof Error ? err.message : 'Erreur inconnue');
+    } finally {
+      setLoading(false);
+    }
+  };
 
-    // Créer le tableau de classement
-    const rankings: PlayerScore[] = Object.entries(playerStats)
-      .map(([name, stats]) => ({
-        rank: 0,
-        name,
-        acpl: Math.round(stats.totalAcpl / stats.count),
-        games: stats.count,
-        wins: stats.wins,
-        losses: stats.losses,
-        abandoned: stats.abandoned
-      }))
-      .sort((a, b) => a.acpl - b.acpl) // Trier par ACPL croissant (plus bas = meilleur)
-      .map((player, index) => ({ ...player, rank: index + 1 }));
-
-    setLeaderboard(rankings);
+  useEffect(() => {
+    loadLeaderboard();
   }, []);
+
   const getRankIcon = (rank: number) => {
     switch (rank) {
       case 1:
@@ -125,6 +101,18 @@ export function LeaderboardScreen({ onBack }: LeaderboardScreenProps) {
         <span className="font-medium">Retour</span>
       </button>
 
+      {/* Refresh Button */}
+      <button
+        onClick={loadLeaderboard}
+        disabled={loading}
+        className="absolute top-6 right-6 flex items-center gap-2 text-slate-400 hover:text-white transition-colors group disabled:opacity-50"
+      >
+        <div className="w-10 h-10 rounded-full bg-slate-800/50 border border-slate-700 flex items-center justify-center group-hover:border-cyan-400 transition-all">
+          <RefreshCw className={`w-5 h-5 ${loading ? 'animate-spin' : ''}`} />
+        </div>
+        <span className="font-medium">Actualiser</span>
+      </button>
+
       <div className="max-w-4xl w-full">
         {/* Header */}
         <div className="text-center mb-10">
@@ -138,7 +126,7 @@ export function LeaderboardScreen({ onBack }: LeaderboardScreenProps) {
             </h1>
           </div>
           <p className="text-xl text-slate-400 mb-4">
-            Les meilleurs joueurs face au robot UR7e
+            Les meilleurs joueurs face au robot UR5e
           </p>
           <div className="inline-flex items-center gap-2 bg-cyan-500/10 border border-cyan-500/30 rounded-lg px-4 py-2">
             <TrendingDown className="w-4 h-4 text-cyan-400" />
@@ -164,20 +152,43 @@ export function LeaderboardScreen({ onBack }: LeaderboardScreenProps) {
           </p>
         </div>
 
+        {/* Error Message */}
+        {error && (
+          <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-4 mb-6">
+            <p className="text-red-400 text-center">
+              ❌ {error}
+            </p>
+            <button
+              onClick={loadLeaderboard}
+              className="mt-2 mx-auto block text-sm text-red-300 hover:text-red-200 underline"
+            >
+              Réessayer
+            </button>
+          </div>
+        )}
+
         {/* Leaderboard Table */}
         <div className="bg-slate-800/50 backdrop-blur-sm rounded-xl border border-slate-700 overflow-hidden">
           {/* Table Header */}
           <div className="grid grid-cols-12 gap-4 px-6 py-4 bg-slate-900/50 border-b border-slate-700 text-slate-400 text-sm font-semibold">
             <div className="col-span-1 text-center">Rang</div>
-            <div className="col-span-4">Joueur</div>
+            <div className="col-span-3">Joueur</div>
             <div className="col-span-2 text-center">Score ACPL</div>
-            <div className="col-span-2 text-center">Parties</div>
+            <div className="col-span-2 text-center">Meilleur/Pire</div>
+            <div className="col-span-1 text-center">Parties</div>
             <div className="col-span-3 text-center">V / D / A</div>
           </div>
 
           {/* Table Body */}
           <div className="divide-y divide-slate-700/50">
-            {leaderboard.length > 0 ? (
+            {loading ? (
+              <div className="py-16 text-center">
+                <RefreshCw className="w-16 h-16 text-slate-600 mx-auto mb-4 animate-spin" />
+                <p className="text-slate-400 text-lg font-medium">
+                  Chargement du classement...
+                </p>
+              </div>
+            ) : leaderboard.length > 0 ? (
               leaderboard.map((player) => (
                 <div
                   key={player.rank}
@@ -191,7 +202,7 @@ export function LeaderboardScreen({ onBack }: LeaderboardScreenProps) {
                   </div>
 
                   {/* Name */}
-                  <div className="col-span-4">
+                  <div className="col-span-3">
                     <p className="text-white font-semibold text-lg">{player.name}</p>
                   </div>
 
@@ -207,10 +218,21 @@ export function LeaderboardScreen({ onBack }: LeaderboardScreenProps) {
                     </div>
                   </div>
 
-                  {/* Games Played */}
+                  {/* Best/Worst ACPL */}
                   <div className="col-span-2 text-center">
-                    <span className="text-slate-300 font-medium">{player.games}</span>
-                    <span className="text-slate-500 text-sm ml-1">parties</span>
+                    <div className="flex flex-col gap-1">
+                      <span className="text-green-400 text-sm font-semibold">
+                        ↓ {player.best_acpl}
+                      </span>
+                      <span className="text-red-400 text-sm font-semibold">
+                        ↑ {player.worst_acpl}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Games Played */}
+                  <div className="col-span-1 text-center">
+                    <span className="text-slate-300 font-medium text-lg">{player.games}</span>
                   </div>
 
                   {/* Win / Loss / Abandoned */}
@@ -245,7 +267,7 @@ export function LeaderboardScreen({ onBack }: LeaderboardScreenProps) {
         {/* Footer Note */}
         <div className="mt-6 text-center">
           <p className="text-slate-500 text-sm">
-            Le classement est calculé sur la moyenne des 5 dernières parties de chaque joueur
+            Le classement est calculé sur la moyenne de toutes les parties de chaque joueur
           </p>
         </div>
       </div>

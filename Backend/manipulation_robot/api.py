@@ -6,7 +6,7 @@ Routes et WebSocket - Version complète
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from typing import List
+from typing import List, Optional
 import asyncio
 import json
 import chess
@@ -15,6 +15,7 @@ from datetime import datetime
 from models import MoveRequest, GameConfig
 from robot_controller import RobotController
 from chess_manager import ChessManager
+from leaderboard_manager import LeaderboardManager
 
 
 # ============================================================================
@@ -42,6 +43,7 @@ class ApplicationManager:
     def __init__(self):
         self.robot = RobotController()
         self.chess = ChessManager(self.robot)
+        self.leaderboard = LeaderboardManager()
         self.status = "idle"
         self.websocket_clients: List[WebSocket] = []
 
@@ -303,6 +305,142 @@ async def get_game_history():
         "move_count": len(moves),
         "current_fen": manager.chess.board.fen()
     }
+
+
+# ============================================================================
+#                         ROUTES LEADERBOARD
+# ============================================================================
+
+@app.get("/leaderboard")
+async def get_leaderboard(limit: Optional[int] = None):
+    """
+    Récupère le classement des joueurs
+    Query params:
+      - limit: nombre maximum de joueurs à retourner
+    """
+    rankings = manager.leaderboard.get_leaderboard(limit=limit)
+    return {
+        "leaderboard": rankings,
+        "count": len(rankings)
+    }
+
+
+@app.get("/leaderboard/player/{player_name}")
+async def get_player_stats(player_name: str):
+    """Récupère les statistiques détaillées d'un joueur"""
+    stats = manager.leaderboard.get_player_stats(player_name)
+    
+    if stats is None:
+        return {"error": "Joueur non trouvé", "found": False}
+    
+    return {
+        "found": True,
+        "stats": stats.to_dict()
+    }
+
+
+@app.post("/leaderboard/add-game")
+async def add_game_to_leaderboard(data: dict):
+    """
+    Ajoute une partie au leaderboard
+    Body JSON:
+    {
+      "player_name": "Alice",
+      "acpl": 25.5,
+      "result": "win",  // 'win', 'lose', 'abandoned'
+      "difficulty": "intermediate",
+      "moves_played": 45,
+      "game_duration": 1234.5  // optionnel, en secondes
+    }
+    """
+    try:
+        success = manager.leaderboard.add_game(
+            player_name=data['player_name'],
+            acpl=data['acpl'],
+            result=data['result'],
+            difficulty=data['difficulty'],
+            moves_played=data['moves_played'],
+            game_duration=data.get('game_duration')
+        )
+        
+        if success:
+            await manager.log("info", f"🏆 Partie enregistrée pour {data['player_name']} (ACPL: {data['acpl']})")
+            
+            # Broadcaster la mise à jour du leaderboard
+            await manager.broadcast({
+                "type": "leaderboard_updated",
+                "player": data['player_name'],
+                "acpl": data['acpl'],
+                "result": data['result']
+            })
+            
+            return {"success": True, "message": "Partie enregistrée"}
+        else:
+            return {"success": False, "error": "Erreur lors de la sauvegarde"}
+            
+    except KeyError as e:
+        return {"success": False, "error": f"Champ manquant: {e}"}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@app.get("/leaderboard/games")
+async def get_all_games(player_name: Optional[str] = None, limit: Optional[int] = None):
+    """
+    Récupère toutes les parties
+    Query params:
+      - player_name: filtrer par joueur (optionnel)
+      - limit: nombre maximum de parties (optionnel)
+    """
+    if limit:
+        games = manager.leaderboard.get_recent_games(limit=limit)
+    else:
+        games = manager.leaderboard.get_all_games(player_name=player_name)
+    
+    return {
+        "games": games,
+        "count": len(games)
+    }
+
+
+@app.get("/leaderboard/statistics")
+async def get_leaderboard_statistics():
+    """Récupère les statistiques globales du leaderboard"""
+    stats = manager.leaderboard.get_statistics()
+    return stats
+
+
+@app.delete("/leaderboard/player/{player_name}")
+async def delete_player(player_name: str):
+    """Supprime toutes les parties d'un joueur"""
+    success = manager.leaderboard.delete_player(player_name)
+    
+    if success:
+        await manager.log("info", f"🗑️ Joueur {player_name} supprimé du leaderboard")
+        await manager.broadcast({
+            "type": "leaderboard_updated",
+            "action": "player_deleted",
+            "player": player_name
+        })
+        return {"success": True, "message": f"Joueur {player_name} supprimé"}
+    else:
+        return {"success": False, "error": "Joueur non trouvé ou erreur"}
+
+
+@app.delete("/leaderboard/clear")
+async def clear_leaderboard():
+    """Efface toutes les données du leaderboard (ATTENTION!)"""
+    success = manager.leaderboard.clear_all()
+    
+    if success:
+        await manager.log("warning", "🗑️ Leaderboard effacé complètement")
+        await manager.broadcast({
+            "type": "leaderboard_updated",
+            "action": "cleared"
+        })
+        return {"success": True, "message": "Leaderboard effacé"}
+    else:
+        return {"success": False, "error": "Erreur lors de l'effacement"}
 
 
 @app.websocket("/ws")
