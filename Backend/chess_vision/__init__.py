@@ -241,9 +241,10 @@ class ChessVisionPipeline:
                 # Mettre à jour le résultat pour pointer vers latest (symlink)
                 result['output_dir'] = latest_symlink
                 
-                # Nettoyer l'ancien dossier data (non-bloquant)
-                if old_data_dir and os.path.exists(old_data_dir):
-                    shutil.rmtree(old_data_dir)
+                # NE PAS supprimer l'ancien dossier data ici.
+                # Il sera écrasé au prochain cycle (shutil.rmtree au début).
+                # Garder les 2 dossiers permet à l'explorateur de fichiers
+                # et aux lecteurs externes de ne pas perdre leur référence.
                     
             except Exception as e:
                 result['atomic_replace_error'] = str(e)
