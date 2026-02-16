@@ -186,44 +186,44 @@ class TwoPointCalibration:
                         self.rtde_c.speedStop()
                         is_moving = False
 
-    def calculate_geometry(self, p1, p2):
-        """Calcule la géométrie du plateau d'après le DXF exact (Corrigé en mètres)."""
-        x1, y1 = p1[0], p1[1]  # Trou A8 (Haut-Gauche)
-        x2, y2 = p2[0], p2[1]  # Trou H1 (Bas-Droite)
+    def calculate_geometry(self, p1, p2, p_z):
+        """Calcule la géométrie du plateau d'après le DXF exact."""
+        x1, y1 = p1[0], p1[1]  # Trou A8
+        x2, y2 = p2[0], p2[1]  # Trou H1
 
-        # 1. Centre du plateau
+        # 1. Centre du plateau (X/Y viennent des trous, Z vient de la surface)
         center_x = (x1 + x2) / 2
         center_y = (y1 + y2) / 2
-        center_z = (p1[2] + p2[2]) / 2
+        center_z = p_z[2]  # <--- LE Z DE LA SURFACE EST ICI
 
         # 2. Rotation
         dx_robot = x2 - x1
         dy_robot = y2 - y1
         angle_robot = math.atan2(dy_robot, dx_robot)
 
-        # ⚠️ CORRECTION : Vecteur théorique d'après le DXF en MÈTRES
-        dx_dxf = 0.3125  # 312.5 mm convertis en mètres
-        dy_dxf = -0.2585  # -258.5 mm convertis en mètres
+        # Vecteur théorique d'après le DXF en MÈTRES
+        dx_dxf = 0.3125
+        dy_dxf = -0.2585
         angle_dxf = math.atan2(dy_dxf, dx_dxf)
 
         rotation = angle_robot - angle_dxf
 
         # 3. Taille et Échelle
         dist_mesuree = math.sqrt(dx_robot ** 2 + dy_robot ** 2)
-        dist_theorique = math.sqrt(dx_dxf ** 2 + dy_dxf ** 2)  # Environ 0.40556 m
+        dist_theorique = math.sqrt(dx_dxf ** 2 + dy_dxf ** 2)
 
         scale = dist_mesuree / dist_theorique
-        board_size = 0.280 * scale  # 280 mm adaptés à la réalité physique
+        board_size = 0.280 * scale
         square_size = board_size / 8.0
-
         camera_scale = board_size / 20.0
 
         # === AFFICHAGE DÉTAILLÉ ===
         print("\n" + "=" * 50)
-        print("📊 RÉSULTATS DE LA CALIBRATION CORRIGÉE")
+        print("📊 RÉSULTATS DE LA CALIBRATION")
         print("=" * 50)
         print(f"📏 Échelle calculée (DXF vs Réel) : {scale:.4f}")
         print(f"📐 Angle de rotation corrigé    : {math.degrees(rotation):.2f}°")
+        print(f"↕️  Hauteur Z fixée à            : {center_z:.4f} m")
         print("-" * 50)
         print(f"🔲 TAILLE DU PLATEAU ESTIMÉE    : {board_size * 1000:.1f} mm")
         print(f"⬜ TAILLE D'UNE CASE            : {square_size * 1000:.1f} mm")
@@ -250,29 +250,34 @@ class TwoPointCalibration:
             return
 
         print("\nPRÉPARATION :")
-        print(f"Offset configuré : {OFFSET_TROU_M * 1000:.1f}mm")
 
-        # Point 1
+        # Point 1 : Trou Haut-Gauche
         p1 = self.interactive_positioning("TROU HAUT-GAUCHE (Côté A8)")
 
         # Sécurité
         print("⬆️ Remontée de sécurité...")
         self.rtde_c.moveL([p1[0], p1[1], p1[2] + 0.1, p1[3], p1[4], p1[5]], 0.5, 0.3)
 
-        # Point 2
+        # Point 2 : Trou Bas-Droite
         p2 = self.interactive_positioning("TROU BAS-DROITE (Côté H1)")
+
+        # Remontée
+        print("⬆️ Remontée de sécurité...")
+        self.rtde_c.moveL([p2[0], p2[1], p2[2] + 0.1, p2[3], p2[4], p2[5]], 0.5, 0.3)
+
+        # Point 3 : Surface Z
+        p_z = self.interactive_positioning("SURFACE DU PLATEAU (Posez le bout du gripper au ras du plateau)")
 
         # Remontée finale
         print("⬆️ Remontée finale...")
-        self.rtde_c.moveL([p2[0], p2[1], p2[2] + 0.1, p2[3], p2[4], p2[5]], 0.5, 0.3)
+        self.rtde_c.moveL([p_z[0], p_z[1], p_z[2] + 0.1, p_z[3], p_z[4], p_z[5]], 0.5, 0.3)
 
-        # Calcul et Sauvegarde
-        data = self.calculate_geometry(p1, p2)
+        # Calcul et Sauvegarde (avec les 3 points)
+        data = self.calculate_geometry(p1, p2, p_z)
         self.save(data)
 
         self.rtde_c.stopScript()
         print("\n✅ CALIBRATION TERMINÉE AVEC SUCCÈS")
-
 
 if __name__ == "__main__":
     calib = TwoPointCalibration()
