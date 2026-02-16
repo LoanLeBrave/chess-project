@@ -157,7 +157,7 @@ class ChessVisionPipeline:
         
         Args:
             save_outputs: Sauvegarder les images et JSONs intermédiaires
-            output_dir: Dossier de sortie (si None, utilise 'latest' qui se met à jour)
+            output_dir: Dossier de sortie (si None, utilise 'latest' avec remplacement atomique)
             
         Returns:
             Dict avec tous les résultats de l'analyse
@@ -168,21 +168,20 @@ class ChessVisionPipeline:
         from datetime import datetime
         from .config import OUTPUT_DIR
         
-        # Si output_dir est None, utiliser le dossier 'latest'
+        # Flag pour savoir si on doit faire le remplacement atomique
+        use_atomic_replace = False
+        latest_dir = None
+        
+        # Si output_dir est None, utiliser le dossier temporaire 'latest.tmp'
         if output_dir is None:
-            output_dir = os.path.join(OUTPUT_DIR, "latest")
+            use_atomic_replace = True
+            latest_dir = os.path.join(OUTPUT_DIR, "latest")
+            output_dir = os.path.join(OUTPUT_DIR, "latest.tmp")
             
-            # Nettoyer le dossier 'latest' AVANT de prendre la photo
+            # Nettoyer le dossier temporaire s'il existe déjà
+            if os.path.exists(output_dir):
+                shutil.rmtree(output_dir)
             os.makedirs(output_dir, exist_ok=True)
-            for item in os.listdir(output_dir):
-                item_path = os.path.join(output_dir, item)
-                try:
-                    if os.path.isfile(item_path):
-                        os.remove(item_path)
-                    elif os.path.isdir(item_path):
-                        shutil.rmtree(item_path)
-                except Exception:
-                    pass  # Ignorer les erreurs de suppression
         else:
             os.makedirs(output_dir, exist_ok=True)
         
@@ -194,9 +193,20 @@ class ChessVisionPipeline:
         if image is None:
             raise ValueError(f"Impossible de charger la photo capturée: {photo_path}")
         
-        # Passer le dossier de sortie (pas None) pour éviter que _process_image ne le nettoie à nouveau
+        # Traiter l'image
         result = self._process_image(image, save_outputs, output_dir)
         result['photo_path'] = photo_path
+        
+        # Remplacement atomique : si tout s'est bien passé ET qu'on utilise le mode 'latest'
+        if use_atomic_replace and result.get('success'):
+            try:
+                # Remplacement atomique du dossier 'latest' par 'latest.tmp'
+                # os.replace() est atomique sur Linux/Unix
+                os.replace(output_dir, latest_dir)
+                result['output_dir'] = latest_dir
+            except Exception as e:
+                result['atomic_replace_error'] = str(e)
+                # Pas grave, les données sont dans latest.tmp
         
         return result
     
@@ -225,20 +235,10 @@ class ChessVisionPipeline:
             if output_dir is None:
                 from .config import OUTPUT_DIR
                 import shutil
-                # Utiliser un dossier fixe 'latest' qui est écrasé à chaque fois
-                output_dir = os.path.join(OUTPUT_DIR, "latest")
-                # Créer le dossier s'il n'existe pas
+                # Mode standalone : utiliser un dossier temporaire
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                output_dir = os.path.join(OUTPUT_DIR, f"analysis_{timestamp}.tmp")
                 os.makedirs(output_dir, exist_ok=True)
-                # Nettoyer le contenu (mais garder le dossier pour éviter crash explorateur)
-                for item in os.listdir(output_dir):
-                    item_path = os.path.join(output_dir, item)
-                    try:
-                        if os.path.isfile(item_path):
-                            os.remove(item_path)
-                        elif os.path.isdir(item_path):
-                            shutil.rmtree(item_path)
-                    except Exception:
-                        pass  # Ignorer les erreurs de suppression
             else:
                 os.makedirs(output_dir, exist_ok=True)
             result['output_dir'] = output_dir
