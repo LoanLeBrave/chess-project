@@ -193,9 +193,6 @@ function CarouselPrevious({
       )}
       disabled={!canScrollPrev}
       onClick={scrollPrev}
-      role="button"
-      tabIndex={0}
-      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') scrollPrev(); }}
       {...props}
     >
       <ArrowLeft />
@@ -226,9 +223,6 @@ function CarouselNext({
       )}
       disabled={!canScrollNext}
       onClick={scrollNext}
-      role="button"
-      tabIndex={0}
-      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') scrollNext(); }}
       {...props}
     >
       <ArrowRight />

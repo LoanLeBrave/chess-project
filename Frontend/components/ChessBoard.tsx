@@ -41,12 +41,11 @@ function fenToBoard(fen: string): BoardState {
     const rank = 8 - rowIndex;
     let fileIndex = 0;
     for (const char of row) {
-        const parsed = Number.parseInt(char, 10);
-        if (Number.isNaN(parsed)) {
+      if (isNaN(parseInt(char))) {
         board[`${files[fileIndex]}${rank}`] = char as PieceType;
         fileIndex++;
       } else {
-          fileIndex += parsed;
+        fileIndex += parseInt(char);
       }
     }
   });
@@ -121,55 +120,45 @@ export function ChessBoard({
     }
     setIsLoadingBestMove(false);
   };
-  const selectSquare = async (square: string) => {
-    setSelectedSquare(square);
-    if (showHelpOnClick) {
-      const moves = await getLegalMoves(square);
-      setLegalMoves(moves);
-    }
-  };
-
-  const clearSelection = () => {
-    setSelectedSquare(null);
-    setLegalMoves([]);
-  };
-
-  const attemptMove = async (from: string, to: string) => {
-    const success = await onMove(from, to);
-    if (success) {
-      setLastMove({ from, to });
-      setBestMove(null);
-      setShowAllMoves(false);
-      setAllWhiteMoves({});
-    }
-    clearSelection();
-  };
 
   const handleSquareClick = async (square: string) => {
     if (isGameOver || robotStatus !== 'idle' || !isWhiteTurn) return;
+
     const piece = board[square];
 
     if (selectedSquare === null) {
-      if (piece && ['K', 'Q', 'R', 'B', 'N', 'P'].includes(piece)) await selectSquare(square);
-      return;
+      if (piece && ['K', 'Q', 'R', 'B', 'N', 'P'].includes(piece)) {
+        setSelectedSquare(square);
+        if (showHelpOnClick) {
+          const moves = await getLegalMoves(square);
+          setLegalMoves(moves);
+        }
+      }
+    } else {
+      if (square === selectedSquare) {
+        setSelectedSquare(null);
+        setLegalMoves([]);
+      } else if (legalMoves.includes(square) || !showHelpOnClick) {
+        const success = await onMove(selectedSquare, square);
+        if (success) {
+          setLastMove({ from: selectedSquare, to: square });
+          setBestMove(null);
+          setShowAllMoves(false);
+          setAllWhiteMoves({});
+        }
+        setSelectedSquare(null);
+        setLegalMoves([]);
+      } else if (piece && ['K', 'Q', 'R', 'B', 'N', 'P'].includes(piece)) {
+        setSelectedSquare(square);
+        if (showHelpOnClick) {
+          const moves = await getLegalMoves(square);
+          setLegalMoves(moves);
+        }
+      } else {
+        setSelectedSquare(null);
+        setLegalMoves([]);
+      }
     }
-
-    if (square === selectedSquare) {
-      clearSelection();
-      return;
-    }
-
-    if (legalMoves.includes(square) || !showHelpOnClick) {
-      await attemptMove(selectedSquare, square);
-      return;
-    }
-
-    if (piece && ['K', 'Q', 'R', 'B', 'N', 'P'].includes(piece)) {
-      await selectSquare(square);
-      return;
-    }
-
-    clearSelection();
   };
 
   const isLightSquare = (file: string, rank: string) => (files.indexOf(file) + ranks.indexOf(rank)) % 2 === 0;
@@ -234,14 +223,12 @@ export function ChessBoard({
                 }
 
                 return (
-                  <button
+                  <div
                     key={square}
-                    type="button"
                     onClick={() => handleSquareClick(square)}
                     className={`w-16 h-16 flex items-center justify-center relative
                       ${canInteract ? 'cursor-pointer' : 'cursor-default'}
-                      transition-colors duration-100`
-                    }
+                      transition-colors duration-100`}
                     style={{ backgroundColor: bgColor }}
                   >
                     {/* Indicateur coup légal - point ou cercle */}
@@ -295,7 +282,7 @@ export function ChessBoard({
                         {file}
                       </span>
                     )}
-                  </button>
+                  </div>
                 );
               })
             )}
