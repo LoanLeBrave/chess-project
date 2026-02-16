@@ -182,7 +182,8 @@ def parse_command(user_input):
     Returns:
         ("move", from_sq, to_sq) ou ("photo",) ou ("quit",) ou ("invalid",)
     """
-    text = user_input.strip().lower()
+    # Nettoyer les caracteres non-ASCII (artefacts terminal)
+    text = ''.join(c for c in user_input if c.isascii()).strip().lower()
 
     if text in ('quit', 'q', 'exit'):
         return ("quit",)
@@ -249,7 +250,11 @@ async def main():
     # Boucle principale
     while True:
         try:
-            user_input = input("> ").strip()
+            # Lecture robuste : evite les UnicodeDecodeError sur Raspberry Pi
+            sys.stdout.write("> ")
+            sys.stdout.flush()
+            raw = sys.stdin.buffer.readline()
+            user_input = raw.decode('utf-8', errors='ignore').strip()
         except (KeyboardInterrupt, EOFError):
             print("\nArret.")
             break
