@@ -40,6 +40,7 @@ def main():
                 if not os.path.exists(JSON_FILE):
                     missing += 1
                     status = "❌ MANQUANT"
+                    info = ""
                 else:
                     with open(JSON_FILE, 'r') as f:
                         data = json.load(f)
@@ -47,23 +48,29 @@ def main():
                     # Vérifier structure minimale
                     if 'board_state' not in data and 'pieces' not in data:
                         status = "⚠️  JSON INCOMPLET"
+                        info = ""
                         errors += 1
                     else:
-                        status = "✅ OK"
+                        status = "✅"
+                        # Compter les pièces sur le plateau
+                        board = data.get('board_state', {})
+                        occupied = {k: v for k, v in board.items() if v}
+                        info = f"| {len(occupied)} pièces sur le plateau"
             except json.JSONDecodeError:
                 errors += 1
                 status = "❌ JSON CORROMPU"
+                info = ""
             except FileNotFoundError:
                 missing += 1
                 status = "❌ DISPARU EN COURS DE LECTURE"
+                info = ""
             except Exception as e:
                 errors += 1
                 status = f"❌ {type(e).__name__}: {e}"
+                info = ""
 
-            # Afficher toutes les 20 lectures
-            if reads % 20 == 0 or "❌" in status or "⚠️" in status:
-                ts = time.strftime("%H:%M:%S")
-                print(f"[{ts}] #{reads:>6d} | {status} | ok={success} err={errors} miss={missing}")
+            ts = time.strftime("%H:%M:%S")
+            print(f"[{ts}] #{reads:>6d} {status} {info} (ok={success} err={errors} miss={missing})")
 
             time.sleep(0.05)  # 50ms = 20 lectures/sec
 
