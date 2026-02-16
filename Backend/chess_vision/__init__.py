@@ -157,7 +157,7 @@ class ChessVisionPipeline:
         
         Args:
             save_outputs: Sauvegarder les images et JSONs intermédiaires
-            output_dir: Dossier de sortie (si None, utilise 'latest' avec remplacement atomique)
+            output_dir: Dossier de sortie (si None, utilise 'latest' avec remplacement atomique via symlink)
             
         Returns:
             Dict avec tous les résultats de l'analyse
@@ -170,20 +170,45 @@ class ChessVisionPipeline:
         
         # Flag pour savoir si on doit faire le remplacement atomique
         use_atomic_replace = False
-        latest_dir = None
+        latest_symlink = None
         
-        # Si output_dir est None, utiliser le dossier temporaire 'latest.tmp'
+        # Si output_dir est None, utiliser le système de symlink avec ping-pong data_1/data_2
         if output_dir is None:
             use_atomic_replace = True
-            latest_dir = os.path.join(OUTPUT_DIR, "latest")
-            output_dir = os.path.join(OUTPUT_DIR, "latest.tmp")
+            latest_symlink = os.path.join(OUTPUT_DIR, "latest")
             
-            # Nettoyer le dossier temporaire s'il existe déjà
+            # Déterminer quel dossier data utiliser (ping-pong entre data_1 et data_2)
+            data_1 = os.path.join(OUTPUT_DIR, "data_1")
+            data_2 = os.path.join(OUTPUT_DIR, "data_2")
+            
+            # Si latest est un symlink, voir vers quoi il pointe
+            if os.path.islink(latest_symlink):
+                current_target = os.readlink(latest_symlink)
+                # Utiliser l'autre dossier
+                if "data_1" in current_target:
+                    output_dir = data_2
+                    old_data_dir = data_1
+                else:
+                    output_dir = data_1
+                    old_data_dir = data_2
+            else:
+                # Première fois : utiliser data_1
+                output_dir = data_1
+                old_data_dir = data_2
+                # Si latest existe mais n'est pas un symlink, le supprimer
+                if os.path.exists(latest_symlink):
+                    if os.path.isdir(latest_symlink):
+                        shutil.rmtree(latest_symlink)
+                    else:
+                        os.remove(latest_symlink)
+            
+            # Nettoyer le dossier de destination
             if os.path.exists(output_dir):
                 shutil.rmtree(output_dir)
             os.makedirs(output_dir, exist_ok=True)
         else:
             os.makedirs(output_dir, exist_ok=True)
+            old_data_dir = None
         
         # Capturer la photo directement dans le dossier de sortie
         photo_path = take_photo(output_dir=output_dir, filename="0_captured_photo.jpg")
@@ -197,34 +222,33 @@ class ChessVisionPipeline:
         result = self._process_image(image, save_outputs, output_dir)
         result['photo_path'] = photo_path
         
-        # Remplacement atomique : si tout s'est bien passé ET qu'on utilise le mode 'latest'
+        # Remplacement atomique via symlink : si tout s'est bien passé
         if use_atomic_replace and result.get('success'):
             try:
-                # Pour garantir l'atomicité avec des dossiers :
-                # 1. Renommer latest en latest.old (si existe)
-                # 2. Renommer latest.tmp en latest (atomique)
-                # 3. Supprimer latest.old
+                # Créer un nouveau symlink temporaire pointant vers le nouveau dossier data
+                latest_new = os.path.join(OUTPUT_DIR, "latest.new")
                 
-                latest_old = os.path.join(OUTPUT_DIR, "latest.old")
+                # Supprimer latest.new s'il existe
+                if os.path.exists(latest_new):
+                    os.remove(latest_new)
                 
-                # Étape 1 : Sauvegarder l'ancien latest
-                if os.path.exists(latest_dir):
-                    # Supprimer latest.old s'il existe déjà
-                    if os.path.exists(latest_old):
-                        shutil.rmtree(latest_old)
-                    os.rename(latest_dir, latest_old)
+                # Créer le symlink latest.new → data_X (chemin absolu)
+                os.symlink(os.path.abspath(output_dir), latest_new)
                 
-                # Étape 2 : Renommer latest.tmp en latest (atomique)
-                os.rename(output_dir, latest_dir)
-                result['output_dir'] = latest_dir
+                # Remplacement ATOMIQUE du symlink (os.replace sur symlink = atomique)
+                os.replace(latest_new, latest_symlink)
                 
-                # Étape 3 : Nettoyer latest.old (non-bloquant)
-                if os.path.exists(latest_old):
-                    shutil.rmtree(latest_old)
+                # Mettre à jour le résultat pour pointer vers latest (symlink)
+                result['output_dir'] = latest_symlink
+                
+                # NE PAS supprimer l'ancien dossier data ici.
+                # Il sera écrasé au prochain cycle (shutil.rmtree au début).
+                # Garder les 2 dossiers permet à l'explorateur de fichiers
+                # et aux lecteurs externes de ne pas perdre leur référence.
                     
             except Exception as e:
                 result['atomic_replace_error'] = str(e)
-                # Pas grave, les données sont dans latest.tmp
+                # Pas grave, les données sont dans data_X
         
         return result
     
