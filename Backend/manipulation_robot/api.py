@@ -296,6 +296,16 @@ class VisionService:
                 if base_code.startswith("B") and cam_code == code_from:
                     return {"from": sq_from, "to": sq_to, "type": "capture"}
 
+        # Cas special : piece blanche apparait sans disparition correspondante
+        # (la camera ne voyait pas le pion a l'origine dans le baseline)
+        # On retourne la destination pour que _check_vision_move puisse
+        # chercher dans les coups legaux de Stockfish
+        white_appeared = {sq: code for sq, code in appeared.items() if code.startswith("W")}
+        if len(white_appeared) == 1 and not disappeared:
+            sq_to = list(white_appeared.keys())[0]
+            return {"from": None, "to": sq_to, "type": "appeared_only",
+                    "appeared": white_appeared}
+
         # Rien de clair
         return {"from": None, "to": None, "type": "unclear",
                 "disappeared": disappeared, "appeared": appeared, "changed": changed}
@@ -491,14 +501,31 @@ async def _check_vision_move():
 
     if delta["type"] == "unclear":
         print(f"[Vision] Delta unclear, on attend: {delta}")
-        return  # Pas assez clair, on attend
+        return
 
     from_sq = delta.get("from")
     to_sq = delta.get("to")
+
+    # Cas "appeared_only" : la camera voit une piece arriver mais pas
+    # le depart (baseline incomplete). On cherche dans les coups legaux
+    # de Stockfish celui qui arrive sur cette case.
+    if delta["type"] == "appeared_only" and to_sq and not from_sq:
+        found_move = None
+        for legal_move in manager.chess.board.legal_moves:
+            if chess.square_name(legal_move.to_square) == to_sq:
+                found_move = legal_move
+                break
+        if found_move:
+            from_sq = chess.square_name(found_move.from_square)
+            print(f"[Vision] appeared_only: deduit {from_sq} -> {to_sq} via coups legaux")
+        else:
+            print(f"[Vision] appeared_only: aucun coup legal vers {to_sq}")
+            return
+
     if not from_sq or not to_sq:
         return
 
-    # Verifier la legalite
+    # Verifier la legalite (avec promotion)
     legal = False
     for suffix in ["", "q", "r", "b", "n"]:
         try:
@@ -524,17 +551,16 @@ async def _check_vision_move():
                     r_from = robot_resp.get("from")
                     r_to = robot_resp.get("to")
                     if r_from and r_to:
-                        # Detecter si le robot a capture une piece blanche
                         r_capture = manager.vision.reference_board and r_to in manager.vision.reference_board
                         manager.vision.update_reference_after_move(r_from, r_to, r_capture)
 
                 # Vider les buffers pour repartir clean
                 manager.vision._buffers.clear()
 
-                # Attendre un peu que les pieces se stabilisent physiquement,
+                # Attendre que les pieces se stabilisent physiquement,
                 # puis prendre un nouveau snapshot camera comme baseline
                 await asyncio.sleep(1.0)
-                manager.vision.update()  # une capture fraiche
+                manager.vision.update()  # capture fraiche
                 if manager.vision.stable_board:
                     manager.vision.camera_baseline = dict(manager.vision.stable_board)
             else:
