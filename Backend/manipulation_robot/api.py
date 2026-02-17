@@ -361,29 +361,34 @@ async def calibrate_auto_level():
         return {"success": False, "error": str(e)}
 
 
-@app.post("/robot/calibrate/move-z")
-async def calibrate_move_z(data: dict):
-    """Deplace le robot en Z (monter/descendre) pour la calibration"""
+@app.post("/robot/calibrate/move-z/start")
+async def calibrate_move_z_start(data: dict):
+    """Demarre un mouvement continu en Z (appel au keydown)"""
     if not manager.robot.connected or not manager.robot.rtde_c:
         return {"success": False, "error": "Robot non connecte"}
 
     direction = data.get("direction", "down")
     velocity = 0.01  # 1 cm/s - vitesse lente pour precision
-    duration = 0.3   # Mouvement de 0.3 seconde par clic
 
     try:
         vel_z = velocity if direction == "up" else -velocity
-        manager.robot.rtde_c.speedL([0, 0, vel_z, 0, 0, 0], 0.5, duration)
-        # Attendre la fin du mouvement
-        time.sleep(duration + 0.1)
-        manager.robot.rtde_c.speedStop()
+        # Duree longue (10s) - sera interrompu par stop
+        manager.robot.rtde_c.speedL([0, 0, vel_z, 0, 0, 0], 0.5, 10.0)
+        return {"success": True, "direction": direction}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
 
+
+@app.post("/robot/calibrate/move-z/stop")
+async def calibrate_move_z_stop():
+    """Arrete immediatement le mouvement Z (appel au keyup)"""
+    if not manager.robot.connected or not manager.robot.rtde_c:
+        return {"success": False, "error": "Robot non connecte"}
+
+    try:
+        manager.robot.rtde_c.speedStop()
         pose = manager.robot.rtde_r.getActualTCPPose()
-        return {
-            "success": True,
-            "z": round(pose[2], 4),
-            "direction": direction
-        }
+        return {"success": True, "z": round(pose[2], 4)}
     except Exception as e:
         return {"success": False, "error": str(e)}
 

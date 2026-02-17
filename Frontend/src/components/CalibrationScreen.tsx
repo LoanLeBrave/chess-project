@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { Lock, Unlock, CheckCircle, MoveVertical, Hand, ArrowLeft, ChevronUp, ChevronDown, SkipForward, AlignVerticalSpaceAround, Camera } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { CameraCalibrationScreen } from './CameraCalibrationScreen';
@@ -114,21 +114,74 @@ export function CalibrationScreen({ onCalibrationComplete, onBack }: Calibration
     }, 500);
   };
 
-  const handleMoveUp = () => {
-    fetch(`${API_BASE}/robot/calibrate/move-z`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ direction: 'up' }),
-    }).catch(() => {});
-  };
+  // --- Mouvement Z fluide (start/stop) ---
+  const movingDirection = useRef<string | null>(null);
+  const [movingZ, setMovingZ] = useState<'up' | 'down' | null>(null);
 
-  const handleMoveDown = () => {
-    fetch(`${API_BASE}/robot/calibrate/move-z`, {
+  const startMoveZ = useCallback((direction: 'up' | 'down') => {
+    if (!isUnlocked || movingDirection.current === direction) return;
+    movingDirection.current = direction;
+    setMovingZ(direction);
+    fetch(`${API_BASE}/robot/calibrate/move-z/start`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ direction: 'down' }),
+      body: JSON.stringify({ direction }),
     }).catch(() => {});
-  };
+  }, [isUnlocked]);
+
+  const stopMoveZ = useCallback(() => {
+    if (!movingDirection.current) return;
+    movingDirection.current = null;
+    setMovingZ(null);
+    fetch(`${API_BASE}/robot/calibrate/move-z/stop`, {
+      method: 'POST',
+    }).catch(() => {});
+  }, []);
+
+  // Binding clavier global : W/ArrowUp = monter, S/ArrowDown = descendre
+  useEffect(() => {
+    if (!isUnlocked) return;
+
+    const onKeyDown = (e: KeyboardEvent) => {
+      // Ignorer si on est dans un input (PIN)
+      if ((e.target as HTMLElement)?.tagName === 'INPUT') return;
+      if (e.repeat) return; // Ignorer les repeat du OS
+
+      if (e.key === 'w' || e.key === 'W' || e.key === 'ArrowUp') {
+        e.preventDefault();
+        startMoveZ('up');
+      } else if (e.key === 's' || e.key === 'S' || e.key === 'ArrowDown') {
+        e.preventDefault();
+        startMoveZ('down');
+      }
+    };
+
+    const onKeyUp = (e: KeyboardEvent) => {
+      if (
+        e.key === 'w' || e.key === 'W' || e.key === 'ArrowUp' ||
+        e.key === 's' || e.key === 'S' || e.key === 'ArrowDown'
+      ) {
+        stopMoveZ();
+      }
+    };
+
+    // Securite : arreter si la fenetre perd le focus
+    const onBlur = () => stopMoveZ();
+
+    window.addEventListener('keydown', onKeyDown);
+    window.addEventListener('keyup', onKeyUp);
+    window.addEventListener('blur', onBlur);
+
+    return () => {
+      window.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener('keyup', onKeyUp);
+      window.removeEventListener('blur', onBlur);
+      // Arreter le mouvement au demontage
+      if (movingDirection.current) {
+        fetch(`${API_BASE}/robot/calibrate/move-z/stop`, { method: 'POST' }).catch(() => {});
+      }
+    };
+  }, [isUnlocked, startMoveZ, stopMoveZ]);
 
   const handleToggleFreedrive = async () => {
     const newState = !freedriveActive;
@@ -405,37 +458,50 @@ export function CalibrationScreen({ onCalibrationComplete, onBack }: Calibration
                 <div className="space-y-2">
                   {/* Move Up Button */}
                   <button
-                    onClick={handleMoveUp}
-                    className="w-full bg-slate-700/50 hover:bg-slate-600/50 border border-slate-600 hover:border-cyan-400
-                      text-white px-4 py-3 rounded-lg text-sm font-medium transition-all
-                      flex items-center justify-center gap-2 group"
+                    onMouseDown={() => startMoveZ('up')}
+                    onMouseUp={stopMoveZ}
+                    onMouseLeave={stopMoveZ}
+                    onTouchStart={() => startMoveZ('up')}
+                    onTouchEnd={stopMoveZ}
+                    className={`w-full border text-white px-4 py-3 rounded-lg text-sm font-medium transition-all
+                      flex items-center justify-center gap-2 group select-none
+                      ${movingZ === 'up'
+                        ? 'bg-cyan-500/20 border-cyan-400'
+                        : 'bg-slate-700/50 hover:bg-slate-600/50 border-slate-600 hover:border-cyan-400'
+                      }`}
                   >
-                    <div className="w-8 h-8 bg-cyan-500/20 group-hover:bg-cyan-500/30 rounded-lg flex items-center justify-center transition-all">
+                    <div className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all
+                      ${movingZ === 'up' ? 'bg-cyan-500/40' : 'bg-cyan-500/20 group-hover:bg-cyan-500/30'}`}>
                       <ChevronUp className="w-5 h-5 text-cyan-400" strokeWidth={2.5} />
                     </div>
-                    <span>Monter le robot</span>
+                    <span>Monter (W / ↑)</span>
                   </button>
 
                   {/* Move Down Button */}
                   <button
-                    onClick={handleMoveDown}
-                    className="w-full bg-slate-700/50 hover:bg-slate-600/50 border border-slate-600 hover:border-cyan-400
-                      text-white px-4 py-3 rounded-lg text-sm font-medium transition-all
-                      flex items-center justify-center gap-2 group"
+                    onMouseDown={() => startMoveZ('down')}
+                    onMouseUp={stopMoveZ}
+                    onMouseLeave={stopMoveZ}
+                    onTouchStart={() => startMoveZ('down')}
+                    onTouchEnd={stopMoveZ}
+                    className={`w-full border text-white px-4 py-3 rounded-lg text-sm font-medium transition-all
+                      flex items-center justify-center gap-2 group select-none
+                      ${movingZ === 'down'
+                        ? 'bg-cyan-500/20 border-cyan-400'
+                        : 'bg-slate-700/50 hover:bg-slate-600/50 border-slate-600 hover:border-cyan-400'
+                      }`}
                   >
-                    <div className="w-8 h-8 bg-cyan-500/20 group-hover:bg-cyan-500/30 rounded-lg flex items-center justify-center transition-all">
+                    <div className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all
+                      ${movingZ === 'down' ? 'bg-cyan-500/40' : 'bg-cyan-500/20 group-hover:bg-cyan-500/30'}`}>
                       <ChevronDown className="w-5 h-5 text-cyan-400" strokeWidth={2.5} />
                     </div>
-                    <span>Descendre le robot</span>
+                    <span>Descendre (S / ↓)</span>
                   </button>
                 </div>
 
                 <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg p-2.5 mt-3">
                   <p className="text-amber-400 text-xs font-medium">
-                    {calibrationStep === 'z'
-                      ? '⚠️ Descendez lentement la pince jusqu\'au contact avec le plateau'
-                      : '⚠️ Utilisez les boutons pour descendre la pince dans le trou de calibration'
-                    }
+                    Maintenez W/↑ ou S/↓ pour un mouvement continu, relacher pour arreter
                   </p>
                 </div>
               </div>
