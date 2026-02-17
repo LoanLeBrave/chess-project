@@ -49,7 +49,6 @@ def get_board_map(game_state: dict) -> dict:
         chess_pos = piece.get("position", {}).get("chess")
         if not chess_pos:
             continue
-        code = piece.get("code", "??")
         # Normaliser le code pour l'affichage : 1er char = couleur, 2e = type
         color_char = "W" if piece.get("color") == "white" else "B"
         type_char = piece.get("type", "Pawn")[0]  # P, K, Q, R, B, N

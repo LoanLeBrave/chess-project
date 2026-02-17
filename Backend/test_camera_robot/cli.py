@@ -4,15 +4,18 @@ Interface en ligne de commande (CLI).
 
 Gere la boucle interactive : lecture des commandes utilisateur,
 parsing, dispatch vers les bons modules.
+Rafraichissement automatique du plateau toutes les secondes.
 """
 
 import sys
+import asyncio
 from typing import Tuple
 
 from .config import SQUARE_PATTERN
 from .board_reader import read_game_state, get_board_map, find_piece_at, format_age, get_metadata
-from .board_display import print_board
+from .board_display import render_board
 from .robot_bridge import RobotBridge
+from .terminal_ui import TerminalUI
 
 
 # ---------------------------------------------------------------------------
@@ -68,14 +71,7 @@ def parse_command(user_input: str) -> Tuple:
 #  Affichage d'aide
 # ---------------------------------------------------------------------------
 
-HELP_TEXT = """
-Commandes disponibles :
-  e2 e4    Deplacer une piece (notation algebrique)
-  refresh  Relire le fichier game_state.json
-  status   Afficher les metadonnees (nombre de pieces, tour, etc.)
-  help     Afficher cette aide
-  quit     Quitter le programme
-"""
+# (L'aide est maintenant affichee via TerminalUI dans _show_help)
 
 
 # ---------------------------------------------------------------------------
@@ -84,117 +80,146 @@ Commandes disponibles :
 
 async def run(robot: RobotBridge) -> None:
     """
-    Boucle principale du CLI.
+    Boucle principale du CLI avec rafraichissement automatique.
 
-    Lit game_state.json, affiche le plateau, puis attend des commandes.
+    Lance deux tâches en parallèle :
+    - Rafraichissement automatique du plateau (1 Hz)
+    - Gestion des commandes utilisateur
     """
-    print()
-    print("=" * 56)
-    print("  TEST CAMERA - ROBOT")
-    print("=" * 56)
-    print(HELP_TEXT)
+    ui = TerminalUI()
+    ui.init_display()
 
-    # Premiere lecture
-    game_state = _refresh_and_display()
-    if game_state is None:
-        return
+    # État partagé
+    stop_event = asyncio.Event()
+    game_state = {"data": None}
 
-    # Boucle de commandes
-    while True:
-        try:
-            sys.stdout.write("> ")
-            sys.stdout.flush()
-            raw = sys.stdin.buffer.readline()
-            user_input = raw.decode("utf-8", errors="ignore").strip()
-        except (KeyboardInterrupt, EOFError):
-            print("\nArret.")
-            break
-
-        if not user_input:
-            continue
-
-        command = parse_command(user_input)
-
-        # -- Quit --------------------------------------------------------
-        if command[0] == "quit":
-            print("Arret du programme.")
-            break
-
-        # -- Refresh -----------------------------------------------------
-        elif command[0] == "refresh":
-            game_state = _refresh_and_display()
-
-        # -- Status ------------------------------------------------------
-        elif command[0] == "status":
-            if game_state:
-                _print_status(game_state)
-            else:
-                print("  Aucun etat charge. Tapez 'refresh'.")
-
-        # -- Help --------------------------------------------------------
-        elif command[0] == "help":
-            print(HELP_TEXT)
-
-        # -- Move --------------------------------------------------------
-        elif command[0] == "move":
-            _, from_sq, to_sq = command
-
-            if game_state is None:
-                print("  Aucun etat charge. Tapez 'refresh'.")
-                continue
-
-            piece = find_piece_at(game_state, from_sq)
-            if piece is None:
-                print(f"  Aucune piece detectee sur {from_sq}.")
-                continue
-
-            print(f"\n  Deplacement : {from_sq} -> {to_sq}")
+    # Tâche de rafraichissement automatique
+    async def auto_refresh():
+        """Met à jour l'affichage du plateau toutes les secondes."""
+        while not stop_event.is_set():
+            state = read_game_state()
+            if state:
+                game_state["data"] = state
+                board_map = get_board_map(state)
+                board_text = render_board(board_map)
+                
+                pieces_on_board = sum(1 for p in state.get("pieces", []) if p.get("zone") == "board")
+                freshness = format_age(state)
+                status = f"{pieces_on_board} pieces | {freshness}"
+                
+                ui.update_board(board_text, status)
+            
             try:
-                await robot.move_piece(piece, to_sq)
-            except Exception as exc:
-                print(f"  [!] Erreur mouvement : {exc}")
-                continue
+                await asyncio.wait_for(stop_event.wait(), timeout=1.0)
+            except asyncio.TimeoutError:
+                pass
 
-            # Relecture automatique apres mouvement
-            print("\n  Verification...")
-            game_state = _refresh_and_display()
+    # Tâche de gestion des commandes
+    async def input_handler():
+        """Gère les commandes utilisateur."""
+        loop = asyncio.get_event_loop()
+        
+        # Afficher le prompt initial
+        ui.position_input_line()
+        
+        while not stop_event.is_set():
+            try:
+                # Lecture non-bloquante de stdin
+                raw = await loop.run_in_executor(None, sys.stdin.buffer.readline)
+                user_input = raw.decode("utf-8", errors="ignore").strip()
+                
+                if not user_input:
+                    ui.position_input_line()
+                    continue
 
-        # -- Invalide ----------------------------------------------------
-        elif command[0] == "invalid":
-            print("  Commande invalide. Tapez 'help' pour la liste des commandes.")
+                command = parse_command(user_input)
+                
+                # -- Quit ------------------------------------------------
+                if command[0] == "quit":
+                    ui.write_message("Arret du programme...")
+                    stop_event.set()
+                    break
+                
+                # -- Refresh ---------------------------------------------
+                elif command[0] == "refresh":
+                    ui.write_message("Rafraichissement force...")
+                
+                # -- Status ----------------------------------------------
+                elif command[0] == "status":
+                    if game_state["data"]:
+                        _show_status(ui, game_state["data"])
+                    else:
+                        ui.write_message("Aucun etat charge.")
+                
+                # -- Help ------------------------------------------------
+                elif command[0] == "help":
+                    _show_help(ui)
+                
+                # -- Move ------------------------------------------------
+                elif command[0] == "move":
+                    await _handle_move(ui, robot, game_state, command)
+                
+                # -- Invalide --------------------------------------------
+                elif command[0] == "invalid":
+                    ui.write_message("Commande invalide. Tapez 'help'.")
+                
+                # Reafficher le prompt
+                ui.position_input_line()
+                
+            except (KeyboardInterrupt, EOFError):
+                stop_event.set()
+                break
+    
+    # Lancer les deux tâches en parallèle
+    try:
+        await asyncio.gather(
+            auto_refresh(),
+            input_handler()
+        )
+    finally:
+        ui.cleanup()
 
 
 # ---------------------------------------------------------------------------
-#  Helpers internes
+#  Handlers de commandes
 # ---------------------------------------------------------------------------
 
-def _refresh_and_display() -> dict | None:
-    """Lit game_state.json, affiche le plateau et retourne le game_state."""
-    game_state = read_game_state()
-    if game_state is None:
-        print("  [!] Impossible de lire game_state.json.")
-        print("      Verifiez que infinite_chess_vision.py tourne en parallele.")
-        return None
+async def _handle_move(ui: TerminalUI, robot: RobotBridge, game_state: dict, command: Tuple):
+    """Traite une command de mouvement."""
+    _, from_sq, to_sq = command
+    
+    state = game_state.get("data")
+    if state is None:
+        ui.write_message("Aucun etat charge.")
+        return
+    
+    piece = find_piece_at(state, from_sq)
+    if piece is None:
+        ui.write_message(f"Aucune piece sur {from_sq}.")
+        return
+    
+    ui.write_message(f"Mouvement : {from_sq} -> {to_sq}...")
+    
+    try:
+        await robot.move_piece(piece, to_sq)
+        ui.write_message(f"Mouvement {from_sq}->{to_sq} termine !")
+    except Exception as exc:
+        ui.write_message(f"Erreur : {exc}")
 
-    board_map = get_board_map(game_state)
-    pieces_on_board = sum(1 for p in game_state.get("pieces", []) if p.get("zone") == "board")
-    freshness = format_age(game_state)
 
-    print(f"  {pieces_on_board} pieces sur le plateau  |  {freshness}")
-    print_board(board_map)
+def _show_status(ui: TerminalUI, state: dict) -> None:
+    """Affiche les metadonnees (temporaire)."""
+    meta = get_metadata(state)
+    msg = (
+        f"Tour: {meta.get('turn', '?')} | "
+        f"Coup: {meta.get('move_count', '?')} | "
+        f"Plateau: {meta.get('on_board', '?')}/{meta.get('total_detected', '?')} | "
+        f"Cimetiere: {meta.get('in_cemetery', '?')}"
+    )
+    ui.write_message(msg)
 
-    return game_state
 
+def _show_help(ui: TerminalUI) -> None:
+    """Affiche l'aide (temporaire)."""
+    ui.write_message("e2e4=move | refresh | status | help | quit")
 
-def _print_status(game_state: dict) -> None:
-    """Affiche les metadonnees du game_state."""
-    meta = get_metadata(game_state)
-    print()
-    print(f"  Tour          : {meta.get('turn', '?')}")
-    print(f"  Coup n.       : {meta.get('move_count', '?')}")
-    print(f"  Pieces totales: {meta.get('total_detected', '?')}")
-    print(f"  Sur plateau   : {meta.get('on_board', '?')}")
-    print(f"  Eliminees     : {meta.get('in_cemetery', '?')}")
-    print(f"  Manquantes    : {meta.get('missing_count', '?')}")
-    print(f"  Fraicheur     : {format_age(game_state)}")
-    print()
