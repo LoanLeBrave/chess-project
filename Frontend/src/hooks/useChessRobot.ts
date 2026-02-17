@@ -11,6 +11,8 @@ export interface VisionState {
   board: { [square: string]: string };
   confidence: { [square: string]: number };
   pieces_count: number;
+  game_started: boolean;
+  reference_set: boolean;
 }
 
 export interface UseChessRobotReturn {
@@ -22,12 +24,14 @@ export interface UseChessRobotReturn {
   acplScore: number;
   moveEvaluations: MoveEvaluation[];
   visionState: VisionState | null;
+  visionGameStarted: boolean;
   setRobotStatus: (status: RobotStatus) => void;
   onMove: (from: string, to: string) => Promise<boolean>;
   getLegalMoves: (square: string) => Promise<string[]>;
   getBestMove: () => Promise<{ from: string; to: string } | null>;
   resetGame: () => void;
   initGame: (difficulty: string) => Promise<void>;
+  confirmPlacement: (useCamera: boolean) => Promise<boolean>;
 }
 
 const API_BASE = `http://${window.location.hostname}:8000`;
@@ -79,6 +83,7 @@ export function useChessRobot(
   const [moveEvaluations, setMoveEvaluations] = useState<MoveEvaluation[]>([]);
   const [acplScore, setAcplScore] = useState(0);
   const [visionState, setVisionState] = useState<VisionState | null>(null);
+  const [visionGameStarted, setVisionGameStarted] = useState(false);
   const wsRef = useRef<WebSocket | null>(null);
 
   // --- WebSocket ---
@@ -157,7 +162,14 @@ export function useChessRobot(
               board: msg.board || {},
               confidence: msg.confidence || {},
               pieces_count: msg.pieces_count || 0,
+              game_started: msg.game_started || false,
+              reference_set: msg.reference_set || false,
             });
+          }
+
+          if (msg.type === 'vision_game_started') {
+            setVisionGameStarted(true);
+            addLog('info', `Placement confirme (${msg.source}, ${msg.pieces_count} pieces)`);
           }
 
           if (msg.type === 'vision_anomaly') {
@@ -330,6 +342,26 @@ export function useChessRobot(
     }
   }, []);
 
+  // --- Confirm placement ---
+  const confirmPlacement = useCallback(async (useCamera: boolean): Promise<boolean> => {
+    try {
+      const res = await fetch(`${API_BASE}/vision/confirm-placement`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ use_camera: useCamera }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setVisionGameStarted(true);
+        return true;
+      }
+      return false;
+    } catch {
+      addLog('error', 'Erreur confirmation placement');
+      return false;
+    }
+  }, [addLog]);
+
   // --- Reset game ---
   const resetGame = useCallback(() => {
     setFen(INITIAL_FEN);
@@ -339,6 +371,7 @@ export function useChessRobot(
     setRobotStatus('idle');
     setMoveEvaluations([]);
     setAcplScore(0);
+    setVisionGameStarted(false);
     addLog('info', 'Partie reinitialisee');
   }, [addLog]);
 
@@ -351,11 +384,13 @@ export function useChessRobot(
     acplScore,
     moveEvaluations,
     visionState,
+    visionGameStarted,
     setRobotStatus,
     onMove,
     getLegalMoves,
     getBestMove,
     resetGame,
     initGame,
+    confirmPlacement,
   };
 }

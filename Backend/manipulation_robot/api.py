@@ -60,43 +60,37 @@ GAME_STATE_PATH = os.path.join(_BACKEND_DIR, "chess_vision", "output", "latest",
 
 class VisionService:
     """
-    Appelle chess_vision() en continu et maintient un etat stabilise
-    avec buffer temporel anti-hallucination.
+    Appelle chess_vision() en continu et maintient un etat stabilise.
 
-    Deux modes de fonctionnement :
-    - Mode actif : appelle chess_vision() directement (capture + analyse)
-    - Mode passif : lit game_state.json si deja produit par un script externe
+    Systeme delta-based :
+    - On confirme la position initiale (ou on la simule)
+    - Ensuite on observe les CHANGEMENTS par rapport a la reference
+    - Buffer reduit (3 frames) pour detection rapide (~3-4s)
     """
 
-    BUFFER_SIZE = 5          # Nombre de frames dans le buffer
-    STABLE_THRESHOLD = 3     # Minimum de detections pour considerer stable
-    DISAPPEAR_THRESHOLD = 5  # Toutes les frames sans piece = disparue
+    BUFFER_SIZE = 3          # Frames dans le buffer (reduit pour vitesse)
+    STABLE_THRESHOLD = 2     # 2/3 pour considerer stable
+    DISAPPEAR_THRESHOLD = 3  # 3/3 absent = disparu
 
     def __init__(self):
-        # Buffer par case : deque de N derniers etats (piece_code ou None)
         self._buffers: dict[str, deque] = {}
-        # Dernier etat brut
         self.raw_board: dict[str, str] = {}
-        # Etat stabilise
         self.stable_board: dict[str, str] = {}
-        # Confiance par case (0.0 - 1.0)
         self.confidence: dict[str, float] = {}
-        # Dernier game_state complet (pour coords precises)
         self.last_game_state: Optional[dict] = None
-        # Timestamp derniere lecture
         self.last_timestamp: Optional[str] = None
-        # Nombre de pieces detectees
         self.pieces_count: int = 0
-        # Flag actif
         self.running: bool = False
-        # Pipeline chess_vision (initialise au premier appel)
         self._pipeline = None
-        # Mode actif (appelle chess_vision) vs passif (lit JSON)
         self.active_mode: bool = True
-        # Erreur courante (pour debug)
         self.last_error: Optional[str] = None
-        # Detection automatique des coups humains via la camera
         self.vision_game_enabled: bool = True
+
+        # --- Systeme delta-based ---
+        # Board de reference : etat confirme a partir duquel on detecte les deltas
+        self.reference_board: Optional[dict[str, str]] = None
+        # True quand le placement a ete confirme et qu'on observe les mouvements
+        self.game_started: bool = False
 
     def _get_pipeline(self):
         """Initialise le pipeline chess_vision a la demande."""
@@ -132,7 +126,7 @@ class VisionService:
             return None
 
     def _read_game_state(self) -> Optional[dict]:
-        """Lit game_state.json de maniere safe (mode passif)."""
+        """Lit game_state.json (mode passif)."""
         if not os.path.exists(GAME_STATE_PATH):
             return None
         try:
@@ -169,13 +163,108 @@ class VisionService:
                 return piece
         return None
 
+    # ------------------------------------------------------------------
+    #  Confirmation du placement
+    # ------------------------------------------------------------------
+
+    def confirm_placement(self, use_camera: bool = True) -> dict:
+        """
+        Confirme que les pieces sont bien placees.
+
+        Args:
+            use_camera: True = prendre la camera comme reference,
+                        False = simuler la position initiale standard.
+        Returns:
+            dict avec le board de reference.
+        """
+        if use_camera and self.stable_board:
+            self.reference_board = dict(self.stable_board)
+        else:
+            # Position initiale standard
+            self.reference_board = {
+                "a1": "WR", "b1": "WN", "c1": "WB", "d1": "WQ",
+                "e1": "WK", "f1": "WB", "g1": "WN", "h1": "WR",
+                "a2": "WP", "b2": "WP", "c2": "WP", "d2": "WP",
+                "e2": "WP", "f2": "WP", "g2": "WP", "h2": "WP",
+                "a7": "BP", "b7": "BP", "c7": "BP", "d7": "BP",
+                "e7": "BP", "f7": "BP", "g7": "BP", "h7": "BP",
+                "a8": "BR", "b8": "BN", "c8": "BB", "d8": "BQ",
+                "e8": "BK", "f8": "BB", "g8": "BN", "h8": "BR",
+            }
+
+        self.game_started = True
+        # Vider les buffers pour repartir clean
+        self._buffers.clear()
+        return {"reference_board": self.reference_board, "source": "camera" if use_camera and self.stable_board else "simulated"}
+
+    def update_reference_after_move(self, from_sq: str, to_sq: str, is_capture: bool = False):
+        """Met a jour le board de reference apres un coup confirme."""
+        if self.reference_board is None:
+            return
+        piece = self.reference_board.pop(from_sq, None)
+        if piece:
+            if is_capture:
+                self.reference_board.pop(to_sq, None)
+            self.reference_board[to_sq] = piece
+
+    def detect_delta(self) -> Optional[dict]:
+        """
+        Compare l'etat camera stabilise avec le board de reference.
+        Retourne le coup detecte ou None.
+        """
+        if not self.reference_board or not self.stable_board:
+            return None
+
+        ref = self.reference_board
+        cam = self.stable_board
+
+        disappeared = {}  # case: code — piece reference absente dans camera
+        appeared = {}     # case: code — piece camera absente dans reference
+        changed = {}      # case: (ref_code, cam_code)
+
+        all_squares = set(list(ref.keys()) + list(cam.keys()))
+        for sq in all_squares:
+            r = ref.get(sq)
+            c = cam.get(sq)
+            if r and not c:
+                disappeared[sq] = r
+            elif c and not r:
+                appeared[sq] = c
+            elif r and c and r != c:
+                changed[sq] = (r, c)
+
+        if not disappeared and not appeared and not changed:
+            return None  # Aucun changement
+
+        # Coup simple : piece blanche disparait, apparait sur case vide
+        for sq_from, code_from in disappeared.items():
+            if not code_from.startswith("W"):
+                continue
+            for sq_to, code_to in appeared.items():
+                if code_from == code_to:
+                    return {"from": sq_from, "to": sq_to, "type": "move"}
+
+        # Capture : piece blanche disparait de A, case B passe de noire a blanche
+        for sq_from, code_from in disappeared.items():
+            if not code_from.startswith("W"):
+                continue
+            for sq_to, (ref_code, cam_code) in changed.items():
+                if ref_code.startswith("B") and cam_code == code_from:
+                    return {"from": sq_from, "to": sq_to, "type": "capture"}
+
+        # Rien de clair — retourner les deltas bruts pour debug
+        return {"from": None, "to": None, "type": "unclear",
+                "disappeared": disappeared, "appeared": appeared, "changed": changed}
+
+    # ------------------------------------------------------------------
+    #  Update principal
+    # ------------------------------------------------------------------
+
     def update(self) -> bool:
         """
-        Capture + analyse (mode actif) ou lit le JSON (mode passif).
-        Met a jour le buffer et calcule l'etat stabilise.
+        Capture + analyse, met a jour le buffer et l'etat stabilise.
         Retourne True si une mise a jour a eu lieu.
         """
-        # Mode actif : appeler chess_vision directement
         if self.active_mode:
             game_state = self._capture_and_analyze()
         else:
@@ -186,23 +275,20 @@ class VisionService:
 
         ts = game_state.get("metadata", {}).get("timestamp")
         if ts == self.last_timestamp:
-            return False  # Pas de nouvelle donnee
+            return False
 
         self.last_timestamp = ts
         self.last_game_state = game_state
         self.raw_board = self._get_board_map(game_state)
         self.pieces_count = len(self.raw_board)
 
-        # Toutes les cases possibles
         all_squares = [f"{c}{r}" for c in "abcdefgh" for r in "12345678"]
 
-        # Mettre a jour les buffers
         for sq in all_squares:
             if sq not in self._buffers:
                 self._buffers[sq] = deque(maxlen=self.BUFFER_SIZE)
             self._buffers[sq].append(self.raw_board.get(sq))
 
-        # Calculer l'etat stabilise et la confiance
         new_stable = {}
         new_confidence = {}
         for sq in all_squares:
@@ -210,12 +296,10 @@ class VisionService:
             if len(buf) == 0:
                 continue
 
-            # Compter les occurrences de chaque piece sur cette case
             counts: dict[Optional[str], int] = {}
             for val in buf:
                 counts[val] = counts.get(val, 0) + 1
 
-            # Piece la plus frequente
             best_piece = max(counts, key=counts.get)
             best_count = counts[best_piece]
 
@@ -223,13 +307,10 @@ class VisionService:
                 new_stable[sq] = best_piece
                 new_confidence[sq] = best_count / len(buf)
             elif best_piece is None and best_count >= self.DISAPPEAR_THRESHOLD:
-                # La piece a vraiment disparu
                 new_confidence[sq] = 0.0
             else:
-                # Pas assez stable — garder l'ancien etat stabilise si existant
                 if sq in self.stable_board:
                     new_stable[sq] = self.stable_board[sq]
-                    # Confiance degradee
                     none_count = counts.get(None, 0)
                     new_confidence[sq] = 1.0 - (none_count / len(buf))
 
@@ -246,6 +327,8 @@ class VisionService:
             "confidence": self.confidence,
             "timestamp": self.last_timestamp or datetime.now().isoformat(),
             "pieces_count": self.pieces_count,
+            "game_started": self.game_started,
+            "reference_set": self.reference_board is not None,
         }
 
 
@@ -317,7 +400,7 @@ manager = ApplicationManager()
 # ============================================================================
 
 async def vision_loop():
-    """Tache de fond : capture + analyse chess_vision, broadcast, detection de coups."""
+    """Tache de fond : capture + analyse, broadcast, detection delta des coups."""
     manager.vision.running = True
     mode = "actif (capture camera)" if manager.vision.active_mode else "passif (lecture JSON)"
     print(f"👁️ VisionService demarre en mode {mode}")
@@ -328,50 +411,84 @@ async def vision_loop():
             if updated and manager.websocket_clients:
                 await manager.broadcast(manager.vision.get_state_message())
 
-            # Detection automatique des coups humains via la camera
-            if updated and manager.vision.vision_game_enabled and manager.status == "idle":
+            # Detection automatique des coups via delta
+            if (updated
+                    and manager.vision.vision_game_enabled
+                    and manager.vision.game_started
+                    and manager.status == "idle"):
                 await _check_vision_move()
 
         except Exception as e:
             print(f"[VisionService] Erreur: {e}")
-        # En mode actif, chess_vision() prend ~2s, donc pas besoin de sleep long
-        await asyncio.sleep(0.5 if manager.vision.active_mode else 1.0)
+        # Reduit pour vitesse : 0.3s en actif, 0.5s en passif
+        await asyncio.sleep(0.3 if manager.vision.active_mode else 0.5)
 
 
 _vision_move_lock = False
 
 
 async def _check_vision_move():
-    """Verifie si la camera a detecte un coup humain et le joue."""
+    """Detecte un coup humain par delta avec le board de reference."""
     global _vision_move_lock
     if _vision_move_lock:
-        return  # Un coup est deja en cours de traitement
+        return
 
     # Seulement quand c'est le tour des blancs (joueur humain)
     if manager.chess.board.turn != chess.WHITE:
         return
 
-    sync = manager.chess.sync_with_vision(manager.vision.stable_board)
+    delta = manager.vision.detect_delta()
+    if delta is None:
+        return  # Aucun changement
 
-    # Un coup legal a ete detecte
-    detected = sync.get("detected_move")
-    if detected and detected.get("legal"):
+    if delta["type"] == "unclear":
+        return  # Pas assez clair, on attend
+
+    from_sq = delta.get("from")
+    to_sq = delta.get("to")
+    if not from_sq or not to_sq:
+        return
+
+    # Verifier la legalite
+    legal = False
+    for suffix in ["", "q", "r", "b", "n"]:
+        try:
+            move = chess.Move.from_uci(f"{from_sq}{to_sq}{suffix}")
+            if move in manager.chess.board.legal_moves:
+                legal = True
+                break
+        except ValueError:
+            continue
+
+    if legal:
         _vision_move_lock = True
         try:
-            from_sq = detected["from"]
-            to_sq = detected["to"]
-            await manager.log("info", f"Coup detecte par la camera: {from_sq} -> {to_sq}")
+            is_capture = delta["type"] == "capture"
+            await manager.log("info", f"Coup detecte: {from_sq} -> {to_sq}" + (" (capture)" if is_capture else ""))
             result = await manager.chess.play_vision_move(from_sq, to_sq)
-            if not result.get("success"):
-                await manager.log("warning", f"Echec du coup vision: {result.get('error')}")
+            if result.get("success"):
+                # Mettre a jour la reference apres le coup humain
+                manager.vision.update_reference_after_move(from_sq, to_sq, is_capture)
+                # Aussi mettre a jour apres le coup robot si il a joue
+                robot_resp = result.get("robot_response", {})
+                if robot_resp.get("success"):
+                    r_from = robot_resp.get("from")
+                    r_to = robot_resp.get("to")
+                    if r_from and r_to:
+                        # Detecter si le robot a capture
+                        r_capture = manager.vision.reference_board and r_to in manager.vision.reference_board
+                        manager.vision.update_reference_after_move(r_from, r_to, r_capture)
+                    # Vider les buffers pour repartir clean apres le coup robot
+                    manager.vision._buffers.clear()
+            else:
+                await manager.log("warning", f"Echec: {result.get('error')}")
         finally:
             _vision_move_lock = False
-    elif detected and not detected.get("legal"):
-        # Coup illegal detecte — alerter le frontend
+    else:
         await manager.broadcast({
             "type": "vision_anomaly",
-            "message": f"Coup illegal detecte: {detected['from']} -> {detected['to']}",
-            "suggestions": sync.get("suggestions", []),
+            "message": f"Coup illegal: {from_sq} -> {to_sq}",
+            "suggestions": [f"Verifiez le deplacement {from_sq} -> {to_sq}"],
         })
 
 
@@ -409,6 +526,31 @@ async def set_vision_game(data: dict):
     state = "activee" if enabled else "desactivee"
     await manager.log("info", f"Detection vision des coups {state}")
     return {"success": True, "vision_game_enabled": enabled}
+
+
+@app.post("/vision/confirm-placement")
+async def confirm_placement(data: dict = None):
+    """
+    Confirme que les pieces sont bien placees et demarre l'observation.
+
+    Body optionnel: {"use_camera": true/false}
+    - true (defaut) : utilise la camera comme reference (si elle voit les pieces)
+    - false : simule la position initiale standard (32 pieces)
+    """
+    use_camera = True
+    if data:
+        use_camera = data.get("use_camera", True)
+
+    result = manager.vision.confirm_placement(use_camera=use_camera)
+    source = result.get("source", "unknown")
+    piece_count = len(result.get("reference_board", {}))
+    await manager.log("info", f"Placement confirme ({source}, {piece_count} pieces)")
+    await manager.broadcast({
+        "type": "vision_game_started",
+        "source": source,
+        "pieces_count": piece_count,
+    })
+    return {"success": True, **result}
 
 
 @app.get("/vision/sync")

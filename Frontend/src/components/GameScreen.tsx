@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Eye, EyeOff } from 'lucide-react';
+import { Eye, EyeOff, Camera, CheckCircle } from 'lucide-react';
 import { ChessBoard } from './ChessBoard';
 import { ControlPanel } from './ControlPanel';
 import { MoveHistory } from './MoveHistory';
@@ -64,11 +64,13 @@ export function GameScreen({ difficulty, gameState, setGameState, onReturnToMenu
     robotStatus,
     acplScore,
     visionState,
+    visionGameStarted,
     onMove,
     getLegalMoves,
     getBestMove,
     resetGame,
     initGame,
+    confirmPlacement,
   } = useChessRobot(addLog, addMove);
 
   // Initialiser la partie via l'API au montage
@@ -235,14 +237,46 @@ export function GameScreen({ difficulty, gameState, setGameState, onReturnToMenu
               onNewGame={handleNewGame}
             />
 
-            {/* Player Turn Status + Vision Toggle */}
-            <div className="flex items-center gap-3">
+            {/* Player Turn Status + Vision Controls */}
+            <div className="flex items-center gap-2">
               <div className="flex-1">
                 <PlayerTurnStatus isPlayerTurn={isWhiteTurn} />
               </div>
+
+              {/* Boutons de confirmation du placement */}
+              {!visionGameStarted && (
+                <>
+                  <button
+                    onClick={() => confirmPlacement(true)}
+                    className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium bg-green-600 hover:bg-green-500 text-white transition-colors"
+                    title="La camera voit les pieces — utiliser comme reference"
+                  >
+                    <Camera className="w-4 h-4" />
+                    Confirmer (camera)
+                  </button>
+                  <button
+                    onClick={() => confirmPlacement(false)}
+                    className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium bg-amber-600 hover:bg-amber-500 text-white transition-colors"
+                    title="La camera ne voit pas tous les pions — simuler la position initiale"
+                  >
+                    <CheckCircle className="w-4 h-4" />
+                    Confirmer (manuel)
+                  </button>
+                </>
+              )}
+
+              {/* Indicateur partie vision active */}
+              {visionGameStarted && (
+                <div className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium bg-green-700/50 text-green-300 border border-green-600/50">
+                  <CheckCircle className="w-4 h-4" />
+                  Vision active
+                </div>
+              )}
+
+              {/* Toggle vision overlay */}
               <button
                 onClick={() => setShowVision(!showVision)}
-                className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
                   showVision
                     ? 'bg-cyan-600 text-white'
                     : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
@@ -250,9 +284,8 @@ export function GameScreen({ difficulty, gameState, setGameState, onReturnToMenu
                 title="Afficher/masquer la vision camera"
               >
                 {showVision ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
-                Vision
                 {showVision && visionState && (
-                  <span className="text-xs opacity-75">({visionState.pieces_count}p)</span>
+                  <span className="text-xs opacity-75">{visionState.pieces_count}p</span>
                 )}
               </button>
             </div>
