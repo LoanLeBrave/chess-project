@@ -375,8 +375,7 @@ export function CalibrationScreen({ onCalibrationComplete, onBack }: Calibration
               </div>
 
               {/* Z-Axis Controls */}
-              <div className={`bg-slate-800/50 backdrop-blur-sm rounded-xl p-4 border border-slate-700 transition-all
-                ${calibrationStep !== 'z' ? 'opacity-40 pointer-events-none' : ''}`}>
+              <div className="bg-slate-800/50 backdrop-blur-sm rounded-xl p-4 border border-slate-700 transition-all">
                 <h3 className="text-white font-semibold mb-3 flex items-center gap-2 text-sm">
                   <MoveVertical className="w-4 h-4 text-cyan-400" />
                   Contrôle Hauteur (Z)
@@ -386,10 +385,9 @@ export function CalibrationScreen({ onCalibrationComplete, onBack }: Calibration
                   {/* Move Up Button */}
                   <button
                     onClick={handleMoveUp}
-                    disabled={calibrationStep !== 'z'}
                     className="w-full bg-slate-700/50 hover:bg-slate-600/50 border border-slate-600 hover:border-cyan-400
                       text-white px-4 py-3 rounded-lg text-sm font-medium transition-all
-                      flex items-center justify-center gap-2 group disabled:opacity-50 disabled:cursor-not-allowed"
+                      flex items-center justify-center gap-2 group"
                   >
                     <div className="w-8 h-8 bg-cyan-500/20 group-hover:bg-cyan-500/30 rounded-lg flex items-center justify-center transition-all">
                       <ChevronUp className="w-5 h-5 text-cyan-400" strokeWidth={2.5} />
@@ -400,10 +398,9 @@ export function CalibrationScreen({ onCalibrationComplete, onBack }: Calibration
                   {/* Move Down Button */}
                   <button
                     onClick={handleMoveDown}
-                    disabled={calibrationStep !== 'z'}
                     className="w-full bg-slate-700/50 hover:bg-slate-600/50 border border-slate-600 hover:border-cyan-400
                       text-white px-4 py-3 rounded-lg text-sm font-medium transition-all
-                      flex items-center justify-center gap-2 group disabled:opacity-50 disabled:cursor-not-allowed"
+                      flex items-center justify-center gap-2 group"
                   >
                     <div className="w-8 h-8 bg-cyan-500/20 group-hover:bg-cyan-500/30 rounded-lg flex items-center justify-center transition-all">
                       <ChevronDown className="w-5 h-5 text-cyan-400" strokeWidth={2.5} />
@@ -414,9 +411,9 @@ export function CalibrationScreen({ onCalibrationComplete, onBack }: Calibration
 
                 <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg p-2.5 mt-3">
                   <p className="text-amber-400 text-xs font-medium">
-                    {calibrationStep === 'z' 
+                    {calibrationStep === 'z'
                       ? '⚠️ Descendez lentement la pince jusqu\'au contact avec le plateau'
-                      : '⚠️ Les contrôles Z seront disponibles à l\'étape 3'
+                      : '⚠️ Utilisez les boutons pour descendre la pince dans le trou de calibration'
                     }
                   </p>
                 </div>
