@@ -81,6 +81,7 @@ from .modules.game_state import (
 from .modules.camera import (
     take_photo,
     get_camera_mode,
+    PersistentCamera,
 )
 
 
@@ -469,6 +470,7 @@ __all__ = [
     # Camera
     'take_photo',
     'get_camera_mode',
+    'PersistentCamera',
     
     # Pipeline
     'ChessVisionPipeline',
