@@ -38,6 +38,28 @@ Le système utilise deux tâches asynchrones :
 
 ## Lancement
 
+### Méthode 1 : Script automatique (recommandé)
+
+```bash
+cd Backend/
+./start_test_camera_robot.sh
+```
+
+Ce script lance automatiquement :
+1. `infinite_chess_vision.py` en arrière-plan (mise à jour du JSON)
+2. `test_camera_robot` au premier plan (interface interactive)
+
+À l'arrêt (Ctrl+C ou `quit`), les deux processus sont terminés proprement.
+
+### Méthode 2 : Manuel (deux terminaux)
+
+Terminal 1 - Vision :
+```bash
+cd Backend/
+python3 -m chess_vision.infinite_chess_vision
+```
+
+Terminal 2 - Robot :
 ```bash
 cd Backend/
 python -m test_camera_robot
