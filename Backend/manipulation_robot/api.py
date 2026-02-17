@@ -87,9 +87,12 @@ class VisionService:
         self.vision_game_enabled: bool = True
 
         # --- Systeme delta-based ---
-        # Board de reference : etat confirme a partir duquel on detecte les deltas
+        # Board logique : position selon Stockfish (pour valider les coups)
         self.reference_board: Optional[dict[str, str]] = None
-        # True quand le placement a ete confirme et qu'on observe les mouvements
+        # Baseline camera : ce que la camera voyait au dernier etat confirme
+        # C'est CA qu'on compare avec stable_board pour detecter les deltas
+        self.camera_baseline: Optional[dict[str, str]] = None
+        # True quand le placement a ete confirme
         self.game_started: bool = False
 
     def _get_pipeline(self):
@@ -171,16 +174,18 @@ class VisionService:
         """
         Confirme que les pieces sont bien placees.
 
+        - reference_board = etat logique (pour Stockfish). Toujours 32 pieces.
+        - camera_baseline = ce que la camera voit MAINTENANT. Sert de base
+          pour la detection delta (on compare futur vs baseline).
+
         Args:
-            use_camera: True = prendre la camera comme reference,
-                        False = simuler la position initiale standard.
-        Returns:
-            dict avec le board de reference.
+            use_camera: True = reference logique = camera, False = position standard.
         """
+        # Reference logique
         if use_camera and self.stable_board:
             self.reference_board = dict(self.stable_board)
+            source = "camera"
         else:
-            # Position initiale standard
             self.reference_board = {
                 "a1": "WR", "b1": "WN", "c1": "WB", "d1": "WQ",
                 "e1": "WK", "f1": "WB", "g1": "WN", "h1": "WR",
@@ -191,52 +196,73 @@ class VisionService:
                 "a8": "BR", "b8": "BN", "c8": "BB", "d8": "BQ",
                 "e8": "BK", "f8": "BB", "g8": "BN", "h8": "BR",
             }
+            source = "simulated"
+
+        # Baseline camera = snapshot de ce que la camera voit MAINTENANT
+        # C'est toujours la camera, meme en mode simule.
+        # Comme ca, detect_delta compare "camera maintenant" vs "camera au moment de confirm"
+        self.camera_baseline = dict(self.stable_board) if self.stable_board else {}
 
         self.game_started = True
-        # Vider les buffers pour repartir clean
         self._buffers.clear()
-        return {"reference_board": self.reference_board, "source": "camera" if use_camera and self.stable_board else "simulated"}
+        return {
+            "reference_board": self.reference_board,
+            "camera_baseline_count": len(self.camera_baseline),
+            "source": source,
+        }
 
     def update_reference_after_move(self, from_sq: str, to_sq: str, is_capture: bool = False):
-        """Met a jour le board de reference apres un coup confirme."""
-        if self.reference_board is None:
-            return
-        piece = self.reference_board.pop(from_sq, None)
-        if piece:
-            if is_capture:
-                self.reference_board.pop(to_sq, None)
-            self.reference_board[to_sq] = piece
+        """Met a jour le board de reference ET la baseline camera apres un coup confirme."""
+        # 1. Mettre a jour le board logique (Stockfish)
+        if self.reference_board is not None:
+            piece = self.reference_board.pop(from_sq, None)
+            if piece:
+                if is_capture:
+                    self.reference_board.pop(to_sq, None)
+                self.reference_board[to_sq] = piece
+
+        # 2. Mettre a jour la baseline camera de la meme maniere
+        #    Comme ca, detect_delta() ne reverra pas ce coup comme un delta
+        if self.camera_baseline is not None:
+            cam_piece = self.camera_baseline.pop(from_sq, None)
+            if cam_piece:
+                if is_capture:
+                    self.camera_baseline.pop(to_sq, None)
+                self.camera_baseline[to_sq] = cam_piece
 
     def detect_delta(self) -> Optional[dict]:
         """
-        Compare l'etat camera stabilise avec le board de reference.
-        Retourne le coup detecte ou None.
+        Compare l'etat camera ACTUEL avec la BASELINE camera.
+
+        On ne compare PAS avec reference_board (logique/Stockfish) car
+        la camera peut ne pas voir toutes les pieces. On compare
+        "ce que la camera voit maintenant" vs "ce qu'elle voyait avant".
         """
-        if not self.reference_board or not self.stable_board:
+        if self.camera_baseline is None or not self.stable_board:
             return None
 
-        ref = self.reference_board
+        baseline = self.camera_baseline
         cam = self.stable_board
 
-        disappeared = {}  # case: code — piece reference absente dans camera
-        appeared = {}     # case: code — piece camera absente dans reference
-        changed = {}      # case: (ref_code, cam_code)
+        disappeared = {}  # case: code — visible dans baseline, disparu maintenant
+        appeared = {}     # case: code — absent dans baseline, visible maintenant
+        changed = {}      # case: (baseline_code, cam_code)
 
-        all_squares = set(list(ref.keys()) + list(cam.keys()))
+        all_squares = set(list(baseline.keys()) + list(cam.keys()))
         for sq in all_squares:
-            r = ref.get(sq)
+            b = baseline.get(sq)
             c = cam.get(sq)
-            if r and not c:
-                disappeared[sq] = r
-            elif c and not r:
+            if b and not c:
+                disappeared[sq] = b
+            elif c and not b:
                 appeared[sq] = c
-            elif r and c and r != c:
-                changed[sq] = (r, c)
+            elif b and c and b != c:
+                changed[sq] = (b, c)
 
         if not disappeared and not appeared and not changed:
             return None  # Aucun changement
 
-        # Coup simple : piece blanche disparait, apparait sur case vide
+        # Coup simple : piece blanche disparait, meme piece apparait ailleurs
         for sq_from, code_from in disappeared.items():
             if not code_from.startswith("W"):
                 continue
@@ -244,15 +270,15 @@ class VisionService:
                 if code_from == code_to:
                     return {"from": sq_from, "to": sq_to, "type": "move"}
 
-        # Capture : piece blanche disparait de A, case B passe de noire a blanche
+        # Capture : piece blanche disparait de A, case B change de noire a blanche
         for sq_from, code_from in disappeared.items():
             if not code_from.startswith("W"):
                 continue
-            for sq_to, (ref_code, cam_code) in changed.items():
-                if ref_code.startswith("B") and cam_code == code_from:
+            for sq_to, (base_code, cam_code) in changed.items():
+                if base_code.startswith("B") and cam_code == code_from:
                     return {"from": sq_from, "to": sq_to, "type": "capture"}
 
-        # Rien de clair — retourner les deltas bruts pour debug
+        # Rien de clair
         return {"from": None, "to": None, "type": "unclear",
                 "disappeared": disappeared, "appeared": appeared, "changed": changed}
 
@@ -475,11 +501,19 @@ async def _check_vision_move():
                     r_from = robot_resp.get("from")
                     r_to = robot_resp.get("to")
                     if r_from and r_to:
-                        # Detecter si le robot a capture
+                        # Detecter si le robot a capture une piece blanche
                         r_capture = manager.vision.reference_board and r_to in manager.vision.reference_board
                         manager.vision.update_reference_after_move(r_from, r_to, r_capture)
-                    # Vider les buffers pour repartir clean apres le coup robot
-                    manager.vision._buffers.clear()
+
+                # Vider les buffers pour repartir clean
+                manager.vision._buffers.clear()
+
+                # Attendre un peu que les pieces se stabilisent physiquement,
+                # puis prendre un nouveau snapshot camera comme baseline
+                await asyncio.sleep(1.0)
+                manager.vision.update()  # une capture fraiche
+                if manager.vision.stable_board:
+                    manager.vision.camera_baseline = dict(manager.vision.stable_board)
             else:
                 await manager.log("warning", f"Echec: {result.get('error')}")
         finally:
