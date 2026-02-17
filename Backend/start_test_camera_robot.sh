@@ -21,17 +21,19 @@ if [ ! -f "$VISION_SCRIPT" ]; then
     exit 1
 fi
 
+# Verifier que game_state.json existe (sinon infinite_chess_vision doit tourner)
+GAME_STATE="$BACKEND_DIR/chess_vision/output/latest/game_state.json"
+
 echo "[1/2] Lancement de infinite_chess_vision en arriere-plan..."
 python3 "$VISION_SCRIPT" > /dev/null 2>&1 &
 VISION_PID=$!
 echo "      PID: $VISION_PID"
 
-# Attendre que game_state.json soit cree dans output/latest/
-GAME_STATE="$BACKEND_DIR/chess_vision/output/latest/game_state.json"
-echo "      Attente de la creation de $GAME_STATE..."
+# Attendre que game_state.json soit cree
+echo "      Attente de la creation de game_state.json..."
 for i in {1..10}; do
-    if [ -f "$GAME_STATE" ] || [ -L "$BACKEND_DIR/chess_vision/output/latest" ]; then
-        echo "      OK - game_state.json detecte (symlink latest)"
+    if [ -f "$GAME_STATE" ]; then
+        echo "      OK - game_state.json detecte"
         break
     fi
     sleep 1

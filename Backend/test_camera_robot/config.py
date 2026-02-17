@@ -18,8 +18,7 @@ import chess
 _BACKEND_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PROJECT_ROOT = os.path.dirname(_BACKEND_DIR)
 
-# Fichier produit par infinite_chess_vision.py
-# Utilise le symlink 'latest' qui pointe vers data_1 ou data_2 en ping-pong
+# Fichier produit par infinite_chess_vision.py dans output/latest/
 GAME_STATE_PATH = os.path.join(_BACKEND_DIR, "chess_vision", "output", "latest", "game_state.json")
 
 # Repertoire manipulation_robot (pour calibration, config)
