@@ -245,11 +245,21 @@ class BoardResetManager:
         best_pair = None
 
         for target in targets:
-            tx, ty = self._square_center_cam(target)
             for piece in pieces:
-                px = piece["position"]["board"]["x"]
-                py = piece["position"]["board"]["y"]
-                d = (px - tx) ** 2 + (py - ty) ** 2
+                # Utiliser la case chess de la vision plutot que calculer
+                current_sq = piece.get("position", {}).get("chess", "").lower()
+                if not current_sq or len(current_sq) != 2:
+                    # Piece sans position valide (ex: au cimetiere)
+                    # Utiliser une distance tres elevee
+                    d = 1000.0
+                else:
+                    # Distance en cases (Manhattan)
+                    file_curr = chess.FILE_NAMES.index(current_sq[0])
+                    rank_curr = int(current_sq[1]) - 1
+                    file_tgt = chess.FILE_NAMES.index(target[0])
+                    rank_tgt = int(target[1]) - 1
+                    d = abs(file_curr - file_tgt) + abs(rank_curr - rank_tgt)
+                
                 if d < best_dist:
                     best_dist = d
                     best_pair = (piece, target)
@@ -466,10 +476,12 @@ class BoardResetManager:
     def _update_blocker_source(self, move: dict, new_square: str) -> None:
         """Met a jour la source et les coordonnees d'un mouvement redirige."""
         move["from_square"] = new_square
-        cx, cy = self._square_center_cam(new_square)
+        # Mettre a jour avec les coordonnees du centre de la case (robot calibre)
+        cx, cy = self.robot.get_square_center(new_square)
         move["piece"] = dict(move["piece"])
         move["piece"]["position"] = dict(move["piece"]["position"])
         move["piece"]["position"]["board"] = {"x": cx, "y": cy}
+        move["piece"]["position"]["chess"] = new_square
 
     def _find_piece_at_square(
         self, square: str, pending: List[dict]
