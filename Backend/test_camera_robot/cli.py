@@ -30,6 +30,7 @@ def parse_command(user_input: str) -> Tuple:
         ("quit",)
         ("refresh",)
         ("status",)
+        ("debug",)
         ("move", from_sq, to_sq)
         ("help",)
         ("invalid",)
@@ -48,6 +49,9 @@ def parse_command(user_input: str) -> Tuple:
 
     if text in ("status", "s", "info"):
         return ("status",)
+
+    if text in ("debug", "d"):
+        return ("debug",)
 
     if text in ("help", "h", "?"):
         return ("help",)
@@ -151,6 +155,10 @@ async def run(robot: RobotBridge) -> None:
                     else:
                         ui.write_message("Aucun etat charge.")
                 
+                # -- Debug -----------------------------------------------
+                elif command[0] == "debug":
+                    await _show_debug(ui, stop_event)
+                
                 # -- Help ------------------------------------------------
                 elif command[0] == "help":
                     _show_help(ui)
@@ -221,5 +229,28 @@ def _show_status(ui: TerminalUI, state: dict) -> None:
 
 def _show_help(ui: TerminalUI) -> None:
     """Affiche l'aide (temporaire)."""
-    ui.write_message("e2e4=move | refresh | status | help | quit")
+    ui.write_message("e2e4=move | refresh | status | debug | help | quit")
+
+
+async def _show_debug(ui: TerminalUI, stop_event: asyncio.Event) -> None:
+    """Lance debug_display.py dans un nouveau processus."""
+    import subprocess
+    import os
+    
+    ui.write_message("Lancement debug (voir MAPPING.md pour details)...")
+    
+    # Pause l'auto-refresh temporairement
+    stop_event.set()
+    await asyncio.sleep(0.5)
+    
+    # Lancer debug_display.py
+    debug_script = os.path.join(os.path.dirname(__file__), "debug_display.py")
+    try:
+        subprocess.run(["python3", debug_script])
+    except Exception as exc:
+        ui.write_message(f"Erreur debug: {exc}")
+    
+    # Reprendre l'auto-refresh
+    stop_event.clear()
+    ui.write_message("Retour au mode normal")
 
