@@ -167,6 +167,8 @@ class VisionService:
             sq = chess_pos.lower()
             if self.flip_board:
                 sq = self._flip_square(sq)
+                # La camera voit les couleurs inversees (blanc=noir, noir=blanc)
+                color_char = "B" if color_char == "W" else "W"
             board[sq] = f"{color_char}{type_char}"
         return board
 
