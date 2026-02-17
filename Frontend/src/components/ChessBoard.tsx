@@ -18,6 +18,16 @@ interface ChessBoardProps {
 type PieceType = 'K' | 'Q' | 'R' | 'B' | 'N' | 'P' | 'k' | 'q' | 'r' | 'b' | 'n' | 'p' | null;
 interface BoardState { [key: string]: PieceType; }
 
+// Convertit un code vision ("WP", "BK", "BN"...) en cle PIECE_IMAGES ("P", "k", "n"...)
+function visionCodeToPieceKey(code: string): string | null {
+  if (!code || code.length < 2) return null;
+  const color = code[0]; // "W" ou "B"
+  const type = code[1];  // "P", "K", "Q", "R", "B", "N"
+  if (color === 'W') return type.toUpperCase();
+  if (color === 'B') return type.toLowerCase();
+  return null;
+}
+
 // Pièces SVG style chess.com (utilise les images de lichess qui sont libres de droits)
 const PIECE_IMAGES: { [key: string]: string } = {
   'K': 'https://images.chesscomfiles.com/chess-themes/pieces/neo/150/wk.png',
@@ -201,7 +211,12 @@ export function ChessBoard({
             {ranks.map(rank =>
               files.map(file => {
                 const square = `${file}${rank}`;
-                const piece = board[square];
+                // En mode vision : afficher les pieces detectees par la camera
+                const visionCode = showVision && visionBoard ? visionBoard[square] : null;
+                const visionPieceKey = visionCode ? visionCodeToPieceKey(visionCode) : null;
+                const piece = showVision && visionBoard
+                  ? (visionPieceKey as PieceType ?? null)
+                  : board[square];
                 const isLight = isLightSquare(file, rank);
                 const isSelected = selectedSquare === square;
                 const isLegal = legalMoves.includes(square);
@@ -296,11 +311,6 @@ export function ChessBoard({
                           borderRadius: '2px',
                         }}
                       />
-                    )}
-                    {showVision && visionBoard && visionBoard[square] && !piece && (
-                      <div className="absolute bottom-0 right-0 bg-cyan-500/60 text-white text-[8px] font-bold px-0.5 rounded-tl pointer-events-none">
-                        {visionBoard[square]}
-                      </div>
                     )}
                   </div>
                 );
