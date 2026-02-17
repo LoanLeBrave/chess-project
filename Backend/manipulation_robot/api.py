@@ -14,6 +14,9 @@ from datetime import datetime
 
 import math
 import time
+import base64
+import os
+import sys
 
 from models import MoveRequest, GameConfig
 from robot_controller import RobotController
@@ -456,6 +459,82 @@ async def calibrate_save():
             "board_size_mm": round(calib_data["board_size"] * 1000, 1),
             "rotation_deg": round(math.degrees(calib_data["rotation"]), 2)
         }
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+# ============================================================================
+#                         ROUTES CAMERA
+# ============================================================================
+
+# Ajouter le chemin chess_vision au path pour les imports
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+
+
+@app.post("/camera/capture")
+async def camera_capture():
+    """Prend une photo et la renvoie en base64"""
+    try:
+        from chess_vision.modules.camera import take_photo
+        from PIL import Image
+
+        photo_path = take_photo()
+
+        # Lire les dimensions
+        with Image.open(photo_path) as img:
+            width, height = img.size
+
+        # Encoder en base64
+        with open(photo_path, 'rb') as f:
+            image_data = base64.b64encode(f.read()).decode()
+
+        await manager.log("info", f"Photo capturee: {width}x{height}")
+        return {
+            "success": True,
+            "image_base64": image_data,
+            "image_path": photo_path,
+            "width": width,
+            "height": height
+        }
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@app.post("/camera/calibrate/save")
+async def camera_calibrate_save(data: dict):
+    """Sauvegarde la calibration camera (4 coins du plateau)"""
+    try:
+        from chess_vision.config import CALIBRATION_FILE, EXTRACTED_BOARD_SIZE
+
+        corners = data.get("corners")
+        source_image = data.get("source_image", "")
+
+        if not corners:
+            return {"success": False, "error": "Coins manquants"}
+
+        required_corners = ['TL', 'TR', 'BR', 'BL']
+        for c in required_corners:
+            if c not in corners or 'x' not in corners[c] or 'y' not in corners[c]:
+                return {"success": False, "error": f"Coin {c} invalide"}
+
+        calibration_data = {
+            "corners": {
+                "TL": {"x": corners["TL"]["x"], "y": corners["TL"]["y"]},
+                "TR": {"x": corners["TR"]["x"], "y": corners["TR"]["y"]},
+                "BR": {"x": corners["BR"]["x"], "y": corners["BR"]["y"]},
+                "BL": {"x": corners["BL"]["x"], "y": corners["BL"]["y"]},
+            },
+            "source_image": source_image,
+            "board_size": EXTRACTED_BOARD_SIZE,
+            "calibrated_at": datetime.now().isoformat(),
+            "note": "Coins du plateau en coordonnees pixels dans l'image originale. Ne pas deplacer la camera apres calibration.",
+        }
+
+        with open(CALIBRATION_FILE, 'w', encoding='utf-8') as f:
+            json.dump(calibration_data, f, indent=2, ensure_ascii=False)
+
+        await manager.log("info", f"Calibration camera sauvegardee: {CALIBRATION_FILE}")
+        return {"success": True, "file": CALIBRATION_FILE}
     except Exception as e:
         return {"success": False, "error": str(e)}
 

@@ -1,6 +1,7 @@
 import { useState } from 'react';
-import { Lock, Unlock, CheckCircle, MoveVertical, Hand, ArrowLeft, ChevronUp, ChevronDown, SkipForward, AlignVerticalSpaceAround } from 'lucide-react';
+import { Lock, Unlock, CheckCircle, MoveVertical, Hand, ArrowLeft, ChevronUp, ChevronDown, SkipForward, AlignVerticalSpaceAround, Camera } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { CameraCalibrationScreen } from './CameraCalibrationScreen';
 
 interface CalibrationScreenProps {
   onCalibrationComplete: () => void;
@@ -18,6 +19,7 @@ export function CalibrationScreen({ onCalibrationComplete, onBack }: Calibration
   const [zCalibrated, setZCalibrated] = useState(false);
   const [error, setError] = useState('');
   const [freedriveActive, setFreedriveActive] = useState(false);
+  const [showCameraCalib, setShowCameraCalib] = useState(false);
 
   const CORRECT_PIN = '0000';
 
@@ -147,6 +149,16 @@ export function CalibrationScreen({ onCalibrationComplete, onBack }: Calibration
     }).catch(() => {});
   };
 
+  // Afficher la calibration camera si demandee
+  if (showCameraCalib) {
+    return (
+      <CameraCalibrationScreen
+        onComplete={() => setShowCameraCalib(false)}
+        onCancel={() => setShowCameraCalib(false)}
+      />
+    );
+  }
+
   return (
     <div className="h-screen flex items-center justify-center p-4 relative overflow-hidden">
       {/* Back Button */}
@@ -187,8 +199,17 @@ export function CalibrationScreen({ onCalibrationComplete, onBack }: Calibration
               </div>
             )}
 
-            {/* Bouton skip calibration */}
-            <div className="mt-3">
+            {/* Boutons secondaires */}
+            <div className="mt-3 flex gap-3 justify-center flex-wrap">
+              <button
+                onClick={() => setShowCameraCalib(true)}
+                className="inline-flex items-center gap-2 text-slate-400 hover:text-white text-xs font-medium
+                  bg-slate-800/50 hover:bg-slate-700/50 border border-slate-700 hover:border-purple-500
+                  rounded-lg px-3 py-1.5 transition-all"
+              >
+                <Camera className="w-3.5 h-3.5" />
+                Calibrer la camera
+              </button>
               <button
                 onClick={onCalibrationComplete}
                 className="inline-flex items-center gap-2 text-slate-400 hover:text-white text-xs font-medium
