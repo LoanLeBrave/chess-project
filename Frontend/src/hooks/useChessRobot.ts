@@ -15,6 +15,12 @@ export interface VisionState {
   reference_set: boolean;
 }
 
+export interface IllegalMoveAlert {
+  message: string;
+  suggestions: string[];
+  timestamp: number;
+}
+
 export interface UseChessRobotReturn {
   fen: string;
   isWhiteTurn: boolean;
@@ -25,6 +31,7 @@ export interface UseChessRobotReturn {
   moveEvaluations: MoveEvaluation[];
   visionState: VisionState | null;
   visionGameStarted: boolean;
+  illegalMoveAlert: IllegalMoveAlert | null;
   setRobotStatus: (status: RobotStatus) => void;
   onMove: (from: string, to: string) => Promise<boolean>;
   getLegalMoves: (square: string) => Promise<string[]>;
@@ -32,6 +39,7 @@ export interface UseChessRobotReturn {
   resetGame: () => void;
   initGame: (difficulty: string) => Promise<void>;
   confirmPlacement: (useCamera: boolean) => Promise<boolean>;
+  dismissIllegalAlert: () => void;
 }
 
 const API_BASE = `http://${window.location.hostname}:8000`;
@@ -84,6 +92,7 @@ export function useChessRobot(
   const [acplScore, setAcplScore] = useState(0);
   const [visionState, setVisionState] = useState<VisionState | null>(null);
   const [visionGameStarted, setVisionGameStarted] = useState(false);
+  const [illegalMoveAlert, setIllegalMoveAlert] = useState<IllegalMoveAlert | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
 
   // --- WebSocket ---
@@ -174,11 +183,18 @@ export function useChessRobot(
 
           if (msg.type === 'vision_anomaly') {
             addLog('warning', msg.message || 'Anomalie vision detectee');
+            const suggestions: string[] = [];
             if (msg.suggestions) {
               for (const s of msg.suggestions) {
                 addLog('warning', s);
+                suggestions.push(s);
               }
             }
+            setIllegalMoveAlert({
+              message: msg.message || 'Anomalie vision detectee',
+              suggestions,
+              timestamp: Date.now(),
+            });
           }
         } catch { /* ignore parse errors */ }
       };
@@ -372,8 +388,13 @@ export function useChessRobot(
     setMoveEvaluations([]);
     setAcplScore(0);
     setVisionGameStarted(false);
+    setIllegalMoveAlert(null);
     addLog('info', 'Partie reinitialisee');
   }, [addLog]);
+
+  const dismissIllegalAlert = useCallback(() => {
+    setIllegalMoveAlert(null);
+  }, []);
 
   return {
     fen,
@@ -385,6 +406,7 @@ export function useChessRobot(
     moveEvaluations,
     visionState,
     visionGameStarted,
+    illegalMoveAlert,
     setRobotStatus,
     onMove,
     getLegalMoves,
@@ -392,5 +414,6 @@ export function useChessRobot(
     resetGame,
     initGame,
     confirmPlacement,
+    dismissIllegalAlert,
   };
 }

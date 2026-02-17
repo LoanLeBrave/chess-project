@@ -86,6 +86,9 @@ class VisionService:
         self.last_error: Optional[str] = None
         self.vision_game_enabled: bool = True
 
+        # Flip 180° des coordonnees camera (si la camera voit le plateau a l'envers)
+        self.flip_board: bool = True  # Actif par defaut
+
         # --- Systeme delta-based ---
         # Board logique : position selon Stockfish (pour valider les coups)
         self.reference_board: Optional[dict[str, str]] = None
@@ -138,6 +141,16 @@ class VisionService:
         except (json.JSONDecodeError, OSError):
             return None
 
+    @staticmethod
+    def _flip_square(square: str) -> str:
+        """Miroir horizontal : inverse les rangees, garde les colonnes. Ex: e7 -> e2, a1 -> a8."""
+        if len(square) != 2:
+            return square
+        file_char = square[0]  # 'a'-'h' — inchange
+        rank_char = square[1]  # '1'-'8'
+        flipped_rank = str(9 - int(rank_char))
+        return f"{file_char}{flipped_rank}"
+
     def _get_board_map(self, game_state: dict) -> dict[str, str]:
         """Construit {case: code_piece} a partir du game_state."""
         board = {}
@@ -151,18 +164,23 @@ class VisionService:
             type_char = piece.get("type", "Pawn")[0]
             if piece.get("type") == "Knight":
                 type_char = "N"
-            board[chess_pos.lower()] = f"{color_char}{type_char}"
+            sq = chess_pos.lower()
+            if self.flip_board:
+                sq = self._flip_square(sq)
+            board[sq] = f"{color_char}{type_char}"
         return board
 
     def find_piece_at(self, square: str) -> Optional[dict]:
         """Retourne les donnees completes de la piece sur une case."""
         if not self.last_game_state:
             return None
+        # Si le board est flippe, on cherche la case inverse dans les donnees camera
+        target = self._flip_square(square.lower()) if self.flip_board else square.lower()
         for piece in self.last_game_state.get("pieces", []):
             if piece.get("zone") != "board":
                 continue
             chess_pos = piece.get("position", {}).get("chess")
-            if chess_pos and chess_pos.lower() == square.lower():
+            if chess_pos and chess_pos.lower() == target:
                 return piece
         return None
 
@@ -451,6 +469,8 @@ async def vision_loop():
 
 
 _vision_move_lock = False
+_last_anomaly: Optional[str] = None
+_last_anomaly_time: float = 0
 
 
 async def _check_vision_move():
@@ -522,11 +542,18 @@ async def _check_vision_move():
         finally:
             _vision_move_lock = False
     else:
-        await manager.broadcast({
-            "type": "vision_anomaly",
-            "message": f"Coup illegal: {from_sq} -> {to_sq}",
-            "suggestions": [f"Verifiez le deplacement {from_sq} -> {to_sq}"],
-        })
+        global _last_anomaly, _last_anomaly_time
+        anomaly_key = f"{from_sq}{to_sq}"
+        now = time.time()
+        # Cooldown 5s pour ne pas spammer la meme anomalie
+        if anomaly_key != _last_anomaly or (now - _last_anomaly_time) > 5:
+            _last_anomaly = anomaly_key
+            _last_anomaly_time = now
+            await manager.broadcast({
+                "type": "vision_anomaly",
+                "message": f"Coup illegal: {from_sq} -> {to_sq}",
+                "suggestions": [f"Verifiez le deplacement {from_sq} -> {to_sq}"],
+            })
 
 
 @app.get("/vision/status")
@@ -553,6 +580,16 @@ async def set_vision_mode(data: dict):
     mode = "actif" if active else "passif"
     await manager.log("info", f"VisionService passe en mode {mode}")
     return {"success": True, "active_mode": active}
+
+
+@app.post("/vision/flip")
+async def set_vision_flip(data: dict):
+    """Active/desactive la rotation 180° des coordonnees camera."""
+    flip = data.get("flip", True)
+    manager.vision.flip_board = flip
+    state = "active" if flip else "desactive"
+    await manager.log("info", f"Rotation 180° camera {state}")
+    return {"success": True, "flip_board": flip}
 
 
 @app.post("/vision/game")
