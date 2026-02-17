@@ -87,7 +87,7 @@ class VisionService:
         self.vision_game_enabled: bool = True
 
         # Flip 180° des coordonnees camera (si la camera voit le plateau a l'envers)
-        self.flip_board: bool = True  # Actif par defaut
+        self.flip_board: bool = False
 
         # --- Systeme delta-based ---
         # Board logique : position selon Stockfish (pour valider les coups)
