@@ -32,7 +32,7 @@ export function GameScreen({ difficulty, gameState, setGameState, onReturnToMenu
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [moves, setMoves] = useState<ChessMove[]>([]);
   const [showScoreSaved, setShowScoreSaved] = useState(false);
-  const [showVision, setShowVision] = useState(false);
+  const [showVision, setShowVision] = useState(true);
 
   const addLog = (type: LogEntry['type'], message: string) => {
     const newLog: LogEntry = {

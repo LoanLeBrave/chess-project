@@ -116,6 +116,16 @@ export function useChessRobot(
               });
               addLog('robot', `Robot joue: ${msg.san || msg.from + ' -> ' + msg.to}`);
               setRobotStatus('idle');
+            } else if (msg.player === 'human') {
+              // Coup humain detecte par la vision camera
+              onMoveComplete({
+                from: msg.from,
+                to: msg.to,
+                piece: msg.san ? msg.san[0] : 'Piece',
+                player: 'human'
+              });
+              addLog('player', `Coup detecte: ${msg.san || msg.from + ' -> ' + msg.to}`);
+              setRobotStatus('thinking');
             }
           }
 

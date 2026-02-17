@@ -95,6 +95,8 @@ class VisionService:
         self.active_mode: bool = True
         # Erreur courante (pour debug)
         self.last_error: Optional[str] = None
+        # Detection automatique des coups humains via la camera
+        self.vision_game_enabled: bool = True
 
     def _get_pipeline(self):
         """Initialise le pipeline chess_vision a la demande."""
@@ -315,19 +317,62 @@ manager = ApplicationManager()
 # ============================================================================
 
 async def vision_loop():
-    """Tache de fond : capture + analyse chess_vision et broadcast l'etat vision."""
+    """Tache de fond : capture + analyse chess_vision, broadcast, detection de coups."""
     manager.vision.running = True
     mode = "actif (capture camera)" if manager.vision.active_mode else "passif (lecture JSON)"
     print(f"👁️ VisionService demarre en mode {mode}")
+
     while manager.vision.running:
         try:
             updated = manager.vision.update()
             if updated and manager.websocket_clients:
                 await manager.broadcast(manager.vision.get_state_message())
+
+            # Detection automatique des coups humains via la camera
+            if updated and manager.vision.vision_game_enabled and manager.status == "idle":
+                await _check_vision_move()
+
         except Exception as e:
             print(f"[VisionService] Erreur: {e}")
         # En mode actif, chess_vision() prend ~2s, donc pas besoin de sleep long
         await asyncio.sleep(0.5 if manager.vision.active_mode else 1.0)
+
+
+_vision_move_lock = False
+
+
+async def _check_vision_move():
+    """Verifie si la camera a detecte un coup humain et le joue."""
+    global _vision_move_lock
+    if _vision_move_lock:
+        return  # Un coup est deja en cours de traitement
+
+    # Seulement quand c'est le tour des blancs (joueur humain)
+    if manager.chess.board.turn != chess.WHITE:
+        return
+
+    sync = manager.chess.sync_with_vision(manager.vision.stable_board)
+
+    # Un coup legal a ete detecte
+    detected = sync.get("detected_move")
+    if detected and detected.get("legal"):
+        _vision_move_lock = True
+        try:
+            from_sq = detected["from"]
+            to_sq = detected["to"]
+            await manager.log("info", f"Coup detecte par la camera: {from_sq} -> {to_sq}")
+            result = await manager.chess.play_vision_move(from_sq, to_sq)
+            if not result.get("success"):
+                await manager.log("warning", f"Echec du coup vision: {result.get('error')}")
+        finally:
+            _vision_move_lock = False
+    elif detected and not detected.get("legal"):
+        # Coup illegal detecte — alerter le frontend
+        await manager.broadcast({
+            "type": "vision_anomaly",
+            "message": f"Coup illegal detecte: {detected['from']} -> {detected['to']}",
+            "suggestions": sync.get("suggestions", []),
+        })
 
 
 @app.get("/vision/status")
@@ -336,6 +381,7 @@ async def get_vision_status():
     return {
         "running": manager.vision.running,
         "active_mode": manager.vision.active_mode,
+        "vision_game_enabled": manager.vision.vision_game_enabled,
         "last_error": manager.vision.last_error,
         "last_timestamp": manager.vision.last_timestamp,
         "pieces_count": manager.vision.pieces_count,
@@ -353,6 +399,16 @@ async def set_vision_mode(data: dict):
     mode = "actif" if active else "passif"
     await manager.log("info", f"VisionService passe en mode {mode}")
     return {"success": True, "active_mode": active}
+
+
+@app.post("/vision/game")
+async def set_vision_game(data: dict):
+    """Active/desactive la detection automatique des coups par la camera."""
+    enabled = data.get("enabled", True)
+    manager.vision.vision_game_enabled = enabled
+    state = "activee" if enabled else "desactivee"
+    await manager.log("info", f"Detection vision des coups {state}")
+    return {"success": True, "vision_game_enabled": enabled}
 
 
 @app.get("/vision/sync")
