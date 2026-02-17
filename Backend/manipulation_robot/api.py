@@ -27,6 +27,9 @@ from leaderboard_manager import LeaderboardManager
 from config import FICHIER_CALIBRATION
 from calibration import TwoPointCalibration
 
+# Ajouter le chemin chess_vision au path pour les imports
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+
 
 # ============================================================================
 #                         APPLICATION FASTAPI
@@ -57,8 +60,12 @@ GAME_STATE_PATH = os.path.join(_BACKEND_DIR, "chess_vision", "output", "latest",
 
 class VisionService:
     """
-    Lit game_state.json en continu et maintient un etat stabilise
+    Appelle chess_vision() en continu et maintient un etat stabilise
     avec buffer temporel anti-hallucination.
+
+    Deux modes de fonctionnement :
+    - Mode actif : appelle chess_vision() directement (capture + analyse)
+    - Mode passif : lit game_state.json si deja produit par un script externe
     """
 
     BUFFER_SIZE = 5          # Nombre de frames dans le buffer
@@ -82,9 +89,48 @@ class VisionService:
         self.pieces_count: int = 0
         # Flag actif
         self.running: bool = False
+        # Pipeline chess_vision (initialise au premier appel)
+        self._pipeline = None
+        # Mode actif (appelle chess_vision) vs passif (lit JSON)
+        self.active_mode: bool = True
+        # Erreur courante (pour debug)
+        self.last_error: Optional[str] = None
+
+    def _get_pipeline(self):
+        """Initialise le pipeline chess_vision a la demande."""
+        if self._pipeline is None:
+            try:
+                from chess_vision import ChessVisionPipeline
+                self._pipeline = ChessVisionPipeline(save_visualization_images=False)
+                if not self._pipeline.extractor.is_calibrated:
+                    self.last_error = "Camera non calibree (board_calibration.json manquant)"
+                    self._pipeline = None
+                    return None
+                self.last_error = None
+            except Exception as e:
+                self.last_error = f"Impossible d'initialiser chess_vision: {e}"
+                self._pipeline = None
+        return self._pipeline
+
+    def _capture_and_analyze(self) -> Optional[dict]:
+        """Appelle chess_vision pour capturer et analyser."""
+        pipeline = self._get_pipeline()
+        if pipeline is None:
+            return None
+        try:
+            result = pipeline.capture_and_analyze(save_outputs=True)
+            if result.get("success"):
+                self.last_error = None
+                return result.get("game_state")
+            else:
+                self.last_error = result.get("error", "Erreur inconnue")
+                return None
+        except Exception as e:
+            self.last_error = f"Erreur capture: {e}"
+            return None
 
     def _read_game_state(self) -> Optional[dict]:
-        """Lit game_state.json de maniere safe."""
+        """Lit game_state.json de maniere safe (mode passif)."""
         if not os.path.exists(GAME_STATE_PATH):
             return None
         try:
@@ -123,10 +169,16 @@ class VisionService:
 
     def update(self) -> bool:
         """
-        Lit le JSON, met a jour le buffer et calcule l'etat stabilise.
+        Capture + analyse (mode actif) ou lit le JSON (mode passif).
+        Met a jour le buffer et calcule l'etat stabilise.
         Retourne True si une mise a jour a eu lieu.
         """
-        game_state = self._read_game_state()
+        # Mode actif : appeler chess_vision directement
+        if self.active_mode:
+            game_state = self._capture_and_analyze()
+        else:
+            game_state = self._read_game_state()
+
         if game_state is None:
             return False
 
@@ -263,9 +315,10 @@ manager = ApplicationManager()
 # ============================================================================
 
 async def vision_loop():
-    """Tache de fond : lit game_state.json et broadcast l'etat vision."""
+    """Tache de fond : capture + analyse chess_vision et broadcast l'etat vision."""
     manager.vision.running = True
-    print("👁️ VisionService demarre — lecture de game_state.json toutes les ~1s")
+    mode = "actif (capture camera)" if manager.vision.active_mode else "passif (lecture JSON)"
+    print(f"👁️ VisionService demarre en mode {mode}")
     while manager.vision.running:
         try:
             updated = manager.vision.update()
@@ -273,7 +326,33 @@ async def vision_loop():
                 await manager.broadcast(manager.vision.get_state_message())
         except Exception as e:
             print(f"[VisionService] Erreur: {e}")
-        await asyncio.sleep(1.0)
+        # En mode actif, chess_vision() prend ~2s, donc pas besoin de sleep long
+        await asyncio.sleep(0.5 if manager.vision.active_mode else 1.0)
+
+
+@app.get("/vision/status")
+async def get_vision_status():
+    """Retourne le statut du VisionService (debug)."""
+    return {
+        "running": manager.vision.running,
+        "active_mode": manager.vision.active_mode,
+        "last_error": manager.vision.last_error,
+        "last_timestamp": manager.vision.last_timestamp,
+        "pieces_count": manager.vision.pieces_count,
+        "buffer_size": manager.vision.BUFFER_SIZE,
+        "has_pipeline": manager.vision._pipeline is not None,
+    }
+
+
+@app.post("/vision/mode")
+async def set_vision_mode(data: dict):
+    """Change le mode du VisionService (actif/passif)."""
+    active = data.get("active", True)
+    manager.vision.active_mode = active
+    manager.vision._pipeline = None  # Reset le pipeline
+    mode = "actif" if active else "passif"
+    await manager.log("info", f"VisionService passe en mode {mode}")
+    return {"success": True, "active_mode": active}
 
 
 @app.get("/vision/sync")
@@ -652,10 +731,6 @@ async def calibrate_save():
 # ============================================================================
 #                         ROUTES CAMERA
 # ============================================================================
-
-# Ajouter le chemin chess_vision au path pour les imports
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
-
 
 @app.post("/camera/capture")
 async def camera_capture():
