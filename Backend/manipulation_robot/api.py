@@ -438,11 +438,11 @@ async def vision_loop():
                 await manager.broadcast(manager.vision.get_state_message())
 
             # Detection automatique des coups via delta
-            if (updated
-                    and manager.vision.vision_game_enabled
-                    and manager.vision.game_started
-                    and manager.status == "idle"):
-                await _check_vision_move()
+            if updated and manager.vision.vision_game_enabled and manager.vision.game_started:
+                if manager.status != "idle":
+                    pass  # Robot pas idle, on attend
+                else:
+                    await _check_vision_move()
 
         except Exception as e:
             print(f"[VisionService] Erreur: {e}")
@@ -467,7 +467,10 @@ async def _check_vision_move():
     if delta is None:
         return  # Aucun changement
 
+    print(f"[Vision] Delta detecte: {delta}")
+
     if delta["type"] == "unclear":
+        print(f"[Vision] Delta unclear, on attend: {delta}")
         return  # Pas assez clair, on attend
 
     from_sq = delta.get("from")
