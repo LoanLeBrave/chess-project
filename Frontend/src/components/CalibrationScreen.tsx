@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Lock, Unlock, CheckCircle, MoveHorizontal, MoveVertical, Hand, ArrowLeft, ChevronUp, ChevronDown } from 'lucide-react';
+import { Lock, Unlock, CheckCircle, MoveVertical, Hand, ArrowLeft, ChevronUp, ChevronDown, SkipForward, AlignVerticalSpaceAround } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
 interface CalibrationScreenProps {
@@ -17,6 +17,7 @@ export function CalibrationScreen({ onCalibrationComplete, onBack }: Calibration
   const [h8Calibrated, setH8Calibrated] = useState(false);
   const [zCalibrated, setZCalibrated] = useState(false);
   const [error, setError] = useState('');
+  const [freedriveActive, setFreedriveActive] = useState(false);
 
   const CORRECT_PIN = '0000';
 
@@ -39,11 +40,9 @@ export function CalibrationScreen({ onCalibrationComplete, onBack }: Calibration
     if (newPin.every(digit => digit !== '')) {
       const enteredPin = newPin.join('');
       if (enteredPin === CORRECT_PIN) {
-        // Activer le freedrive sur le robot
-        fetch(`${API_BASE}/robot/calibrate/freedrive`, {
+        // Fermer le gripper pour la calibration
+        fetch(`${API_BASE}/robot/calibrate/close-gripper`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ enable: true }),
         }).catch(() => {});
         setTimeout(() => {
           setIsUnlocked(true);
@@ -91,6 +90,7 @@ export function CalibrationScreen({ onCalibrationComplete, onBack }: Calibration
         body: JSON.stringify({ enable: false }),
       });
     } catch { /* continue */ }
+    setFreedriveActive(false);
     setH8Calibrated(true);
     setCalibrationStep('z');
   };
@@ -128,6 +128,25 @@ export function CalibrationScreen({ onCalibrationComplete, onBack }: Calibration
     }).catch(() => {});
   };
 
+  const handleToggleFreedrive = async () => {
+    const newState = !freedriveActive;
+    try {
+      await fetch(`${API_BASE}/robot/calibrate/freedrive`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enable: newState }),
+      });
+      setFreedriveActive(newState);
+    } catch { /* continue */ }
+  };
+
+  const handleAutoLevel = () => {
+    setFreedriveActive(false);
+    fetch(`${API_BASE}/robot/calibrate/auto-level`, {
+      method: 'POST',
+    }).catch(() => {});
+  };
+
   return (
     <div className="h-screen flex items-center justify-center p-4 relative overflow-hidden">
       {/* Back Button */}
@@ -152,14 +171,33 @@ export function CalibrationScreen({ onCalibrationComplete, onBack }: Calibration
             <h1 className="text-2xl font-bold text-white mb-2">
               Calibration Robot UR7e
             </h1>
-            <p className="text-slate-400 text-sm mb-2">
-              Mode <span className="text-green-400 font-semibold">Free Drive</span> activé
-            </p>
-            <div className="inline-flex items-center gap-2 bg-green-500/10 border border-green-500/30 rounded-lg px-3 py-1.5">
-              <div className="w-1.5 h-1.5 bg-green-400 rounded-full animate-pulse"></div>
-              <span className="text-green-400 text-xs font-medium">
-                Vous pouvez déplacer le robot manuellement
-              </span>
+            {freedriveActive ? (
+              <div className="inline-flex items-center gap-2 bg-green-500/10 border border-green-500/30 rounded-lg px-3 py-1.5">
+                <div className="w-1.5 h-1.5 bg-green-400 rounded-full animate-pulse"></div>
+                <span className="text-green-400 text-xs font-medium">
+                  Free Drive actif - Vous pouvez deplacer le robot manuellement
+                </span>
+              </div>
+            ) : (
+              <div className="inline-flex items-center gap-2 bg-slate-500/10 border border-slate-500/30 rounded-lg px-3 py-1.5">
+                <div className="w-1.5 h-1.5 bg-slate-400 rounded-full"></div>
+                <span className="text-slate-400 text-xs font-medium">
+                  Free Drive inactif
+                </span>
+              </div>
+            )}
+
+            {/* Bouton skip calibration */}
+            <div className="mt-3">
+              <button
+                onClick={onCalibrationComplete}
+                className="inline-flex items-center gap-2 text-slate-400 hover:text-white text-xs font-medium
+                  bg-slate-800/50 hover:bg-slate-700/50 border border-slate-700 hover:border-slate-500
+                  rounded-lg px-3 py-1.5 transition-all"
+              >
+                <SkipForward className="w-3.5 h-3.5" />
+                Utiliser la calibration actuelle
+              </button>
             </div>
           </div>
 
@@ -295,23 +333,44 @@ export function CalibrationScreen({ onCalibrationComplete, onBack }: Calibration
 
             {/* Right - Video Guide & Z Controls */}
             <div className="space-y-3">
-              {/* Video Placeholder */}
-              <div className="bg-slate-800/50 backdrop-blur-sm rounded-xl border border-slate-700 overflow-hidden">
-                <div className="relative h-48 bg-slate-900/80 flex items-center justify-center">
-                  {/* Placeholder for video */}
-                  <div className="text-center p-4">
-                    <div className="w-14 h-14 mx-auto mb-2 rounded-full bg-slate-700/50 flex items-center justify-center">
-                      <svg className="w-7 h-7 text-slate-500" fill="currentColor" viewBox="0 0 20 20">
-                        <path d="M6.3 2.841A1.5 1.5 0 004 4.11V15.89a1.5 1.5 0 002.3 1.269l9.344-5.89a1.5 1.5 0 000-2.538L6.3 2.84z" />
-                      </svg>
+              {/* Robot Controls */}
+              <div className="bg-slate-800/50 backdrop-blur-sm rounded-xl p-4 border border-slate-700">
+                <h3 className="text-white font-semibold mb-3 flex items-center gap-2 text-sm">
+                  <Hand className="w-4 h-4 text-cyan-400" />
+                  Controles Robot
+                </h3>
+
+                <div className="space-y-2">
+                  {/* Toggle Freedrive */}
+                  <button
+                    onClick={handleToggleFreedrive}
+                    disabled={calibrationStep === 'z'}
+                    className={`w-full px-4 py-3 rounded-lg text-sm font-medium transition-all
+                      flex items-center justify-center gap-2 group disabled:opacity-50 disabled:cursor-not-allowed
+                      ${freedriveActive
+                        ? 'bg-green-500/20 hover:bg-green-500/30 border border-green-500/50 hover:border-green-400 text-green-400'
+                        : 'bg-slate-700/50 hover:bg-slate-600/50 border border-slate-600 hover:border-cyan-400 text-white'
+                      }`}
+                  >
+                    <div className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all
+                      ${freedriveActive ? 'bg-green-500/30' : 'bg-cyan-500/20 group-hover:bg-cyan-500/30'}`}>
+                      <Hand className={`w-5 h-5 ${freedriveActive ? 'text-green-400' : 'text-cyan-400'}`} strokeWidth={2.5} />
                     </div>
-                    <p className="text-slate-400 text-sm font-medium">
-                      Vidéo explicative de calibration
-                    </p>
-                    <p className="text-slate-500 text-xs mt-1">
-                      Instructions pour positionner le robot
-                    </p>
-                  </div>
+                    <span>{freedriveActive ? 'Desactiver FreeDrive' : 'Activer FreeDrive'}</span>
+                  </button>
+
+                  {/* Auto-Level */}
+                  <button
+                    onClick={handleAutoLevel}
+                    className="w-full bg-slate-700/50 hover:bg-slate-600/50 border border-slate-600 hover:border-cyan-400
+                      text-white px-4 py-3 rounded-lg text-sm font-medium transition-all
+                      flex items-center justify-center gap-2 group"
+                  >
+                    <div className="w-8 h-8 bg-cyan-500/20 group-hover:bg-cyan-500/30 rounded-lg flex items-center justify-center transition-all">
+                      <AlignVerticalSpaceAround className="w-5 h-5 text-cyan-400" strokeWidth={2.5} />
+                    </div>
+                    <span>Remettre la pince droite</span>
+                  </button>
                 </div>
               </div>
 

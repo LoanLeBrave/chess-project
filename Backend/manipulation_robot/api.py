@@ -20,6 +20,7 @@ from robot_controller import RobotController
 from chess_manager import ChessManager
 from leaderboard_manager import LeaderboardManager
 from config import FICHIER_CALIBRATION
+from calibration import TwoPointCalibration
 
 
 # ============================================================================
@@ -318,6 +319,45 @@ async def calibrate_freedrive(data: dict):
         return {"success": False, "error": str(e)}
 
 
+@app.post("/robot/calibrate/close-gripper")
+async def calibrate_close_gripper():
+    """Ferme le gripper pour la calibration (pointe fine dans le trou)"""
+    if not manager.robot.connected or not manager.robot.gripper:
+        return {"success": False, "error": "Robot ou gripper non connecte"}
+
+    try:
+        manager.robot.gripper.close()
+        await manager.log("info", "Gripper ferme pour calibration")
+        return {"success": True}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@app.post("/robot/calibrate/auto-level")
+async def calibrate_auto_level():
+    """Remet la pince parfaitement verticale [pi, 0, 0]"""
+    if not manager.robot.connected or not manager.robot.rtde_c:
+        return {"success": False, "error": "Robot non connecte"}
+
+    try:
+        # Desactiver freedrive si actif
+        try:
+            manager.robot.rtde_c.endFreedriveMode()
+            time.sleep(0.1)
+            manager.robot.rtde_c.reuploadScript()
+            time.sleep(0.1)
+        except:
+            pass
+
+        current = manager.robot.rtde_r.getActualTCPPose()
+        vertical_pose = [current[0], current[1], current[2], 3.1415, 0.0, 0.0]
+        manager.robot.rtde_c.moveL(vertical_pose, 0.2, 0.2)
+        await manager.log("info", "Pince remise droite (auto-level)")
+        return {"success": True}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
 @app.post("/robot/calibrate/move-z")
 async def calibrate_move_z(data: dict):
     """Deplace le robot en Z (monter/descendre) pour la calibration"""
@@ -389,41 +429,10 @@ async def calibrate_save():
         p2 = manager.calib_points['h8']   # Trou H1/H8
         p_z = manager.calib_points['z']   # Surface Z
 
-        # Calcul de la geometrie (meme logique que calibration.py)
-        x1, y1 = p1[0], p1[1]
-        x2, y2 = p2[0], p2[1]
-
-        center_x = (x1 + x2) / 2
-        center_y = (y1 + y2) / 2
-        center_z = p_z[2]
-
-        dx_robot = x2 - x1
-        dy_robot = y2 - y1
-        angle_robot = math.atan2(dy_robot, dx_robot)
-
-        # Vecteur theorique DXF
-        dx_dxf = 0.3021
-        dy_dxf = -0.2481
-        angle_dxf = math.atan2(dy_dxf, dx_dxf)
-        rotation = angle_robot - angle_dxf
-
-        dist_mesuree = math.sqrt(dx_robot ** 2 + dy_robot ** 2)
-        dist_theorique = math.sqrt(dx_dxf ** 2 + dy_dxf ** 2)
-        scale = dist_mesuree / dist_theorique
-
-        board_size = 0.2696 * scale
-        camera_scale = board_size / 20.0
-
-        calib_data = {
-            "origin": [center_x, center_y, center_z],
-            "rotation": rotation,
-            "board_size": board_size,
-            "camera_scale": camera_scale,
-            "timestamp": time.time()
-        }
-
-        with open(FICHIER_CALIBRATION, 'w') as f:
-            json.dump(calib_data, f, indent=4)
+        # Utiliser les fonctions de calibration.py
+        calib = TwoPointCalibration()
+        calib_data = calib.calculate_geometry(p1, p2, p_z)
+        calib.save(calib_data)
 
         # Recharger la calibration dans le robot controller
         manager.robot.calib_origin = calib_data["origin"]
@@ -437,16 +446,15 @@ async def calibrate_save():
         safe_pose[2] += 0.1
         manager.robot.rtde_c.moveL(safe_pose, 0.5, 0.3)
 
-        await manager.log("info", f"Calibration sauvegardee (scale={scale:.4f}, rotation={math.degrees(rotation):.2f}deg)")
+        await manager.log("info", f"Calibration sauvegardee (rotation={math.degrees(calib_data['rotation']):.2f}deg)")
 
         # Reinitialiser les points de calibration
         manager.calib_points.clear()
 
         return {
             "success": True,
-            "board_size_mm": round(board_size * 1000, 1),
-            "scale": round(scale, 4),
-            "rotation_deg": round(math.degrees(rotation), 2)
+            "board_size_mm": round(calib_data["board_size"] * 1000, 1),
+            "rotation_deg": round(math.degrees(calib_data["rotation"]), 2)
         }
     except Exception as e:
         return {"success": False, "error": str(e)}
