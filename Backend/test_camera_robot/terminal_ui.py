@@ -26,7 +26,7 @@ class TerminalUI:
         self.board_lines = []
         self.status_line = ""
         self.input_prompt = "> "
-        self.board_height = 13  # Nombre de lignes pour l'affichage du plateau
+        self.board_height = 21  # Nombre de lignes pour l'affichage du plateau complet 8x8
 
     def init_display(self):
         """Initialise l'affichage (efface l'ecran, cache le curseur)."""
