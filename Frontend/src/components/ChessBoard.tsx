@@ -10,6 +10,9 @@ interface ChessBoardProps {
   onMove: (from: string, to: string) => Promise<boolean>;
   getLegalMoves: (square: string) => Promise<string[]>;
   getBestMove: () => Promise<{ from: string; to: string } | null>;
+  showVision?: boolean;
+  visionBoard?: { [square: string]: string };
+  visionConfidence?: { [square: string]: number };
 }
 
 type PieceType = 'K' | 'Q' | 'R' | 'B' | 'N' | 'P' | 'k' | 'q' | 'r' | 'b' | 'n' | 'p' | null;
@@ -53,7 +56,8 @@ function fenToBoard(fen: string): BoardState {
 }
 
 export function ChessBoard({
-  fen, isWhiteTurn, robotStatus, isGameOver, onMove, getLegalMoves, getBestMove
+  fen, isWhiteTurn, robotStatus, isGameOver, onMove, getLegalMoves, getBestMove,
+  showVision, visionBoard, visionConfidence,
 }: ChessBoardProps) {
   const [board, setBoard] = useState<BoardState>({});
   const [selectedSquare, setSelectedSquare] = useState<string | null>(null);
@@ -281,6 +285,22 @@ export function ChessBoard({
                       <span className={`absolute bottom-0.5 right-1 text-xs font-bold ${isLight ? 'text-[#739552]' : 'text-[#ebecd0]'}`}>
                         {file}
                       </span>
+                    )}
+
+                    {/* Vision camera overlay */}
+                    {showVision && visionConfidence && visionConfidence[square] !== undefined && visionConfidence[square] < 0.8 && (
+                      <div
+                        className="absolute inset-0 pointer-events-none"
+                        style={{
+                          border: `3px solid ${visionConfidence[square] < 0.3 ? '#ef4444' : visionConfidence[square] < 0.6 ? '#f97316' : '#eab308'}`,
+                          borderRadius: '2px',
+                        }}
+                      />
+                    )}
+                    {showVision && visionBoard && visionBoard[square] && !piece && (
+                      <div className="absolute bottom-0 right-0 bg-cyan-500/60 text-white text-[8px] font-bold px-0.5 rounded-tl pointer-events-none">
+                        {visionBoard[square]}
+                      </div>
                     )}
                   </div>
                 );

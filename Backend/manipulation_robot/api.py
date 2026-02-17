@@ -18,6 +18,8 @@ import base64
 import os
 import sys
 
+from collections import deque
+
 from models import MoveRequest, GameConfig
 from robot_controller import RobotController
 from chess_manager import ChessManager
@@ -42,6 +44,158 @@ app.add_middleware(
 
 
 # ============================================================================
+#                         CHEMIN GAME_STATE
+# ============================================================================
+
+_BACKEND_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+GAME_STATE_PATH = os.path.join(_BACKEND_DIR, "chess_vision", "output", "latest", "game_state.json")
+
+
+# ============================================================================
+#                         VISION SERVICE
+# ============================================================================
+
+class VisionService:
+    """
+    Lit game_state.json en continu et maintient un etat stabilise
+    avec buffer temporel anti-hallucination.
+    """
+
+    BUFFER_SIZE = 5          # Nombre de frames dans le buffer
+    STABLE_THRESHOLD = 3     # Minimum de detections pour considerer stable
+    DISAPPEAR_THRESHOLD = 5  # Toutes les frames sans piece = disparue
+
+    def __init__(self):
+        # Buffer par case : deque de N derniers etats (piece_code ou None)
+        self._buffers: dict[str, deque] = {}
+        # Dernier etat brut
+        self.raw_board: dict[str, str] = {}
+        # Etat stabilise
+        self.stable_board: dict[str, str] = {}
+        # Confiance par case (0.0 - 1.0)
+        self.confidence: dict[str, float] = {}
+        # Dernier game_state complet (pour coords precises)
+        self.last_game_state: Optional[dict] = None
+        # Timestamp derniere lecture
+        self.last_timestamp: Optional[str] = None
+        # Nombre de pieces detectees
+        self.pieces_count: int = 0
+        # Flag actif
+        self.running: bool = False
+
+    def _read_game_state(self) -> Optional[dict]:
+        """Lit game_state.json de maniere safe."""
+        if not os.path.exists(GAME_STATE_PATH):
+            return None
+        try:
+            with open(GAME_STATE_PATH, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except (json.JSONDecodeError, OSError):
+            return None
+
+    def _get_board_map(self, game_state: dict) -> dict[str, str]:
+        """Construit {case: code_piece} a partir du game_state."""
+        board = {}
+        for piece in game_state.get("pieces", []):
+            if piece.get("zone") != "board":
+                continue
+            chess_pos = piece.get("position", {}).get("chess")
+            if not chess_pos:
+                continue
+            color_char = "W" if piece.get("color") == "white" else "B"
+            type_char = piece.get("type", "Pawn")[0]
+            if piece.get("type") == "Knight":
+                type_char = "N"
+            board[chess_pos.lower()] = f"{color_char}{type_char}"
+        return board
+
+    def find_piece_at(self, square: str) -> Optional[dict]:
+        """Retourne les donnees completes de la piece sur une case."""
+        if not self.last_game_state:
+            return None
+        for piece in self.last_game_state.get("pieces", []):
+            if piece.get("zone") != "board":
+                continue
+            chess_pos = piece.get("position", {}).get("chess")
+            if chess_pos and chess_pos.lower() == square.lower():
+                return piece
+        return None
+
+    def update(self) -> bool:
+        """
+        Lit le JSON, met a jour le buffer et calcule l'etat stabilise.
+        Retourne True si une mise a jour a eu lieu.
+        """
+        game_state = self._read_game_state()
+        if game_state is None:
+            return False
+
+        ts = game_state.get("metadata", {}).get("timestamp")
+        if ts == self.last_timestamp:
+            return False  # Pas de nouvelle donnee
+
+        self.last_timestamp = ts
+        self.last_game_state = game_state
+        self.raw_board = self._get_board_map(game_state)
+        self.pieces_count = len(self.raw_board)
+
+        # Toutes les cases possibles
+        all_squares = [f"{c}{r}" for c in "abcdefgh" for r in "12345678"]
+
+        # Mettre a jour les buffers
+        for sq in all_squares:
+            if sq not in self._buffers:
+                self._buffers[sq] = deque(maxlen=self.BUFFER_SIZE)
+            self._buffers[sq].append(self.raw_board.get(sq))
+
+        # Calculer l'etat stabilise et la confiance
+        new_stable = {}
+        new_confidence = {}
+        for sq in all_squares:
+            buf = self._buffers[sq]
+            if len(buf) == 0:
+                continue
+
+            # Compter les occurrences de chaque piece sur cette case
+            counts: dict[Optional[str], int] = {}
+            for val in buf:
+                counts[val] = counts.get(val, 0) + 1
+
+            # Piece la plus frequente
+            best_piece = max(counts, key=counts.get)
+            best_count = counts[best_piece]
+
+            if best_piece is not None and best_count >= self.STABLE_THRESHOLD:
+                new_stable[sq] = best_piece
+                new_confidence[sq] = best_count / len(buf)
+            elif best_piece is None and best_count >= self.DISAPPEAR_THRESHOLD:
+                # La piece a vraiment disparu
+                new_confidence[sq] = 0.0
+            else:
+                # Pas assez stable — garder l'ancien etat stabilise si existant
+                if sq in self.stable_board:
+                    new_stable[sq] = self.stable_board[sq]
+                    # Confiance degradee
+                    none_count = counts.get(None, 0)
+                    new_confidence[sq] = 1.0 - (none_count / len(buf))
+
+        self.stable_board = new_stable
+        self.confidence = new_confidence
+        return True
+
+    def get_state_message(self) -> dict:
+        """Retourne le message WebSocket vision_state."""
+        return {
+            "type": "vision_state",
+            "board": self.stable_board,
+            "raw_board": self.raw_board,
+            "confidence": self.confidence,
+            "timestamp": self.last_timestamp or datetime.now().isoformat(),
+            "pieces_count": self.pieces_count,
+        }
+
+
+# ============================================================================
 #                         GESTIONNAIRE GLOBAL
 # ============================================================================
 
@@ -52,6 +206,10 @@ class ApplicationManager:
         self.robot = RobotController()
         self.chess = ChessManager(self.robot)
         self.leaderboard = LeaderboardManager()
+        self.vision = VisionService()
+
+        # Injecter le VisionService dans le ChessManager
+        self.chess.vision_service = self.vision
         self.status = "idle"
         self.websocket_clients: List[WebSocket] = []
 
@@ -104,12 +262,34 @@ manager = ApplicationManager()
 #                         ROUTES API
 # ============================================================================
 
+async def vision_loop():
+    """Tache de fond : lit game_state.json et broadcast l'etat vision."""
+    manager.vision.running = True
+    print("👁️ VisionService demarre — lecture de game_state.json toutes les ~1s")
+    while manager.vision.running:
+        try:
+            updated = manager.vision.update()
+            if updated and manager.websocket_clients:
+                await manager.broadcast(manager.vision.get_state_message())
+        except Exception as e:
+            print(f"[VisionService] Erreur: {e}")
+        await asyncio.sleep(1.0)
+
+
+@app.get("/vision/sync")
+async def get_vision_sync():
+    """Compare l'etat camera stabilise avec l'etat Stockfish."""
+    sync_result = manager.chess.sync_with_vision(manager.vision.stable_board)
+    return sync_result
+
+
 @app.on_event("startup")
 async def startup():
     """Initialisation au démarrage"""
     print("🚀 Démarrage de l'API Chess Robot...")
     manager.chess.init_stockfish()
     manager.robot.init_robot()
+    asyncio.create_task(vision_loop())
     print("✅ API prête!")
 
 
@@ -117,6 +297,7 @@ async def startup():
 async def shutdown():
     """Nettoyage à l'arrêt"""
     print("🛑 Arrêt de l'API...")
+    manager.vision.running = False
     manager.chess.close()
     manager.robot.close()
     print("✅ Arrêt propre effectué")
@@ -542,6 +723,16 @@ async def camera_calibrate_save(data: dict):
         return {"success": True, "file": CALIBRATION_FILE}
     except Exception as e:
         return {"success": False, "error": str(e)}
+
+
+# ============================================================================
+#                         VISION CAMERA
+# ============================================================================
+
+@app.get("/vision/state")
+async def get_vision_state():
+    """Retourne l'etat courant de la vision camera (stabilise)."""
+    return manager.vision.get_state_message()
 
 
 @app.get("/game/history")

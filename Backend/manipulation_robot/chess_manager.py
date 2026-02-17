@@ -24,12 +24,15 @@ class ChessManager:
         self.engine = None
         self.difficulty = "intermediate"
         self.robot = robot_controller
-        
+
         # Callback pour broadcast
         self.broadcast_callback = None
         self.log_callback = None
         self.status_callback = None
         self.is_paused = False
+
+        # Reference au VisionService (injectee depuis api.py)
+        self.vision_service = None
 
     def set_broadcast_callback(self, callback):
         """Définit le callback pour le broadcast"""
@@ -168,6 +171,21 @@ class ChessManager:
             self.set_status("idle", "Partie reprise")
             return {"success": True, "paused": False, "message": "Partie reprise"}
 
+    def _get_precise_coords(self, square: str):
+        """
+        Retourne les coordonnees precises (x, y) de la piece sur `square`
+        via la vision camera, ou None si non disponible.
+        """
+        if not self.vision_service:
+            return None
+        piece_data = self.vision_service.find_piece_at(square)
+        if not piece_data:
+            return None
+        board_pos = piece_data.get("position", {}).get("board")
+        if not board_pos or "x" not in board_pos or "y" not in board_pos:
+            return None
+        return (board_pos["x"], board_pos["y"])
+
     async def play_human_move(self, from_sq: str, to_sq: str):
         """Joue le coup du joueur humain"""
         try:
@@ -207,10 +225,13 @@ class ChessManager:
         if piece:
             self.robot.piece_courante = piece.piece_type
 
+        # Coordonnees precises de la camera si disponibles
+        precise_coords = self._get_precise_coords(from_sq)
+
         # Exécuter sur le robot
         self.set_status("moving", f"Déplacement {from_sq} → {to_sq}")
-        success = await self.robot.execute_move(from_sq, to_sq, is_capture, captured_piece)
-        
+        success = await self.robot.execute_move(from_sq, to_sq, is_capture, captured_piece, precise_pick_coords=precise_coords)
+
         if not success:
             await self.log("warning", "Mouvement interrompu par PAUSE")
             return {"success": False, "error": "Mouvement interrompu"}
@@ -297,9 +318,12 @@ class ChessManager:
 
             await self.log("robot", f"Coup choisi: {from_sq} → {to_sq} (eval: {evaluation})")
 
+            # Coordonnees precises de la camera si disponibles
+            precise_coords = self._get_precise_coords(from_sq)
+
             # Exécuter sur le robot
             self.set_status("moving", f"Déplacement {from_sq} → {to_sq}")
-            success = await self.robot.execute_move(from_sq, to_sq, is_capture, captured_piece)
+            success = await self.robot.execute_move(from_sq, to_sq, is_capture, captured_piece, precise_pick_coords=precise_coords)
             
             if not success:
                 await self.log("warning", "Mouvement interrompu par PAUSE")
@@ -429,6 +453,94 @@ class ChessManager:
                 return case_name
         
         return None
+
+    # ------------------------------------------------------------------
+    #  Synchronisation vision camera <-> Stockfish
+    # ------------------------------------------------------------------
+
+    def _board_to_map(self) -> dict:
+        """Convertit l'etat python-chess en {case: code_piece} pour comparaison."""
+        result = {}
+        type_map = {
+            chess.PAWN: "P", chess.KNIGHT: "N", chess.BISHOP: "B",
+            chess.ROOK: "R", chess.QUEEN: "Q", chess.KING: "K",
+        }
+        for sq in chess.SQUARES:
+            piece = self.board.piece_at(sq)
+            if piece:
+                color_char = "W" if piece.color == chess.WHITE else "B"
+                type_char = type_map.get(piece.piece_type, "?")
+                result[chess.square_name(sq)] = f"{color_char}{type_char}"
+        return result
+
+    def sync_with_vision(self, stabilized_board: dict) -> dict:
+        """
+        Compare l'etat Stockfish avec l'etat camera stabilise.
+        Retourne un dict avec les anomalies detectees.
+
+        Ne modifie PAS l'etat de Stockfish — signale seulement.
+        """
+        expected = self._board_to_map()
+        anomalies = []
+        missing = {}
+        extra = {}
+        moved = {}
+
+        # Pieces attendues par Stockfish mais absentes dans la camera
+        for sq, code in expected.items():
+            if sq not in stabilized_board:
+                missing[sq] = code
+
+        # Pieces detectees par la camera mais pas attendues par Stockfish
+        for sq, code in stabilized_board.items():
+            if sq not in expected:
+                extra[sq] = code
+
+        # Pieces dont le code ne correspond pas
+        for sq in expected:
+            if sq in stabilized_board and stabilized_board[sq] != expected[sq]:
+                anomalies.append({
+                    "square": sq,
+                    "expected": expected[sq],
+                    "detected": stabilized_board[sq],
+                })
+
+        # Tenter de deduire des mouvements (piece disparue -> apparue ailleurs)
+        for sq_from, code_from in missing.items():
+            for sq_to, code_to in extra.items():
+                if code_from == code_to:
+                    moved[sq_from] = sq_to
+
+        result = {
+            "in_sync": len(missing) == 0 and len(extra) == 0 and len(anomalies) == 0,
+            "missing": missing,
+            "extra": extra,
+            "mismatches": anomalies,
+            "possible_moves": moved,
+        }
+
+        # Generer des suggestions
+        suggestions = []
+        for sq, code in missing.items():
+            if sq in moved:
+                dest = moved[sq]
+                # Verifier si c'est un coup legal
+                try:
+                    uci_move = f"{sq}{dest}"
+                    move = chess.Move.from_uci(uci_move)
+                    if move in self.board.legal_moves:
+                        suggestions.append(f"Coup detecte: {code} {sq} -> {dest} (legal)")
+                        result["detected_move"] = {"from": sq, "to": dest, "legal": True}
+                    else:
+                        suggestions.append(f"Deplacement detecte: {code} {sq} -> {dest} (illegal)")
+                        result["detected_move"] = {"from": sq, "to": dest, "legal": False}
+                except ValueError:
+                    suggestions.append(f"Deplacement invalide: {code} {sq} -> {dest}")
+            else:
+                suggestions.append(f"Piece manquante: {code} en {sq}")
+
+        result["suggestions"] = suggestions
+        return result
 
     def close(self):
         """Ferme Stockfish"""

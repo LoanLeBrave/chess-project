@@ -7,6 +7,12 @@ export interface MoveEvaluation {
   centipawnLoss: number;
 }
 
+export interface VisionState {
+  board: { [square: string]: string };
+  confidence: { [square: string]: number };
+  pieces_count: number;
+}
+
 export interface UseChessRobotReturn {
   fen: string;
   isWhiteTurn: boolean;
@@ -15,6 +21,7 @@ export interface UseChessRobotReturn {
   robotStatus: RobotStatus;
   acplScore: number;
   moveEvaluations: MoveEvaluation[];
+  visionState: VisionState | null;
   setRobotStatus: (status: RobotStatus) => void;
   onMove: (from: string, to: string) => Promise<boolean>;
   getLegalMoves: (square: string) => Promise<string[]>;
@@ -71,6 +78,7 @@ export function useChessRobot(
   const [robotStatus, setRobotStatus] = useState<RobotStatus>('disconnected');
   const [moveEvaluations, setMoveEvaluations] = useState<MoveEvaluation[]>([]);
   const [acplScore, setAcplScore] = useState(0);
+  const [visionState, setVisionState] = useState<VisionState | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
 
   // --- WebSocket ---
@@ -132,6 +140,23 @@ export function useChessRobot(
             setFen(msg.fen);
             setIsWhiteTurn(msg.fen.split(' ')[1] === 'w');
             setRobotStatus(msg.robot_connected ? 'idle' : 'disconnected');
+          }
+
+          if (msg.type === 'vision_state') {
+            setVisionState({
+              board: msg.board || {},
+              confidence: msg.confidence || {},
+              pieces_count: msg.pieces_count || 0,
+            });
+          }
+
+          if (msg.type === 'vision_anomaly') {
+            addLog('warning', msg.message || 'Anomalie vision detectee');
+            if (msg.suggestions) {
+              for (const s of msg.suggestions) {
+                addLog('warning', s);
+              }
+            }
           }
         } catch { /* ignore parse errors */ }
       };
@@ -315,6 +340,7 @@ export function useChessRobot(
     robotStatus,
     acplScore,
     moveEvaluations,
+    visionState,
     setRobotStatus,
     onMove,
     getLegalMoves,

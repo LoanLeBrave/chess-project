@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { Eye, EyeOff } from 'lucide-react';
 import { ChessBoard } from './ChessBoard';
 import { ControlPanel } from './ControlPanel';
 import { MoveHistory } from './MoveHistory';
@@ -31,6 +32,7 @@ export function GameScreen({ difficulty, gameState, setGameState, onReturnToMenu
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [moves, setMoves] = useState<ChessMove[]>([]);
   const [showScoreSaved, setShowScoreSaved] = useState(false);
+  const [showVision, setShowVision] = useState(false);
 
   const addLog = (type: LogEntry['type'], message: string) => {
     const newLog: LogEntry = {
@@ -61,6 +63,7 @@ export function GameScreen({ difficulty, gameState, setGameState, onReturnToMenu
     gameResult,
     robotStatus,
     acplScore,
+    visionState,
     onMove,
     getLegalMoves,
     getBestMove,
@@ -232,12 +235,31 @@ export function GameScreen({ difficulty, gameState, setGameState, onReturnToMenu
               onNewGame={handleNewGame}
             />
 
-            {/* Player Turn Status - Compact */}
-            <PlayerTurnStatus isPlayerTurn={isWhiteTurn} />
+            {/* Player Turn Status + Vision Toggle */}
+            <div className="flex items-center gap-3">
+              <div className="flex-1">
+                <PlayerTurnStatus isPlayerTurn={isWhiteTurn} />
+              </div>
+              <button
+                onClick={() => setShowVision(!showVision)}
+                className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                  showVision
+                    ? 'bg-cyan-600 text-white'
+                    : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
+                }`}
+                title="Afficher/masquer la vision camera"
+              >
+                {showVision ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
+                Vision
+                {showVision && visionState && (
+                  <span className="text-xs opacity-75">({visionState.pieces_count}p)</span>
+                )}
+              </button>
+            </div>
             
             {/* Chess Board - Flexible size */}
             <div className="flex-1 min-h-0">
-              <ChessBoard 
+              <ChessBoard
                 fen={fen}
                 isWhiteTurn={isWhiteTurn}
                 robotStatus={robotStatus}
@@ -245,6 +267,9 @@ export function GameScreen({ difficulty, gameState, setGameState, onReturnToMenu
                 onMove={onMove}
                 getLegalMoves={getLegalMoves}
                 getBestMove={getBestMove}
+                showVision={showVision}
+                visionBoard={visionState?.board}
+                visionConfidence={visionState?.confidence}
               />
             </div>
           </div>
