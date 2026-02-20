@@ -601,8 +601,95 @@ async def get_vision_status():
         "last_error": manager.vision.last_error,
         "last_timestamp": manager.vision.last_timestamp,
         "pieces_count": manager.vision.pieces_count,
+        "stable_board_count": len(manager.vision.stable_board),
+        "raw_board_count": len(manager.vision.raw_board),
         "buffer_size": manager.vision.BUFFER_SIZE,
         "has_pipeline": manager.vision._pipeline is not None,
+    }
+
+
+@app.post("/vision/debug-aruco")
+async def debug_aruco_detection():
+    """
+    Diagnostic ArUco : capture une photo et teste TOUS les dictionnaires
+    ArUco courants pour identifier lequel détecte les marqueurs physiques.
+
+    Retourne pour chaque dictionnaire le nombre de marqueurs détectés,
+    les IDs trouvés, et si des IDs de calibration (32-35) ou pièces (0-31)
+    sont présents.
+    """
+    import cv2
+    import numpy as np
+
+    try:
+        from chess_vision.modules.camera import take_photo
+        photo_path = take_photo()
+        image = cv2.imread(photo_path)
+        if image is None:
+            return {"success": False, "error": "Impossible de lire la photo"}
+        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    except Exception as e:
+        return {"success": False, "error": f"Capture impossible: {e}"}
+
+    # Tous les dictionnaires ArUco OpenCV courants
+    dicts_to_test = {
+        "DICT_4X4_50":   cv2.aruco.DICT_4X4_50,
+        "DICT_4X4_100":  cv2.aruco.DICT_4X4_100,
+        "DICT_4X4_250":  cv2.aruco.DICT_4X4_250,
+        "DICT_4X4_1000": cv2.aruco.DICT_4X4_1000,
+        "DICT_5X5_50":   cv2.aruco.DICT_5X5_50,
+        "DICT_5X5_100":  cv2.aruco.DICT_5X5_100,
+        "DICT_5X5_250":  cv2.aruco.DICT_5X5_250,
+        "DICT_6X6_50":   cv2.aruco.DICT_6X6_50,
+        "DICT_6X6_100":  cv2.aruco.DICT_6X6_100,
+        "DICT_6X6_250":  cv2.aruco.DICT_6X6_250,
+        "DICT_7X7_50":   cv2.aruco.DICT_7X7_50,
+        "DICT_ARUCO_ORIGINAL": cv2.aruco.DICT_ARUCO_ORIGINAL,
+    }
+
+    results = {}
+    best_dict = None
+    best_count = 0
+
+    for dict_name, dict_type in dicts_to_test.items():
+        try:
+            aruco_dict = cv2.aruco.getPredefinedDictionary(dict_type)
+            detector_params = cv2.aruco.DetectorParameters()
+            detector = cv2.aruco.ArucoDetector(aruco_dict, detector_params)
+            corners, ids, _ = detector.detectMarkers(gray)
+
+            detected_ids = ids.flatten().tolist() if ids is not None else []
+            piece_ids    = [i for i in detected_ids if 0 <= i <= 31]
+            calib_ids    = [i for i in detected_ids if 32 <= i <= 35]
+
+            results[dict_name] = {
+                "total": len(detected_ids),
+                "all_ids": sorted(detected_ids),
+                "piece_ids": sorted(piece_ids),
+                "calib_ids": sorted(calib_ids),
+            }
+
+            if len(detected_ids) > best_count:
+                best_count = len(detected_ids)
+                best_dict = dict_name
+
+        except Exception as e:
+            results[dict_name] = {"error": str(e)}
+
+    current_dict = "DICT_4X4_50"
+    return {
+        "success": True,
+        "photo_path": photo_path,
+        "current_dict": current_dict,
+        "current_dict_detects": results.get(current_dict, {}).get("total", 0),
+        "best_dict": best_dict,
+        "best_dict_count": best_count,
+        "recommendation": (
+            f"Changer ARUCO_DICT_TYPE vers {best_dict} dans config.py"
+            if best_dict and best_dict != current_dict
+            else "Le dictionnaire actuel est correct"
+        ),
+        "all_results": results,
     }
 
 
