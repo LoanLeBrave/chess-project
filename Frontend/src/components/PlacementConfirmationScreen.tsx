@@ -7,7 +7,7 @@ interface PlacementConfirmationScreenProps {
   onBack: () => void;
 }
 
-const API_BASE = `${window.location.protocol}//${window.location.hostname}:8000`;
+const API_BASE = `${globalThis.location.protocol}//${globalThis.location.hostname}:8000`;
 
 interface MissingPiece {
   square: string;
@@ -16,7 +16,7 @@ interface MissingPiece {
   color: 'white' | 'black';
 }
 
-export function PlacementConfirmationScreen({ onConfirm, onBack }: PlacementConfirmationScreenProps) {
+export function PlacementConfirmationScreen({ onConfirm, onBack }: Readonly<PlacementConfirmationScreenProps>) {
   const [imageBase64, setImageBase64] = useState<string>('');
   const [cameraDetected, setCameraDetected] = useState<number>(0);
   const [missingPieces, setMissingPieces] = useState<MissingPiece[]>([]);
@@ -28,20 +28,24 @@ export function PlacementConfirmationScreen({ onConfirm, onBack }: PlacementConf
     setIsLoading(true);
     setError('');
     try {
-      // Récupérer les pièces manquantes via l'endpoint hybride
-      const missingRes = await fetch(`${API_BASE}/vision/hybrid/missing`);
+      // Les deux appels en parallèle : visualisation annotée + pièces manquantes
+      const [vizRes, missingRes] = await Promise.all([
+        fetch(`${API_BASE}/vision/visualization`, { method: 'POST' }),
+        fetch(`${API_BASE}/vision/hybrid/missing`),
+      ]);
+
+      const vizData = await vizRes.json();
+      if (vizData.success && vizData.image_base64) {
+        setImageBase64(vizData.image_base64);
+      } else {
+        setImageBase64('');
+      }
+
       const missingData = await missingRes.json();
       setCameraDetected(missingData.camera_pieces_count ?? 0);
       setMissingPieces(missingData.missing_pieces ?? []);
-
-      // Récupérer l'image caméra
-      const imgRes = await fetch(`${API_BASE}/camera/capture`, { method: 'POST' });
-      const imgData = await imgRes.json();
-      if (imgData.success && imgData.image_base64) {
-        setImageBase64(imgData.image_base64);
-      }
-    } catch (e) {
-      setError('Impossible de contacter le serveur. Vérifiez la connexion.');
+    } catch (err) {
+      setError(`Impossible de contacter le serveur. Vérifiez la connexion. (${err instanceof Error ? err.message : String(err)})`);
     } finally {
       setIsLoading(false);
     }
@@ -62,17 +66,33 @@ export function PlacementConfirmationScreen({ onConfirm, onBack }: PlacementConf
       } else {
         setError('Erreur lors de la confirmation du placement.');
       }
-    } catch (e) {
-      setError('Impossible de confirmer. Vérifiez la connexion.');
+    } catch (err) {
+      setError(`Impossible de confirmer. Vérifiez la connexion. (${err instanceof Error ? err.message : String(err)})`);
     } finally {
       setIsConfirming(false);
     }
   };
 
   const allDetected = missingPieces.length === 0;
-  const imageSrc = imageBase64
-    ? `data:image/jpeg;base64,${imageBase64}`
-    : '';
+  const imageSrc = imageBase64 ? `data:image/jpeg;base64,${imageBase64}` : '';
+
+  const renderCameraContent = () => {
+    if (isLoading) {
+      return (
+        <div className="aspect-video flex items-center justify-center">
+          <RefreshCw className="w-12 h-12 text-cyan-500 animate-spin" />
+        </div>
+      );
+    }
+    if (imageSrc) {
+      return <img src={imageSrc} alt="Vue caméra annotée" className="w-full h-auto" />;
+    }
+    return (
+      <div className="aspect-video flex items-center justify-center">
+        <p className="text-slate-500 text-sm">Caméra non disponible</p>
+      </div>
+    );
+  };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 flex items-center justify-center p-6">
@@ -98,21 +118,7 @@ export function PlacementConfirmationScreen({ onConfirm, onBack }: PlacementConf
             {/* Image de la caméra */}
             <div className="lg:col-span-2">
               <div className="relative bg-slate-900/80 rounded-xl overflow-hidden border border-slate-700">
-                {isLoading ? (
-                  <div className="aspect-video flex items-center justify-center">
-                    <RefreshCw className="w-12 h-12 text-cyan-500 animate-spin" />
-                  </div>
-                ) : imageSrc ? (
-                  <img
-                    src={imageSrc}
-                    alt="Vue caméra"
-                    className="w-full h-auto"
-                  />
-                ) : (
-                  <div className="aspect-video flex items-center justify-center">
-                    <p className="text-slate-500 text-sm">Caméra non disponible</p>
-                  </div>
-                )}
+                {renderCameraContent()}
               </div>
 
               <button

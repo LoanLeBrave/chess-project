@@ -749,6 +749,46 @@ async def get_hybrid_simulated():
     return status
 
 
+@app.post("/vision/visualization")
+async def get_vision_visualization():
+    """
+    Capture une image, lance l'analyse chess_vision avec les visualisations
+    activées et retourne l'image annotée (grille + pièces détectées).
+
+    Utilise un pipeline one-shot indépendant du pipeline principal pour ne
+    pas ralentir la boucle de détection en cours.
+    """
+    try:
+        from chess_vision import ChessVisionPipeline
+        from chess_vision.config import OUTPUT_DIR
+
+        pipeline = ChessVisionPipeline(save_visualization_images=True)
+        if not pipeline.extractor.is_calibrated:
+            return {"success": False, "error": "Camera non calibree (board_calibration.json manquant)"}
+
+        result = pipeline.capture_and_analyze(save_outputs=True)
+
+        latest_dir = os.path.join(OUTPUT_DIR, "latest")
+
+        # Priorité : image avec pièces > grille seule > plateau brut
+        for filename in ["5_pieces.jpg", "4_board_grid.jpg", "3_board.jpg"]:
+            img_path = os.path.join(latest_dir, filename)
+            if os.path.exists(img_path):
+                with open(img_path, "rb") as f:
+                    image_data = base64.b64encode(f.read()).decode()
+                return {
+                    "success": True,
+                    "image_base64": image_data,
+                    "source": filename,
+                    "pieces_count": result.get("pieces_count", 0),
+                    "error": result.get("error"),
+                }
+
+        return {"success": False, "error": "Aucune image de visualisation generee"}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
 @app.get("/vision/sync")
 async def get_vision_sync():
     """Compare l'etat camera stabilise avec l'etat Stockfish."""
