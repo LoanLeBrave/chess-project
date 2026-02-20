@@ -1196,6 +1196,23 @@ async def camera_capture():
         return {"success": False, "error": str(e)}
 
 
+@app.get("/camera/calibration")
+async def get_camera_calibration():
+    """Retourne les coins de calibration du plateau depuis board_calibration.json."""
+    try:
+        from chess_vision.config import CALIBRATION_FILE
+        if not os.path.exists(CALIBRATION_FILE):
+            return {"success": False, "error": "Non calibre (board_calibration.json manquant)"}
+        with open(CALIBRATION_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        corners = data.get("corners", {})
+        if not all(k in corners for k in ("TL", "TR", "BR", "BL")):
+            return {"success": False, "error": "Fichier de calibration incomplet"}
+        return {"success": True, "corners": corners}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
 @app.post("/camera/calibrate/save")
 async def camera_calibrate_save(data: dict):
     """Sauvegarde la calibration camera (4 coins du plateau)"""
