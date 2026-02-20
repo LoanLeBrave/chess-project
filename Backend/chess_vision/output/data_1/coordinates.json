@@ -1,0 +1,307 @@
+{
+  "coordinates": [
+    {
+      "id": 0,
+      "color": "white",
+      "type": "Pawn",
+      "zone": "board",
+      "x": 1.51,
+      "y": 6.44,
+      "grid": "E7",
+      "chess": "e7"
+    },
+    {
+      "id": 1,
+      "color": "white",
+      "type": "Pawn",
+      "zone": "board",
+      "x": 3.81,
+      "y": 6.53,
+      "grid": "F7",
+      "chess": "f7"
+    },
+    {
+      "id": 3,
+      "color": "white",
+      "type": "Pawn",
+      "zone": "board",
+      "x": -5.97,
+      "y": 6.49,
+      "grid": "B7",
+      "chess": "b7"
+    },
+    {
+      "id": 4,
+      "color": "white",
+      "type": "Pawn",
+      "zone": "board",
+      "x": -8.13,
+      "y": 6.55,
+      "grid": "A7",
+      "chess": "a7"
+    },
+    {
+      "id": 5,
+      "color": "white",
+      "type": "Pawn",
+      "zone": "board",
+      "x": 9.02,
+      "y": 6.41,
+      "grid": "H7",
+      "chess": "h7"
+    },
+    {
+      "id": 6,
+      "color": "white",
+      "type": "Pawn",
+      "zone": "board",
+      "x": -1.16,
+      "y": 6.63,
+      "grid": "D7",
+      "chess": "d7"
+    },
+    {
+      "id": 7,
+      "color": "white",
+      "type": "Pawn",
+      "zone": "board",
+      "x": -3.71,
+      "y": 6.4,
+      "grid": "C7",
+      "chess": "c7"
+    },
+    {
+      "id": 8,
+      "color": "white",
+      "type": "Rook",
+      "zone": "board",
+      "x": 9.25,
+      "y": 9.18,
+      "grid": "H8",
+      "chess": "h8"
+    },
+    {
+      "id": 9,
+      "color": "white",
+      "type": "Rook",
+      "zone": "board",
+      "x": -8.31,
+      "y": 8.89,
+      "grid": "A8",
+      "chess": "a8"
+    },
+    {
+      "id": 10,
+      "color": "white",
+      "type": "Knight",
+      "zone": "board",
+      "x": 6.48,
+      "y": 8.94,
+      "grid": "G8",
+      "chess": "g8"
+    },
+    {
+      "id": 11,
+      "color": "white",
+      "type": "Knight",
+      "zone": "board",
+      "x": -6.08,
+      "y": 9.02,
+      "grid": "B8",
+      "chess": "b8"
+    },
+    {
+      "id": 12,
+      "color": "white",
+      "type": "Bishop",
+      "zone": "board",
+      "x": 3.78,
+      "y": 8.94,
+      "grid": "F8",
+      "chess": "f8"
+    },
+    {
+      "id": 13,
+      "color": "white",
+      "type": "Bishop",
+      "zone": "board",
+      "x": -3.59,
+      "y": 8.98,
+      "grid": "C8",
+      "chess": "c8"
+    },
+    {
+      "id": 15,
+      "color": "white",
+      "type": "King",
+      "zone": "board",
+      "x": -0.88,
+      "y": 8.86,
+      "grid": "D8",
+      "chess": "d8"
+    },
+    {
+      "id": 16,
+      "color": "black",
+      "type": "Pawn",
+      "zone": "board",
+      "x": -6.18,
+      "y": -5.83,
+      "grid": "B2",
+      "chess": "b2"
+    },
+    {
+      "id": 17,
+      "color": "black",
+      "type": "Pawn",
+      "zone": "board",
+      "x": -3.45,
+      "y": -5.61,
+      "grid": "C2",
+      "chess": "c2"
+    },
+    {
+      "id": 19,
+      "color": "black",
+      "type": "Pawn",
+      "zone": "board",
+      "x": 4.13,
+      "y": -1.0,
+      "grid": "F4",
+      "chess": "f4"
+    },
+    {
+      "id": 20,
+      "color": "black",
+      "type": "Pawn",
+      "zone": "board",
+      "x": 8.8,
+      "y": -6.33,
+      "grid": "H2",
+      "chess": "h2"
+    },
+    {
+      "id": 21,
+      "color": "black",
+      "type": "Pawn",
+      "zone": "board",
+      "x": 4.12,
+      "y": -3.7,
+      "grid": "F3",
+      "chess": "f3"
+    },
+    {
+      "id": 22,
+      "color": "black",
+      "type": "Pawn",
+      "zone": "board",
+      "x": -8.37,
+      "y": -5.89,
+      "grid": "A2",
+      "chess": "a2"
+    },
+    {
+      "id": 23,
+      "color": "black",
+      "type": "Pawn",
+      "zone": "board",
+      "x": -1.07,
+      "y": -6.14,
+      "grid": "D2",
+      "chess": "d2"
+    },
+    {
+      "id": 24,
+      "color": "black",
+      "type": "Rook",
+      "zone": "board",
+      "x": -8.48,
+      "y": -8.65,
+      "grid": "A1",
+      "chess": "a1"
+    },
+    {
+      "id": 25,
+      "color": "black",
+      "type": "Rook",
+      "zone": "board",
+      "x": 8.81,
+      "y": -8.66,
+      "grid": "H1",
+      "chess": "h1"
+    },
+    {
+      "id": 26,
+      "color": "black",
+      "type": "Knight",
+      "zone": "board",
+      "x": -6.12,
+      "y": -8.72,
+      "grid": "B1",
+      "chess": "b1"
+    },
+    {
+      "id": 27,
+      "color": "black",
+      "type": "Knight",
+      "zone": "board",
+      "x": 6.65,
+      "y": -8.38,
+      "grid": "G1",
+      "chess": "g1"
+    },
+    {
+      "id": 28,
+      "color": "black",
+      "type": "Bishop",
+      "zone": "board",
+      "x": -3.64,
+      "y": -8.55,
+      "grid": "C1",
+      "chess": "c1"
+    },
+    {
+      "id": 29,
+      "color": "black",
+      "type": "Bishop",
+      "zone": "board",
+      "x": 4.14,
+      "y": -8.76,
+      "grid": "F1",
+      "chess": "f1"
+    },
+    {
+      "id": 30,
+      "color": "black",
+      "type": "Queen",
+      "zone": "board",
+      "x": 1.33,
+      "y": -8.67,
+      "grid": "E1",
+      "chess": "e1"
+    },
+    {
+      "id": 31,
+      "color": "black",
+      "type": "King",
+      "zone": "board",
+      "x": -1.4,
+      "y": -8.47,
+      "grid": "D1",
+      "chess": "d1"
+    }
+  ],
+  "metadata": {
+    "timestamp": "2026-02-17T13:36:27.208819",
+    "count": 29,
+    "coord_system": "extended_-12.5_+12.5",
+    "board_range": {
+      "min": -10,
+      "max": 10
+    },
+    "extended_range": {
+      "min": -12.5,
+      "max": 12.5
+    }
+  }
+}
