@@ -50,7 +50,6 @@ export function PlacementConfirmationScreen({ onConfirm, onBack }: Readonly<Plac
   const [imageSize, setImageSize] = useState({ width: 0, height: 0 });
   const [corners, setCorners] = useState<Corners | null>(null);
   const [missingPieces, setMissingPieces] = useState<MissingPiece[]>([]);
-  const [cameraDetected, setCameraDetected] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
   const [isConfirming, setIsConfirming] = useState(false);
   const [error, setError] = useState('');
@@ -112,17 +111,17 @@ export function PlacementConfirmationScreen({ onConfirm, onBack }: Readonly<Plac
       const white = code.startsWith('W');
 
       ctx.beginPath();
-      ctx.arc(pos.x, pos.y, 7 * scale, 0, Math.PI * 2);
+      ctx.arc(pos.x, pos.y, 8, 0, Math.PI * 2);
 
       if (detected) {
         ctx.fillStyle = white ? 'rgba(255,255,255,0.9)' : 'rgba(20,20,20,0.9)';
         ctx.strokeStyle = '#22c55e';
-        ctx.lineWidth = 2 * scale;
+        ctx.lineWidth = 2;
         ctx.setLineDash([]);
       } else {
         ctx.fillStyle = 'rgba(239,68,68,0.35)';
         ctx.strokeStyle = '#ef4444';
-        ctx.lineWidth = 2 * scale;
+        ctx.lineWidth = 2;
         ctx.setLineDash([4, 3]);
       }
       ctx.fill();
@@ -177,7 +176,6 @@ export function PlacementConfirmationScreen({ onConfirm, onBack }: Readonly<Plac
         missingRes.json(),
       ]) as [CaptureData, CalibData, MissingData];
 
-      setCameraDetected(missingData.camera_pieces_count ?? 0);
       setMissingPieces(missingData.missing_pieces ?? []);
 
       if (calibData.success && calibData.corners) {
@@ -288,13 +286,13 @@ export function PlacementConfirmationScreen({ onConfirm, onBack }: Readonly<Plac
                     : <AlertCircle className="w-8 h-8 text-yellow-500 shrink-0" />
                   }
                   <div>
-                    <h3 className="text-white font-bold">Pièces détectées</h3>
-                    <p className="text-2xl font-bold text-cyan-400">{cameraDetected} / 32</p>
+                    <h3 className="text-white font-bold">Pièces bien placées</h3>
+                    <p className="text-2xl font-bold text-cyan-400">{32 - missingPieces.length} / 32</p>
                   </div>
                 </div>
                 {allDetected
                   ? <p className="text-green-400 text-sm">Toutes les pièces sont visibles</p>
-                  : <p className="text-yellow-400 text-sm">{missingPieces.length} pièce(s) non détectée(s) — simulées automatiquement</p>
+                  : <p className="text-yellow-400 text-sm">{missingPieces.length} pièce(s) simulées automatiquement</p>
                 }
               </div>
 
