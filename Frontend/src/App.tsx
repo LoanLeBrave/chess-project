@@ -5,10 +5,11 @@ import { SafetyScreen } from './components/SafetyScreen';
 import { StartScreen } from './components/StartScreen';
 import { GameScreen } from './components/GameScreen';
 import { LeaderboardScreen } from './components/LeaderboardScreen';
+import { PlacementConfirmationScreen } from './components/PlacementConfirmationScreen';
 
 export type DifficultyLevel = 'beginner' | 'intermediate' | 'advanced';
 export type GameState = 'menu' | 'playing' | 'paused' | 'finished';
-export type AppScreen = 'welcome' | 'leaderboard' | 'calibration' | 'safety' | 'difficulty' | 'game';
+export type AppScreen = 'welcome' | 'leaderboard' | 'calibration' | 'safety' | 'difficulty' | 'placement' | 'game';
 
 export interface LogEntry {
   id: string;
@@ -55,12 +56,20 @@ function App() {
   const handleStartGame = (selectedDifficulty: DifficultyLevel, name: string) => {
     setDifficulty(selectedDifficulty);
     setPlayerName(name);
-    setGameState('playing');
-    setCurrentScreen('game');
+    setCurrentScreen('placement');
   };
 
   const handleStartBack = () => {
     setCurrentScreen('safety');
+  };
+
+  const handlePlacementConfirm = () => {
+    setGameState('playing');
+    setCurrentScreen('game');
+  };
+
+  const handlePlacementBack = () => {
+    setCurrentScreen('difficulty');
   };
 
   const handleReturnToMenu = () => {
@@ -92,9 +101,15 @@ function App() {
         />
       )}
       {currentScreen === 'difficulty' && (
-        <StartScreen 
+        <StartScreen
           onStartGame={handleStartGame}
           onBack={handleStartBack}
+        />
+      )}
+      {currentScreen === 'placement' && (
+        <PlacementConfirmationScreen
+          onConfirm={handlePlacementConfirm}
+          onBack={handlePlacementBack}
         />
       )}
       {currentScreen === 'game' && (

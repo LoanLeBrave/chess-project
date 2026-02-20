@@ -26,6 +26,7 @@ from chess_manager import ChessManager
 from leaderboard_manager import LeaderboardManager
 from config import FICHIER_CALIBRATION
 from calibration import TwoPointCalibration
+from hybrid_board_manager import HybridBoardManager
 
 # Ajouter le chemin chess_vision au path pour les imports
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
@@ -449,6 +450,7 @@ class ApplicationManager:
 
 # Instance globale
 manager = ApplicationManager()
+hybrid_manager = HybridBoardManager()
 
 
 # ============================================================================
@@ -547,6 +549,7 @@ async def _check_vision_move():
             if result.get("success"):
                 # Mettre a jour la reference apres le coup humain
                 manager.vision.update_reference_after_move(from_sq, to_sq, is_capture)
+                hybrid_manager.on_move_played(from_sq, to_sq, is_capture)
                 # Aussi mettre a jour apres le coup robot si il a joue
                 robot_resp = result.get("robot_response", {})
                 if robot_resp.get("success"):
@@ -555,6 +558,7 @@ async def _check_vision_move():
                     if r_from and r_to:
                         r_capture = manager.vision.reference_board and r_to in manager.vision.reference_board
                         manager.vision.update_reference_after_move(r_from, r_to, r_capture)
+                        hybrid_manager.on_move_played(r_from, r_to, bool(r_capture))
 
                 # Vider les buffers pour repartir clean
                 manager.vision._buffers.clear()
@@ -564,7 +568,10 @@ async def _check_vision_move():
                 await asyncio.sleep(1.0)
                 manager.vision.update()  # capture fraiche
                 if manager.vision.stable_board:
-                    manager.vision.camera_baseline = dict(manager.vision.stable_board)
+                    # Baseline hybride : camera + pieces encore simulees
+                    manager.vision.camera_baseline = hybrid_manager.get_hybrid_baseline(
+                        manager.vision.stable_board
+                    )
             else:
                 await manager.log("warning", f"Echec: {result.get('error')}")
         finally:
@@ -655,6 +662,93 @@ async def confirm_placement(data: dict = None):
     return {"success": True, **result}
 
 
+@app.get("/vision/hybrid/missing")
+async def get_hybrid_missing():
+    """
+    Retourne les pieces non détectées par la caméra par rapport à la position
+    de départ standard.
+
+    À appeler avant la confirmation pour informer le joueur des pièces que
+    la caméra ne voit pas encore.
+    """
+    camera_board = manager.vision.stable_board or {}
+    missing = hybrid_manager.analyze_missing_pieces(camera_board)
+    return {
+        "camera_pieces_count": len([v for v in camera_board.values() if v]),
+        "missing_count": len(missing),
+        "missing_pieces": missing,
+        "ready_to_confirm": True,
+    }
+
+
+@app.post("/vision/hybrid/confirm")
+async def confirm_hybrid_placement():
+    """
+    Le joueur confirme que toutes les pièces sont bien placées sur le plateau.
+
+    - Les pièces détectées par la caméra sont utilisées telles quelles.
+    - Les pièces NON détectées sont simulées à leur position de départ standard.
+    - Le baseline caméra (camera_baseline) est enrichi avec ces pièces simulées
+      pour que la détection delta fonctionne correctement.
+
+    Sans cette étape, une pièce qui devient visible en cours de partie est
+    vue comme une "apparition illégale" par Stockfish.
+    """
+    camera_board = manager.vision.stable_board or {}
+
+    # Construire le baseline hybride (caméra + simulées) et marquer les simulées
+    hybrid_baseline = hybrid_manager.build_hybrid_baseline(camera_board)
+
+    # Confirmer le placement : reference_board = position standard complète
+    result = manager.vision.confirm_placement(use_camera=False)
+
+    # Remplacer camera_baseline par le baseline hybride enrichi
+    manager.vision.camera_baseline = hybrid_baseline
+
+    simulated_count = len(hybrid_manager.simulated_squares)
+    simulated_list = sorted(hybrid_manager.simulated_squares)
+
+    await manager.log(
+        "info",
+        f"Placement hybride confirme : {len(camera_board)} pieces vues, "
+        f"{simulated_count} simulees ({', '.join(simulated_list) or 'aucune'})"
+    )
+    await manager.broadcast({
+        "type": "vision_game_started",
+        "source": "hybrid",
+        "pieces_count": len(hybrid_baseline),
+        "simulated_count": simulated_count,
+        "simulated_squares": simulated_list,
+    })
+
+    return {
+        "success": True,
+        "camera_pieces_count": len(camera_board),
+        "simulated_count": simulated_count,
+        "simulated_squares": simulated_list,
+        "total_baseline_count": len(hybrid_baseline),
+    }
+
+
+@app.get("/vision/hybrid/simulated")
+async def get_hybrid_simulated():
+    """
+    Retourne les pieces actuellement simulées pendant la partie.
+
+    Une pièce est simulée tant que la caméra ne l'a pas vue se déplacer.
+    Dès qu'elle bouge (et est détectée), elle sort de la liste simulée.
+    """
+    camera_board = manager.vision.stable_board or {}
+
+    # Mettre à jour : si une pièce simulée est maintenant visible, la retirer
+    de_simulated = hybrid_manager.on_camera_update(camera_board)
+    if de_simulated:
+        await manager.log("info", f"Pieces de-simulees (maintenant visibles) : {de_simulated}")
+
+    status = hybrid_manager.get_status(camera_board)
+    return status
+
+
 @app.get("/vision/sync")
 async def get_vision_sync():
     """Compare l'etat camera stabilise avec l'etat Stockfish."""
@@ -711,6 +805,7 @@ async def get_status():
 @app.post("/game/new")
 async def new_game(config: GameConfig):
     """Démarre une nouvelle partie"""
+    hybrid_manager.reset()
     result = manager.chess.new_game(config.difficulty)
     await manager.log("info", f"🎮 Nouvelle partie - Difficulté: {config.difficulty}")
     await manager.broadcast({
