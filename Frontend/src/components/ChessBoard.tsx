@@ -301,17 +301,6 @@ export function ChessBoard({
                         {file}
                       </span>
                     )}
-
-                    {/* Vision camera overlay */}
-                    {showVision && visionConfidence && visionConfidence[square] !== undefined && visionConfidence[square] < 0.8 && (
-                      <div
-                        className="absolute inset-0 pointer-events-none"
-                        style={{
-                          border: `3px solid ${visionConfidence[square] < 0.3 ? '#ef4444' : visionConfidence[square] < 0.6 ? '#f97316' : '#eab308'}`,
-                          borderRadius: '2px',
-                        }}
-                      />
-                    )}
                   </div>
                 );
               })
