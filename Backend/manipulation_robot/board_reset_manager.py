@@ -474,13 +474,11 @@ class BoardResetManager:
         return True
 
     def _update_blocker_source(self, move: dict, new_square: str) -> None:
-        """Met a jour la source et les coordonnees d'un mouvement redirige."""
+        """Met a jour la case source d'un mouvement redirige vers une case tampon."""
         move["from_square"] = new_square
-        # Mettre a jour avec les coordonnees du centre de la case (robot calibre)
-        cx, cy = self.robot.get_square_center(new_square)
+        # Mettre a jour la case chess dans la piece pour coherence
         move["piece"] = dict(move["piece"])
         move["piece"]["position"] = dict(move["piece"]["position"])
-        move["piece"]["position"]["board"] = {"x": cx, "y": cy}
         move["piece"]["position"]["chess"] = new_square
 
     def _find_piece_at_square(
@@ -506,10 +504,18 @@ class BoardResetManager:
     async def _execute_single_move(
         self, move: dict, step: int, total: int
     ) -> bool:
-        """Execute un mouvement physique (pick vision + place geometrique)."""
+        """Execute un mouvement physique.
+
+        PICK  : centre geometrique de la case source (coherent avec execute_move)
+        PLACE : centre geometrique de la case cible
+
+        Les deux utilisent get_square_center + cam_to_robot, exactement comme
+        le fait le jeu normal, garantissant la coherence avec la calibration robot.
+        """
         piece_data = move["piece"]
+        from_square = move.get("from_square")
         target = move["to_square"]
-        from_label = move.get("from_square") or move.get("from_zone", "?")
+        from_label = from_square or move.get("from_zone", "?")
         color_label = piece_data.get("color", "?")
         type_label = piece_data.get("type", "?")
 
@@ -529,18 +535,22 @@ class BoardResetManager:
                 "to": target,
             })
 
+        if not from_square:
+            await self._log("warning", f"Case source manquante pour {color_label} {type_label}")
+            return False
+
         # Type de piece (pour hauteur Z)
         chess_type = _VISION_TYPE_MAP.get(piece_data.get("type"), chess.PAWN)
         self.robot.piece_courante = chess_type
 
-        # PICK : coordonnees vision
-        pick_x = piece_data["position"]["board"]["x"]
-        pick_y = piece_data["position"]["board"]["y"]
-        p_pick = self.robot.cam_to_robot(pick_x, pick_y, use_piece_height=True)
+        # PICK : centre geometrique de la case source (calibration robot)
+        # Identique a ce que fait execute_move dans robot_controller
+        cx_from, cy_from = self.robot.get_square_center(from_square)
+        p_pick = self.robot.cam_to_robot(cx_from, cy_from, use_piece_height=True)
 
         # PLACE : centre geometrique de la case cible
-        cx, cy = self.robot.get_square_center(target)
-        p_place = self.robot.cam_to_robot(cx, cy, use_piece_height=True)
+        cx_to, cy_to = self.robot.get_square_center(target)
+        p_place = self.robot.cam_to_robot(cx_to, cy_to, use_piece_height=True)
 
         return await self.robot._sequence_pick_and_place(p_pick, p_place)
 
