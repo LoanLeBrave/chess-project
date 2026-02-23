@@ -9,3 +9,4 @@ node_modules
 dist
 build
 node_modules/
+.github

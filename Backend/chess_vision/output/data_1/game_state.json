@@ -1,0 +1,615 @@
+{
+  "pieces": [
+    {
+      "id": 0,
+      "code": "WP1",
+      "color": "white",
+      "type": "Pawn",
+      "initial": "Pawn_A",
+      "zone": "board",
+      "position": {
+        "grid": "E7",
+        "chess": "e7",
+        "board": {
+          "x": 1.51,
+          "y": 6.44
+        },
+        "pixel": {
+          "x": 560.5,
+          "y": 242.5
+        }
+      }
+    },
+    {
+      "id": 1,
+      "code": "WP2",
+      "color": "white",
+      "type": "Pawn",
+      "initial": "Pawn_B",
+      "zone": "board",
+      "position": {
+        "grid": "F7",
+        "chess": "f7",
+        "board": {
+          "x": 3.81,
+          "y": 6.53
+        },
+        "pixel": {
+          "x": 652.3,
+          "y": 238.7
+        }
+      }
+    },
+    {
+      "id": 3,
+      "code": "WP4",
+      "color": "white",
+      "type": "Pawn",
+      "initial": "Pawn_D",
+      "zone": "board",
+      "position": {
+        "grid": "B7",
+        "chess": "b7",
+        "board": {
+          "x": -5.97,
+          "y": 6.49
+        },
+        "pixel": {
+          "x": 261.4,
+          "y": 240.3
+        }
+      }
+    },
+    {
+      "id": 4,
+      "code": "WP5",
+      "color": "white",
+      "type": "Pawn",
+      "initial": "Pawn_E",
+      "zone": "board",
+      "position": {
+        "grid": "A7",
+        "chess": "a7",
+        "board": {
+          "x": -8.13,
+          "y": 6.55
+        },
+        "pixel": {
+          "x": 174.8,
+          "y": 238.1
+        }
+      }
+    },
+    {
+      "id": 5,
+      "code": "WP6",
+      "color": "white",
+      "type": "Pawn",
+      "initial": "Pawn_F",
+      "zone": "board",
+      "position": {
+        "grid": "H7",
+        "chess": "h7",
+        "board": {
+          "x": 9.02,
+          "y": 6.41
+        },
+        "pixel": {
+          "x": 860.8,
+          "y": 243.7
+        }
+      }
+    },
+    {
+      "id": 6,
+      "code": "WP7",
+      "color": "white",
+      "type": "Pawn",
+      "initial": "Pawn_G",
+      "zone": "board",
+      "position": {
+        "grid": "D7",
+        "chess": "d7",
+        "board": {
+          "x": -1.16,
+          "y": 6.63
+        },
+        "pixel": {
+          "x": 453.6,
+          "y": 234.8
+        }
+      }
+    },
+    {
+      "id": 7,
+      "code": "WP8",
+      "color": "white",
+      "type": "Pawn",
+      "initial": "Pawn_H",
+      "zone": "board",
+      "position": {
+        "grid": "C7",
+        "chess": "c7",
+        "board": {
+          "x": -3.71,
+          "y": 6.4
+        },
+        "pixel": {
+          "x": 351.6,
+          "y": 244.1
+        }
+      }
+    },
+    {
+      "id": 8,
+      "code": "WR1",
+      "color": "white",
+      "type": "Rook",
+      "initial": "Rook_A",
+      "zone": "board",
+      "position": {
+        "grid": "H8",
+        "chess": "h8",
+        "board": {
+          "x": 9.25,
+          "y": 9.18
+        },
+        "pixel": {
+          "x": 869.9,
+          "y": 132.6
+        }
+      }
+    },
+    {
+      "id": 9,
+      "code": "WR2",
+      "color": "white",
+      "type": "Rook",
+      "initial": "Rook_H",
+      "zone": "board",
+      "position": {
+        "grid": "A8",
+        "chess": "a8",
+        "board": {
+          "x": -8.31,
+          "y": 8.89
+        },
+        "pixel": {
+          "x": 167.6,
+          "y": 144.4
+        }
+      }
+    },
+    {
+      "id": 10,
+      "code": "WN1",
+      "color": "white",
+      "type": "Knight",
+      "initial": "Knight_B",
+      "zone": "board",
+      "position": {
+        "grid": "G8",
+        "chess": "g8",
+        "board": {
+          "x": 6.48,
+          "y": 8.94
+        },
+        "pixel": {
+          "x": 759.1,
+          "y": 142.2
+        }
+      }
+    },
+    {
+      "id": 11,
+      "code": "WN2",
+      "color": "white",
+      "type": "Knight",
+      "initial": "Knight_G",
+      "zone": "board",
+      "position": {
+        "grid": "B8",
+        "chess": "b8",
+        "board": {
+          "x": -6.08,
+          "y": 9.02
+        },
+        "pixel": {
+          "x": 256.7,
+          "y": 139.4
+        }
+      }
+    },
+    {
+      "id": 12,
+      "code": "WB1",
+      "color": "white",
+      "type": "Bishop",
+      "initial": "Bishop_C",
+      "zone": "board",
+      "position": {
+        "grid": "F8",
+        "chess": "f8",
+        "board": {
+          "x": 3.78,
+          "y": 8.94
+        },
+        "pixel": {
+          "x": 651.1,
+          "y": 142.3
+        }
+      }
+    },
+    {
+      "id": 13,
+      "code": "WB2",
+      "color": "white",
+      "type": "Bishop",
+      "initial": "Bishop_F",
+      "zone": "board",
+      "position": {
+        "grid": "C8",
+        "chess": "c8",
+        "board": {
+          "x": -3.59,
+          "y": 8.98
+        },
+        "pixel": {
+          "x": 356.3,
+          "y": 140.6
+        }
+      }
+    },
+    {
+      "id": 15,
+      "code": "WK",
+      "color": "white",
+      "type": "King",
+      "initial": "King",
+      "zone": "board",
+      "position": {
+        "grid": "D8",
+        "chess": "d8",
+        "board": {
+          "x": -0.88,
+          "y": 8.86
+        },
+        "pixel": {
+          "x": 464.9,
+          "y": 145.7
+        }
+      }
+    },
+    {
+      "id": 16,
+      "code": "BP1",
+      "color": "black",
+      "type": "Pawn",
+      "initial": "Pawn_A",
+      "zone": "board",
+      "position": {
+        "grid": "B2",
+        "chess": "b2",
+        "board": {
+          "x": -6.18,
+          "y": -5.83
+        },
+        "pixel": {
+          "x": 252.9,
+          "y": 733.1
+        }
+      }
+    },
+    {
+      "id": 17,
+      "code": "BP2",
+      "color": "black",
+      "type": "Pawn",
+      "initial": "Pawn_B",
+      "zone": "board",
+      "position": {
+        "grid": "C2",
+        "chess": "c2",
+        "board": {
+          "x": -3.45,
+          "y": -5.61
+        },
+        "pixel": {
+          "x": 362.0,
+          "y": 724.2
+        }
+      }
+    },
+    {
+      "id": 19,
+      "code": "BP4",
+      "color": "black",
+      "type": "Pawn",
+      "initial": "Pawn_D",
+      "zone": "board",
+      "position": {
+        "grid": "F4",
+        "chess": "f4",
+        "board": {
+          "x": 4.13,
+          "y": -1.0
+        },
+        "pixel": {
+          "x": 665.4,
+          "y": 540.1
+        }
+      }
+    },
+    {
+      "id": 20,
+      "code": "BP5",
+      "color": "black",
+      "type": "Pawn",
+      "initial": "Pawn_E",
+      "zone": "board",
+      "position": {
+        "grid": "H2",
+        "chess": "h2",
+        "board": {
+          "x": 8.8,
+          "y": -6.33
+        },
+        "pixel": {
+          "x": 851.9,
+          "y": 753.1
+        }
+      }
+    },
+    {
+      "id": 21,
+      "code": "BP6",
+      "color": "black",
+      "type": "Pawn",
+      "initial": "Pawn_F",
+      "zone": "board",
+      "position": {
+        "grid": "F3",
+        "chess": "f3",
+        "board": {
+          "x": 4.12,
+          "y": -3.7
+        },
+        "pixel": {
+          "x": 664.7,
+          "y": 647.8
+        }
+      }
+    },
+    {
+      "id": 22,
+      "code": "BP7",
+      "color": "black",
+      "type": "Pawn",
+      "initial": "Pawn_G",
+      "zone": "board",
+      "position": {
+        "grid": "A2",
+        "chess": "a2",
+        "board": {
+          "x": -8.37,
+          "y": -5.89
+        },
+        "pixel": {
+          "x": 165.0,
+          "y": 735.7
+        }
+      }
+    },
+    {
+      "id": 23,
+      "code": "BP8",
+      "color": "black",
+      "type": "Pawn",
+      "initial": "Pawn_H",
+      "zone": "board",
+      "position": {
+        "grid": "D2",
+        "chess": "d2",
+        "board": {
+          "x": -1.07,
+          "y": -6.14
+        },
+        "pixel": {
+          "x": 457.2,
+          "y": 745.7
+        }
+      }
+    },
+    {
+      "id": 24,
+      "code": "BR1",
+      "color": "black",
+      "type": "Rook",
+      "initial": "Rook_A",
+      "zone": "board",
+      "position": {
+        "grid": "A1",
+        "chess": "a1",
+        "board": {
+          "x": -8.48,
+          "y": -8.65
+        },
+        "pixel": {
+          "x": 160.8,
+          "y": 845.8
+        }
+      }
+    },
+    {
+      "id": 25,
+      "code": "BR2",
+      "color": "black",
+      "type": "Rook",
+      "initial": "Rook_H",
+      "zone": "board",
+      "position": {
+        "grid": "H1",
+        "chess": "h1",
+        "board": {
+          "x": 8.81,
+          "y": -8.66
+        },
+        "pixel": {
+          "x": 852.3,
+          "y": 846.5
+        }
+      }
+    },
+    {
+      "id": 26,
+      "code": "BN1",
+      "color": "black",
+      "type": "Knight",
+      "initial": "Knight_B",
+      "zone": "board",
+      "position": {
+        "grid": "B1",
+        "chess": "b1",
+        "board": {
+          "x": -6.12,
+          "y": -8.72
+        },
+        "pixel": {
+          "x": 255.1,
+          "y": 848.7
+        }
+      }
+    },
+    {
+      "id": 27,
+      "code": "BN2",
+      "color": "black",
+      "type": "Knight",
+      "initial": "Knight_G",
+      "zone": "board",
+      "position": {
+        "grid": "G1",
+        "chess": "g1",
+        "board": {
+          "x": 6.65,
+          "y": -8.38
+        },
+        "pixel": {
+          "x": 766.0,
+          "y": 835.3
+        }
+      }
+    },
+    {
+      "id": 28,
+      "code": "BB1",
+      "color": "black",
+      "type": "Bishop",
+      "initial": "Bishop_C",
+      "zone": "board",
+      "position": {
+        "grid": "C1",
+        "chess": "c1",
+        "board": {
+          "x": -3.64,
+          "y": -8.55
+        },
+        "pixel": {
+          "x": 354.5,
+          "y": 842.2
+        }
+      }
+    },
+    {
+      "id": 29,
+      "code": "BB2",
+      "color": "black",
+      "type": "Bishop",
+      "initial": "Bishop_F",
+      "zone": "board",
+      "position": {
+        "grid": "F1",
+        "chess": "f1",
+        "board": {
+          "x": 4.14,
+          "y": -8.76
+        },
+        "pixel": {
+          "x": 665.6,
+          "y": 850.2
+        }
+      }
+    },
+    {
+      "id": 30,
+      "code": "BQ",
+      "color": "black",
+      "type": "Queen",
+      "initial": "Queen",
+      "zone": "board",
+      "position": {
+        "grid": "E1",
+        "chess": "e1",
+        "board": {
+          "x": 1.33,
+          "y": -8.67
+        },
+        "pixel": {
+          "x": 553.4,
+          "y": 846.6
+        }
+      }
+    },
+    {
+      "id": 31,
+      "code": "BK",
+      "color": "black",
+      "type": "King",
+      "initial": "King",
+      "zone": "board",
+      "position": {
+        "grid": "D1",
+        "chess": "d1",
+        "board": {
+          "x": -1.4,
+          "y": -8.47
+        },
+        "pixel": {
+          "x": 443.9,
+          "y": 838.8
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "timestamp": "2026-02-17T13:36:27.207509",
+    "turn": "white",
+    "move_count": 0,
+    "total_detected": 29,
+    "white_count": 14,
+    "black_count": 15,
+    "on_board": 29,
+    "in_cemetery": 0,
+    "missing_count": 3
+  },
+  "missing_pieces": [
+    {
+      "id": 2,
+      "code": "WP3",
+      "color": "white",
+      "type": "Pawn"
+    },
+    {
+      "id": 14,
+      "code": "WQ",
+      "color": "white",
+      "type": "Queen"
+    },
+    {
+      "id": 18,
+      "code": "BP3",
+      "color": "black",
+      "type": "Pawn"
+    }
+  ]
+}
