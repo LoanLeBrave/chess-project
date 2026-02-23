@@ -120,13 +120,16 @@ class BoardExtractor:
             [board_corners['BL'][0], board_corners['BL'][1]],
         ], dtype=np.float32)
         
-        # Points destination (image carrée)
+        # Points destination : le plateau 8x8 occupe les cellules 1-8 de la grille 10x10.
+        # On le place donc dans les 80% intérieurs de l'image (1 cellule de bordure de chaque côté).
+        # Les coins fournis doivent être les coins physiques du plateau d'échecs (pas la zone étendue).
         size = self.board_size
+        inner = size // GRID_SIZE  # 100px pour une image 1000×1000
         dst_points = np.array([
-            [0, 0],
-            [size - 1, 0],
-            [size - 1, size - 1],
-            [0, size - 1],
+            [inner,          inner         ],  # TL → coin A8 du plateau chess
+            [size - 1 - inner, inner       ],  # TR → coin H8
+            [size - 1 - inner, size - 1 - inner],  # BR → coin H1
+            [inner,          size - 1 - inner],  # BL → coin A1
         ], dtype=np.float32)
         
         # Calculer et stocker la matrice de transformation
