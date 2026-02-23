@@ -32,6 +32,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from chess_vision.config import (
     EXTRACTED_BOARD_SIZE,
+    GRID_SIZE,
     OUTPUT_DIR,
     IMAGES_DIR,
     SCRIPT_DIR,
@@ -44,10 +45,10 @@ from chess_vision.config import (
 # ============================================================
 CORNER_NAMES = ['TL', 'TR', 'BR', 'BL']
 CORNER_LABELS = {
-    'TL': 'Top-Left (Haut-Gauche)',
-    'TR': 'Top-Right (Haut-Droite)',
-    'BR': 'Bottom-Right (Bas-Droite)',
-    'BL': 'Bottom-Left (Bas-Gauche)',
+    'TL': 'Coin Haut-Gauche du plateau 8x8 (angle A8)',
+    'TR': 'Coin Haut-Droite du plateau 8x8 (angle H8)',
+    'BR': 'Coin Bas-Droite du plateau 8x8 (angle H1)',
+    'BL': 'Coin Bas-Gauche du plateau 8x8 (angle A1)',
 }
 CORNER_COLORS = {
     'TL': (0, 0, 255),    # Rouge
@@ -186,11 +187,12 @@ class BoardCalibrator:
         ], dtype=np.float32)
 
         size = EXTRACTED_BOARD_SIZE
+        inner = size // GRID_SIZE  # 1 cellule de bordure = zone cimetière
         dst = np.array([
-            [0, 0],
-            [size - 1, 0],
-            [size - 1, size - 1],
-            [0, size - 1],
+            [inner,          inner         ],
+            [size - 1 - inner, inner       ],
+            [size - 1 - inner, size - 1 - inner],
+            [inner,          size - 1 - inner],
         ], dtype=np.float32)
 
         matrix = cv2.getPerspectiveTransform(src, dst)
@@ -233,7 +235,7 @@ class BoardCalibrator:
             'source_image': os.path.abspath(self.image_path),
             'board_size': EXTRACTED_BOARD_SIZE,
             'calibrated_at': datetime.now().isoformat(),
-            'note': 'Coins du plateau en coordonnees pixels dans l\'image originale. Ne pas deplacer la camera apres calibration.',
+            'note': "Coins physiques du plateau 8x8 (A8, H8, H1, A1). La zone cimetiere (1 case de bordure) est deduite automatiquement. Ne pas deplacer la camera apres calibration.",
         }
 
         # Sauvegarder
@@ -249,7 +251,12 @@ class BoardCalibrator:
         print("-" * 50)
         print(f"   Image: {self.image_path}")
         print(f"   Résolution: {self.original.shape[1]}x{self.original.shape[0]}")
-        print(f"\n   → Cliquer sur TL ({CORNER_LABELS['TL']})")
+        print()
+        print("   ⚠️  IMPORTANT : Cliquer sur les 4 coins EXTÉRIEURS du plateau d'échecs physique")
+        print("      (les angles visibles du bord du bois/cadre), PAS 1 case au-delà.")
+        print("      La zone de cimetière est calculée automatiquement.")
+        print()
+        print(f"   → Cliquer sur TL ({CORNER_LABELS['TL']})")
 
         cv2.namedWindow(self.window_name, cv2.WINDOW_AUTOSIZE)
         cv2.setMouseCallback(self.window_name, self._mouse_callback)

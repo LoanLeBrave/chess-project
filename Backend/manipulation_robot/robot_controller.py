@@ -21,9 +21,9 @@ from config import (
     ROBOT_IP, VITESSE, ACCELERATION,
     GRIPPER_OUVERTURE,
     DELTA_APPROCHE, DELTA_TRANSIT, DELTA_RELACHE_BASE,
-    ESPACEMENT_ELIMINATION,
     FICHIER_CALIBRATION, FICHIER_POSITION_DEPART,
-    PIECE_TYPE_MAP, HAUTEUR_PIECES
+    PIECE_TYPE_MAP, HAUTEUR_PIECES,
+    CIMETIERE_BLANCS, CIMETIERE_NOIRS,
 )
 from models import PieceEliminee
 
@@ -49,10 +49,7 @@ class RobotController:
         # Position de départ (home)
         self.position_depart = None
 
-        # Zones d'élimination
-        self.elim_white_start = None
-        self.elim_black_start = None
-
+        # Pièces éliminées — stockées dans les cases du cimetière (grille 10x10)
         self.pieces_blanches_eliminees: List[PieceEliminee] = []
         self.pieces_noires_eliminees: List[PieceEliminee] = []
 
@@ -124,9 +121,6 @@ class RobotController:
                     self.position_depart = data.get("position_depart")
                     print("✓ Position de départ chargée")
 
-            # Calculer les zones d'élimination
-            self._calculate_dynamic_zones()
-
             # Connexion au robot
             print(f"Connexion robot {ROBOT_IP}...")
             self.rtde_c = RTDEControlInterface(ROBOT_IP)
@@ -166,21 +160,6 @@ class RobotController:
                 return None
         return None
 
-    def _calculate_dynamic_zones(self):
-        """Définit les zones d'élimination de chaque côté du plateau"""
-        y_angle = self.calib_rotation + (math.pi / 2)
-        board_half_width = (10.0 * self.calib_scale) + 0.05
-
-        # Zone blanche (côté + Y)
-        wb_x = self.calib_origin[0] + board_half_width * math.cos(y_angle)
-        wb_y = self.calib_origin[1] + board_half_width * math.sin(y_angle)
-        self.elim_white_start = [wb_x, wb_y, self.calib_origin[2]]
-
-        # Zone noire (côté - Y)
-        bn_x = self.calib_origin[0] - board_half_width * math.cos(y_angle)
-        bn_y = self.calib_origin[1] - board_half_width * math.sin(y_angle)
-        self.elim_black_start = [bn_x, bn_y, self.calib_origin[2]]
-
     def cam_to_robot(self, cam_x: float, cam_y: float, use_piece_height: bool = True) -> List[float]:
         """
         Transforme coordonnées Caméra -> Robot.
@@ -212,13 +191,47 @@ class RobotController:
         return [rx, ry, rz, 3.14, 0.0, 0.0]
 
     def get_square_center(self, square_name: str) -> Tuple[float, float]:
-        """Calcule le centre d'une case en coordonnées caméra"""
-        file_idx = chess.FILE_NAMES.index(square_name[0])
-        rank_idx = int(square_name[1]) - 1
+        """
+        Calcule le centre d'une case en coordonnées caméra (repère -12.5 à +12.5, pas 2.5).
+
+        Accepte la notation standard (a1-h8) ET les cases du cimetière de la
+        grille 10x10 étendue :
+          - Colonnes : '0' (gauche), 'a'-'h' (échiquier), '9' (droite)
+          - Rangées  : '0' (bas), '1'-'8' (échiquier), '9' (haut)
+        Exemples valides : "e4", "a0", "h9", "00", "99", "01", "91"
+        """
+        col_char = square_name[0].lower()
+        row_char = square_name[1]
+
+        col_to_idx = {
+            '0': 0,
+            'a': 1, 'b': 2, 'c': 3, 'd': 4,
+            'e': 5, 'f': 6, 'g': 7, 'h': 8,
+            '9': 9,
+        }
+
+        col_idx = col_to_idx[col_char]
+        row_idx = int(row_char)
+
         unit_per_square = 2.5
-        cam_x = (file_idx - 3.5) * unit_per_square
-        cam_y = (rank_idx - 3.5) * unit_per_square
+        cam_x = (col_idx - 4.5) * unit_per_square  # -11.25 à +11.25
+        cam_y = (row_idx - 4.5) * unit_per_square
         return cam_x, cam_y
+
+    def _next_cimetiere_cell(self, is_white: bool) -> Optional[str]:
+        """
+        Retourne la prochaine case libre du cimetière pour la couleur donnée.
+        Les blancs capturés vont en rangée 0, les noirs capturés en rangée 9.
+        """
+        cells = CIMETIERE_BLANCS if is_white else CIMETIERE_NOIRS
+        used = {
+            p.case_cimetiere
+            for p in (self.pieces_blanches_eliminees if is_white else self.pieces_noires_eliminees)
+        }
+        for cell in cells:
+            if cell not in used:
+                return cell
+        return None  # Ne devrait pas arriver en partie normale (max 15 captures)
 
     async def _wait_with_pause_check(self, duration):
         """Attend avec vérifications fréquentes de la pause (toutes les 10ms)"""
@@ -520,30 +533,34 @@ class RobotController:
 
     async def _sequence_elimination(self, p_capture, piece_obj, square_name):
         """
-        Séquence d'élimination d'une pièce capturée
-        Retourne True si succès, False si interrompu
+        Séquence d'élimination d'une pièce capturée.
+        Dépose la pièce dans la prochaine case libre du cimetière (grille 10x10).
+        Retourne True si succès, False si interrompu.
         """
         is_white = (piece_obj.color == chess.WHITE)
-        start_zone = self.elim_white_start if is_white else self.elim_black_start
         index = len(self.pieces_blanches_eliminees) if is_white else len(self.pieces_noires_eliminees)
 
-        x_angle = self.calib_rotation
-        offset_dist = index * ESPACEMENT_ELIMINATION
+        # Trouver la prochaine case de cimetière disponible
+        case_cimetiere = self._next_cimetiere_cell(is_white)
+        if case_cimetiere is None:
+            await self.log("error", "Cimetière plein — impossible de déposer la pièce")
+            return False
 
-        p_drop = list(start_zone)
-        p_drop[0] += offset_dist * math.cos(x_angle)
-        p_drop[1] += offset_dist * math.sin(x_angle)
-        # Hauteur pièce pour dépôt
-        p_drop[2] += HAUTEUR_PIECES.get(piece_obj.piece_type, 0.010)
+        # Calculer la position robot de la case cimetière
+        self.piece_courante = piece_obj.piece_type
+        cx_cem, cy_cem = self.get_square_center(case_cimetiere)
+        p_drop = self.cam_to_robot(cx_cem, cy_cem, use_piece_height=True)
+
+        await self.log("robot", f"Elimination {piece_obj.symbol()} ({square_name}) → cimetière {case_cimetiere}")
 
         # Exécuter le pick and place
         success = await self._sequence_pick_and_place(p_capture, p_drop)
-        
+
         if not success:
             return False  # Interrompu par pause
 
-        # Enregistrer la pièce éliminée
-        elim = PieceEliminee(piece_obj.symbol(), piece_obj.color, square_name, p_drop, index)
+        # Enregistrer la pièce éliminée avec sa case de cimetière
+        elim = PieceEliminee(piece_obj.symbol(), piece_obj.color, square_name, case_cimetiere, index)
         if is_white:
             self.pieces_blanches_eliminees.append(elim)
         else:
@@ -569,12 +586,18 @@ class RobotController:
                     return {"success": False, "message": "Interrompu par pause"}
 
                 self.piece_courante = PIECE_TYPE_MAP.get(piece.piece_symbol.upper(), chess.PAWN)
-                cx, cy = self.get_square_center(piece.case_origine)
-                p_origin = self.cam_to_robot(cx, cy, use_piece_height=True)
-                
-                await self.log("robot", f"Replacement {piece.piece_symbol} → {piece.case_origine}")
-                success = await self._sequence_pick_and_place(piece.position_elimination, p_origin)
-                
+
+                # Position dans le cimetière → coords robot
+                cx_cem, cy_cem = self.get_square_center(piece.case_cimetiere)
+                p_cimetiere = self.cam_to_robot(cx_cem, cy_cem, use_piece_height=True)
+
+                # Position d'origine sur le plateau → coords robot
+                cx_ori, cy_ori = self.get_square_center(piece.case_origine)
+                p_origin = self.cam_to_robot(cx_ori, cy_ori, use_piece_height=True)
+
+                await self.log("robot", f"Replacement {piece.piece_symbol} : {piece.case_cimetiere} → {piece.case_origine}")
+                success = await self._sequence_pick_and_place(p_cimetiere, p_origin)
+
                 if not success:
                     await self.log("warning", "Reset interrompu par pause")
                     return {"success": False, "message": "Interrompu par pause"}
@@ -586,12 +609,18 @@ class RobotController:
                     return {"success": False, "message": "Interrompu par pause"}
 
                 self.piece_courante = PIECE_TYPE_MAP.get(piece.piece_symbol.upper(), chess.PAWN)
-                cx, cy = self.get_square_center(piece.case_origine)
-                p_origin = self.cam_to_robot(cx, cy, use_piece_height=True)
-                
-                await self.log("robot", f"Replacement {piece.piece_symbol} → {piece.case_origine}")
-                success = await self._sequence_pick_and_place(piece.position_elimination, p_origin)
-                
+
+                # Position dans le cimetière → coords robot
+                cx_cem, cy_cem = self.get_square_center(piece.case_cimetiere)
+                p_cimetiere = self.cam_to_robot(cx_cem, cy_cem, use_piece_height=True)
+
+                # Position d'origine sur le plateau → coords robot
+                cx_ori, cy_ori = self.get_square_center(piece.case_origine)
+                p_origin = self.cam_to_robot(cx_ori, cy_ori, use_piece_height=True)
+
+                await self.log("robot", f"Replacement {piece.piece_symbol} : {piece.case_cimetiere} → {piece.case_origine}")
+                success = await self._sequence_pick_and_place(p_cimetiere, p_origin)
+
                 if not success:
                     await self.log("warning", "Reset interrompu par pause")
                     return {"success": False, "message": "Interrompu par pause"}

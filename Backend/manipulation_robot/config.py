@@ -16,7 +16,24 @@ GRIPPER_OUVERTURE = 25
 DELTA_APPROCHE = 0.03   # 3cm
 DELTA_TRANSIT = 0.12    # 12cm
 DELTA_RELACHE_BASE = 0.001
-ESPACEMENT_ELIMINATION = 0.02
+
+# ============================================================================
+#                         CIMETIÈRE (grille 10x10 étendue)
+# ============================================================================
+
+# Cases du cimetière pour les blancs capturés (rangée 0, puis colonne gauche)
+CIMETIERE_BLANCS = [
+    "a0", "b0", "c0", "d0", "e0", "f0", "g0", "h0",  # Rangée 0 — colonnes A-H
+    "00", "90",                                         # Coins bas gauche / bas droit
+    "01", "02", "03", "04", "05", "06", "07", "08",    # Colonne 0 — rangées 1-8
+]
+
+# Cases du cimetière pour les noirs capturés (rangée 9, puis colonne droite)
+CIMETIERE_NOIRS = [
+    "a9", "b9", "c9", "d9", "e9", "f9", "g9", "h9",  # Rangée 9 — colonnes A-H
+    "09", "99",                                         # Coins haut gauche / haut droit
+    "91", "92", "93", "94", "95", "96", "97", "98",    # Colonne 9 — rangées 1-8
+]
 
 # ============================================================================
 #                         FICHIERS DE DONNÉES

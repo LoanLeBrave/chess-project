@@ -29,6 +29,7 @@ from leaderboard_manager import LeaderboardManager
 from board_reset_manager import BoardResetManager
 from config import FICHIER_CALIBRATION
 from calibration import TwoPointCalibration
+from hybrid_board_manager import HybridBoardManager
 
 # Ajouter le chemin chess_vision au path pour les imports
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
@@ -276,6 +277,7 @@ class ApplicationManager:
         await self.broadcast({"type": "log", "logType": log_type, "message": message, "timestamp": datetime.now().isoformat()})
 
 manager = ApplicationManager()
+hybrid_manager = HybridBoardManager()
 
 # ============================================================================
 #                          BOUCLES & LOGIQUE MÉTIER
@@ -311,6 +313,354 @@ async def _check_vision_move():
     if legal:
         _vision_move_lock = True
         try:
+            is_capture = delta["type"] == "capture"
+            await manager.log("info", f"Coup detecte: {from_sq} -> {to_sq}" + (" (capture)" if is_capture else ""))
+            result = await manager.chess.play_vision_move(from_sq, to_sq)
+            if result.get("success"):
+                # Mettre a jour la reference apres le coup humain
+                manager.vision.update_reference_after_move(from_sq, to_sq, is_capture)
+                hybrid_manager.on_move_played(from_sq, to_sq, is_capture)
+                # Aussi mettre a jour apres le coup robot si il a joue
+                robot_resp = result.get("robot_response", {})
+                if robot_resp.get("success"):
+                    r_from = robot_resp.get("from")
+                    r_to = robot_resp.get("to")
+                    if r_from and r_to:
+                        r_capture = manager.vision.reference_board and r_to in manager.vision.reference_board
+                        manager.vision.update_reference_after_move(r_from, r_to, r_capture)
+                        hybrid_manager.on_move_played(r_from, r_to, bool(r_capture))
+
+                # Vider les buffers pour repartir clean
+                manager.vision._buffers.clear()
+
+                # Attendre que les pieces se stabilisent physiquement,
+                # puis prendre un nouveau snapshot camera comme baseline
+                await asyncio.sleep(1.0)
+                manager.vision.update()  # capture fraiche
+                if manager.vision.stable_board:
+                    # Baseline hybride : camera + pieces encore simulees
+                    manager.vision.camera_baseline = hybrid_manager.get_hybrid_baseline(
+                        manager.vision.stable_board
+                    )
+            else:
+                await manager.log("warning", f"Echec: {result.get('error')}")
+        finally:
+            _vision_move_lock = False
+    else:
+        global _last_anomaly, _last_anomaly_time
+        anomaly_key = f"{from_sq}{to_sq}"
+        now = time.time()
+        # Cooldown 5s pour ne pas spammer la meme anomalie
+        if anomaly_key != _last_anomaly or (now - _last_anomaly_time) > 5:
+            _last_anomaly = anomaly_key
+            _last_anomaly_time = now
+            await manager.broadcast({
+                "type": "vision_anomaly",
+                "message": f"Coup illegal: {from_sq} -> {to_sq}",
+                "suggestions": [f"Verifiez le deplacement {from_sq} -> {to_sq}"],
+            })
+
+
+@app.get("/vision/status")
+async def get_vision_status():
+    """Retourne le statut du VisionService (debug)."""
+    return {
+        "running": manager.vision.running,
+        "active_mode": manager.vision.active_mode,
+        "vision_game_enabled": manager.vision.vision_game_enabled,
+        "last_error": manager.vision.last_error,
+        "last_timestamp": manager.vision.last_timestamp,
+        "pieces_count": manager.vision.pieces_count,
+        "stable_board_count": len(manager.vision.stable_board),
+        "raw_board_count": len(manager.vision.raw_board),
+        "buffer_size": manager.vision.BUFFER_SIZE,
+        "has_pipeline": manager.vision._pipeline is not None,
+    }
+
+
+@app.post("/vision/debug-aruco")
+async def debug_aruco_detection():
+    """
+    Diagnostic ArUco : capture une photo et teste TOUS les dictionnaires
+    ArUco courants pour identifier lequel détecte les marqueurs physiques.
+
+    Retourne pour chaque dictionnaire le nombre de marqueurs détectés,
+    les IDs trouvés, et si des IDs de calibration (32-35) ou pièces (0-31)
+    sont présents.
+    """
+    import cv2
+    import numpy as np
+
+    try:
+        from chess_vision.modules.camera import take_photo
+        photo_path = take_photo()
+        image = cv2.imread(photo_path)
+        if image is None:
+            return {"success": False, "error": "Impossible de lire la photo"}
+        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    except Exception as e:
+        return {"success": False, "error": f"Capture impossible: {e}"}
+
+    # Tous les dictionnaires ArUco OpenCV courants
+    dicts_to_test = {
+        "DICT_4X4_50":   cv2.aruco.DICT_4X4_50,
+        "DICT_4X4_100":  cv2.aruco.DICT_4X4_100,
+        "DICT_4X4_250":  cv2.aruco.DICT_4X4_250,
+        "DICT_4X4_1000": cv2.aruco.DICT_4X4_1000,
+        "DICT_5X5_50":   cv2.aruco.DICT_5X5_50,
+        "DICT_5X5_100":  cv2.aruco.DICT_5X5_100,
+        "DICT_5X5_250":  cv2.aruco.DICT_5X5_250,
+        "DICT_6X6_50":   cv2.aruco.DICT_6X6_50,
+        "DICT_6X6_100":  cv2.aruco.DICT_6X6_100,
+        "DICT_6X6_250":  cv2.aruco.DICT_6X6_250,
+        "DICT_7X7_50":   cv2.aruco.DICT_7X7_50,
+        "DICT_ARUCO_ORIGINAL": cv2.aruco.DICT_ARUCO_ORIGINAL,
+    }
+
+    results = {}
+    best_dict = None
+    best_count = 0
+
+    for dict_name, dict_type in dicts_to_test.items():
+        try:
+            aruco_dict = cv2.aruco.getPredefinedDictionary(dict_type)
+            detector_params = cv2.aruco.DetectorParameters()
+            detector = cv2.aruco.ArucoDetector(aruco_dict, detector_params)
+            corners, ids, _ = detector.detectMarkers(gray)
+
+            detected_ids = ids.flatten().tolist() if ids is not None else []
+            piece_ids    = [i for i in detected_ids if 0 <= i <= 31]
+            calib_ids    = [i for i in detected_ids if 32 <= i <= 35]
+
+            results[dict_name] = {
+                "total": len(detected_ids),
+                "all_ids": sorted(detected_ids),
+                "piece_ids": sorted(piece_ids),
+                "calib_ids": sorted(calib_ids),
+            }
+
+            if len(detected_ids) > best_count:
+                best_count = len(detected_ids)
+                best_dict = dict_name
+
+        except Exception as e:
+            results[dict_name] = {"error": str(e)}
+
+    current_dict = "DICT_4X4_50"
+    return {
+        "success": True,
+        "photo_path": photo_path,
+        "current_dict": current_dict,
+        "current_dict_detects": results.get(current_dict, {}).get("total", 0),
+        "best_dict": best_dict,
+        "best_dict_count": best_count,
+        "recommendation": (
+            f"Changer ARUCO_DICT_TYPE vers {best_dict} dans config.py"
+            if best_dict and best_dict != current_dict
+            else "Le dictionnaire actuel est correct"
+        ),
+        "all_results": results,
+    }
+
+
+@app.post("/vision/mode")
+async def set_vision_mode(data: dict):
+    """Change le mode du VisionService (actif/passif)."""
+    active = data.get("active", True)
+    manager.vision.active_mode = active
+    manager.vision._pipeline = None  # Reset le pipeline
+    mode = "actif" if active else "passif"
+    await manager.log("info", f"VisionService passe en mode {mode}")
+    return {"success": True, "active_mode": active}
+
+
+@app.post("/vision/flip")
+async def set_vision_flip(data: dict):
+    """Active/desactive la rotation 180° des coordonnees camera."""
+    flip = data.get("flip", True)
+    manager.vision.flip_board = flip
+    state = "active" if flip else "desactive"
+    await manager.log("info", f"Rotation 180° camera {state}")
+    return {"success": True, "flip_board": flip}
+
+
+@app.post("/vision/game")
+async def set_vision_game(data: dict):
+    """Active/desactive la detection automatique des coups par la camera."""
+    enabled = data.get("enabled", True)
+    manager.vision.vision_game_enabled = enabled
+    state = "activee" if enabled else "desactivee"
+    await manager.log("info", f"Detection vision des coups {state}")
+    return {"success": True, "vision_game_enabled": enabled}
+
+
+@app.post("/vision/confirm-placement")
+async def confirm_placement(data: dict = None):
+    """
+    Confirme que les pieces sont bien placees et demarre l'observation.
+
+    Body optionnel: {"use_camera": true/false}
+    - true (defaut) : utilise la camera comme reference (si elle voit les pieces)
+    - false : simule la position initiale standard (32 pieces)
+    """
+    use_camera = True
+    if data:
+        use_camera = data.get("use_camera", True)
+
+    result = manager.vision.confirm_placement(use_camera=use_camera)
+    source = result.get("source", "unknown")
+    piece_count = len(result.get("reference_board", {}))
+    await manager.log("info", f"Placement confirme ({source}, {piece_count} pieces)")
+    await manager.broadcast({
+        "type": "vision_game_started",
+        "source": source,
+        "pieces_count": piece_count,
+    })
+    return {"success": True, **result}
+
+
+@app.get("/vision/hybrid/missing")
+async def get_hybrid_missing():
+    """
+    Retourne les pieces non détectées par la caméra par rapport à la position
+    de départ standard.
+
+    À appeler avant la confirmation pour informer le joueur des pièces que
+    la caméra ne voit pas encore.
+    """
+    camera_board = manager.vision.stable_board or {}
+    missing = hybrid_manager.analyze_missing_pieces(camera_board)
+    return {
+        "camera_pieces_count": len([v for v in camera_board.values() if v]),
+        "missing_count": len(missing),
+        "missing_pieces": missing,
+        "ready_to_confirm": True,
+    }
+
+
+@app.post("/vision/hybrid/confirm")
+async def confirm_hybrid_placement():
+    """
+    Le joueur confirme que toutes les pièces sont bien placées sur le plateau.
+
+    - Les pièces détectées par la caméra sont utilisées telles quelles.
+    - Les pièces NON détectées sont simulées à leur position de départ standard.
+    - Le baseline caméra (camera_baseline) est enrichi avec ces pièces simulées
+      pour que la détection delta fonctionne correctement.
+
+    Sans cette étape, une pièce qui devient visible en cours de partie est
+    vue comme une "apparition illégale" par Stockfish.
+    """
+    camera_board = manager.vision.stable_board or {}
+
+    # Construire le baseline hybride (caméra + simulées) et marquer les simulées
+    hybrid_baseline = hybrid_manager.build_hybrid_baseline(camera_board)
+
+    # Confirmer le placement : reference_board = position standard complète
+    result = manager.vision.confirm_placement(use_camera=False)
+
+    # Remplacer camera_baseline par le baseline hybride enrichi
+    manager.vision.camera_baseline = hybrid_baseline
+
+    simulated_count = len(hybrid_manager.simulated_squares)
+    simulated_list = sorted(hybrid_manager.simulated_squares)
+
+    await manager.log(
+        "info",
+        f"Placement hybride confirme : {len(camera_board)} pieces vues, "
+        f"{simulated_count} simulees ({', '.join(simulated_list) or 'aucune'})"
+    )
+    await manager.broadcast({
+        "type": "vision_game_started",
+        "source": "hybrid",
+        "pieces_count": len(hybrid_baseline),
+        "simulated_count": simulated_count,
+        "simulated_squares": simulated_list,
+    })
+
+    return {
+        "success": True,
+        "camera_pieces_count": len(camera_board),
+        "simulated_count": simulated_count,
+        "simulated_squares": simulated_list,
+        "total_baseline_count": len(hybrid_baseline),
+    }
+
+
+@app.get("/vision/hybrid/simulated")
+async def get_hybrid_simulated():
+    """
+    Retourne les pieces actuellement simulées pendant la partie.
+
+    Une pièce est simulée tant que la caméra ne l'a pas vue se déplacer.
+    Dès qu'elle bouge (et est détectée), elle sort de la liste simulée.
+    """
+    camera_board = manager.vision.stable_board or {}
+
+    # Mettre à jour : si une pièce simulée est maintenant visible, la retirer
+    de_simulated = hybrid_manager.on_camera_update(camera_board)
+    if de_simulated:
+        await manager.log("info", f"Pieces de-simulees (maintenant visibles) : {de_simulated}")
+
+    status = hybrid_manager.get_status(camera_board)
+    return status
+
+
+@app.post("/vision/visualization")
+async def get_vision_visualization():
+    """
+    Capture une image, lance l'analyse chess_vision avec les visualisations
+    activées et retourne l'image annotée (grille + pièces détectées).
+
+    Utilise un pipeline one-shot indépendant du pipeline principal pour ne
+    pas ralentir la boucle de détection en cours.
+    """
+    try:
+        from chess_vision import ChessVisionPipeline
+        from chess_vision.config import OUTPUT_DIR
+
+        pipeline = ChessVisionPipeline(save_visualization_images=True)
+        if not pipeline.extractor.is_calibrated:
+            return {"success": False, "error": "Camera non calibree (board_calibration.json manquant)"}
+
+        result = pipeline.capture_and_analyze(save_outputs=True)
+
+        latest_dir = os.path.join(OUTPUT_DIR, "latest")
+
+        # Priorité : image avec pièces > grille seule > plateau brut
+        for filename in ["5_pieces.jpg", "4_board_grid.jpg", "3_board.jpg"]:
+            img_path = os.path.join(latest_dir, filename)
+            if os.path.exists(img_path):
+                with open(img_path, "rb") as f:
+                    image_data = base64.b64encode(f.read()).decode()
+                return {
+                    "success": True,
+                    "image_base64": image_data,
+                    "source": filename,
+                    "pieces_count": result.get("pieces_count", 0),
+                    "error": result.get("error"),
+                }
+
+        return {"success": False, "error": "Aucune image de visualisation generee"}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@app.get("/vision/sync")
+async def get_vision_sync():
+    """Compare l'etat camera stabilise avec l'etat Stockfish."""
+    sync_result = manager.chess.sync_with_vision(manager.vision.stable_board)
+    return sync_result
+
+
+@app.on_event("startup")
+async def startup():
+    """Initialisation au démarrage"""
+    print("🚀 Démarrage de l'API Chess Robot...")
+    manager.chess.init_stockfish()
+    manager.robot.init_robot()
+    asyncio.create_task(vision_loop())
+    print("✅ API prête!")
             res = await manager.chess.play_vision_move(from_sq, to_sq)
             if res.get("success"):
                 manager.vision.update_reference_after_move(from_sq, to_sq, delta["type"] == "capture")
@@ -392,6 +742,7 @@ async def get_vision_state(): return manager.vision.get_state_message()
 @app.post("/game/new", tags=["Game"])
 async def new_game(config: GameConfig):
     """Démarre une nouvelle partie"""
+    hybrid_manager.reset()
     result = manager.chess.new_game(config.difficulty)
     await manager.log("info", f"🎮 Nouvelle partie - Difficulté: {config.difficulty}")
     await manager.broadcast({
@@ -467,6 +818,311 @@ async def robot_move():
 @app.get("/game/pieces-eliminees", tags=["Game"])
 async def get_pieces_eliminees():
     pieces = manager.robot.get_pieces_eliminees()
+    return {
+        "pieces_eliminees": pieces,
+        "count": len(pieces)
+    }
+
+
+@app.get("/robot/position")
+async def get_robot_position():
+    """Retourne la position actuelle du robot"""
+    position = manager.robot.get_position()
+    if position is None:
+        return {"error": "Robot non connecté"}
+    return position
+
+
+@app.get("/robot/gripper-state")
+async def get_gripper_state():
+    """Retourne l'état du gripper"""
+    if not manager.robot.connected or not manager.robot.gripper:
+        return {"error": "Robot ou gripper non connecté"}
+    
+    try:
+        # Ces méthodes dépendent de votre implémentation du gripper
+        return {
+            "connected": True,
+            "position": manager.robot.gripper.get_current_position() if hasattr(manager.robot.gripper, 'get_current_position') else None,
+            "status": "operational"
+        }
+    except Exception as e:
+        return {"error": str(e)}
+
+
+# ============================================================================
+#                         ROUTES CALIBRATION
+# ============================================================================
+
+@app.post("/robot/calibrate/freedrive")
+async def calibrate_freedrive(data: dict):
+    """Active ou desactive le mode freedrive (XY uniquement)"""
+    if not manager.robot.connected or not manager.robot.rtde_c:
+        return {"success": False, "error": "Robot non connecte"}
+
+    enable = data.get("enable", True)
+    try:
+        if enable:
+            # Freedrive contraint sur X et Y uniquement
+            manager.robot.rtde_c.freedriveMode([1, 1, 1, 0, 0, 0])
+            await manager.log("info", "Mode FreeDrive active (X/Y)")
+        else:
+            manager.robot.rtde_c.endFreedriveMode()
+            time.sleep(0.1)
+            manager.robot.rtde_c.reuploadScript()
+            time.sleep(0.1)
+            await manager.log("info", "Mode FreeDrive desactive")
+        return {"success": True, "freedrive": enable}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@app.post("/robot/calibrate/close-gripper")
+async def calibrate_close_gripper():
+    """Ferme le gripper pour la calibration (pointe fine dans le trou)"""
+    if not manager.robot.connected or not manager.robot.gripper:
+        return {"success": False, "error": "Robot ou gripper non connecte"}
+
+    try:
+        manager.robot.gripper.close()
+        await manager.log("info", "Gripper ferme pour calibration")
+        return {"success": True}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@app.post("/robot/calibrate/auto-level")
+async def calibrate_auto_level():
+    """Remet la pince parfaitement verticale [pi, 0, 0]"""
+    if not manager.robot.connected or not manager.robot.rtde_c:
+        return {"success": False, "error": "Robot non connecte"}
+
+    try:
+        # Desactiver freedrive si actif
+        try:
+            manager.robot.rtde_c.endFreedriveMode()
+            time.sleep(0.1)
+            manager.robot.rtde_c.reuploadScript()
+            time.sleep(0.1)
+        except:
+            pass
+
+        current = manager.robot.rtde_r.getActualTCPPose()
+        vertical_pose = [current[0], current[1], current[2], 3.1415, 0.0, 0.0]
+        manager.robot.rtde_c.moveL(vertical_pose, 0.2, 0.2)
+        await manager.log("info", "Pince remise droite (auto-level)")
+        return {"success": True}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@app.post("/robot/calibrate/move-z/start")
+async def calibrate_move_z_start(data: dict):
+    """Demarre un mouvement continu en Z (appel au keydown)"""
+    if not manager.robot.connected or not manager.robot.rtde_c:
+        return {"success": False, "error": "Robot non connecte"}
+
+    direction = data.get("direction", "down")
+    velocity = 0.01  # 1 cm/s - vitesse lente pour precision
+
+    try:
+        vel_z = velocity if direction == "up" else -velocity
+        # Duree longue (10s) - sera interrompu par stop
+        manager.robot.rtde_c.speedL([0, 0, vel_z, 0, 0, 0], 0.5, 10.0)
+        return {"success": True, "direction": direction}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@app.post("/robot/calibrate/move-z/stop")
+async def calibrate_move_z_stop():
+    """Arrete immediatement le mouvement Z (appel au keyup)"""
+    if not manager.robot.connected or not manager.robot.rtde_c:
+        return {"success": False, "error": "Robot non connecte"}
+
+    try:
+        manager.robot.rtde_c.speedStop()
+        pose = manager.robot.rtde_r.getActualTCPPose()
+        return {"success": True, "z": round(pose[2], 4)}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@app.post("/robot/calibrate/point")
+async def calibrate_point(data: dict):
+    """Enregistre la position actuelle du robot comme point de calibration"""
+    if not manager.robot.connected or not manager.robot.rtde_r:
+        return {"success": False, "error": "Robot non connecte"}
+
+    point = data.get("point")  # 'a1', 'h8', ou 'z'
+    if point not in ('a1', 'h8', 'z'):
+        return {"success": False, "error": f"Point invalide: {point}"}
+
+    try:
+        pose = manager.robot.rtde_r.getActualTCPPose()
+        manager.calib_points[point] = list(pose)
+        await manager.log("info", f"Point {point.upper()} enregistre: X={pose[0]:.4f} Y={pose[1]:.4f} Z={pose[2]:.4f}")
+
+        # Remontee de securite apres A1 ou H8
+        if point in ('a1', 'h8'):
+            safe_pose = list(pose)
+            safe_pose[2] += 0.1  # +10cm en Z
+            manager.robot.rtde_c.moveL(safe_pose, 0.5, 0.3)
+            await manager.log("info", "Remontee de securite effectuee")
+
+        return {
+            "success": True,
+            "point": point,
+            "position": {"x": pose[0], "y": pose[1], "z": pose[2]}
+        }
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@app.post("/robot/calibrate/save")
+async def calibrate_save():
+    """Calcule la geometrie du plateau et sauvegarde la calibration"""
+    required = ['a1', 'h8', 'z']
+    missing = [p for p in required if p not in manager.calib_points]
+    if missing:
+        return {"success": False, "error": f"Points manquants: {missing}"}
+
+    try:
+        p1 = manager.calib_points['a1']   # Trou A8/A1
+        p2 = manager.calib_points['h8']   # Trou H1/H8
+        p_z = manager.calib_points['z']   # Surface Z
+
+        # Utiliser les fonctions de calibration.py
+        calib = TwoPointCalibration()
+        calib_data = calib.calculate_geometry(p1, p2, p_z)
+        calib.save(calib_data)
+
+        # Recharger la calibration dans le robot controller
+        manager.robot.calib_origin = calib_data["origin"]
+        manager.robot.calib_rotation = calib_data["rotation"]
+        manager.robot.calib_scale = calib_data["camera_scale"]
+        manager.robot.is_calibrated = True
+
+        # Remontee finale de securite
+        pose = manager.robot.rtde_r.getActualTCPPose()
+        safe_pose = list(pose)
+        safe_pose[2] += 0.1
+        manager.robot.rtde_c.moveL(safe_pose, 0.5, 0.3)
+
+        await manager.log("info", f"Calibration sauvegardee (rotation={math.degrees(calib_data['rotation']):.2f}deg)")
+
+        # Reinitialiser les points de calibration
+        manager.calib_points.clear()
+
+        return {
+            "success": True,
+            "board_size_mm": round(calib_data["board_size"] * 1000, 1),
+            "rotation_deg": round(math.degrees(calib_data["rotation"]), 2)
+        }
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+# ============================================================================
+#                         ROUTES CAMERA
+# ============================================================================
+
+@app.post("/camera/capture")
+async def camera_capture():
+    """Prend une photo et la renvoie en base64"""
+    try:
+        from chess_vision.modules.camera import take_photo
+        from PIL import Image
+
+        photo_path = take_photo()
+
+        # Lire les dimensions
+        with Image.open(photo_path) as img:
+            width, height = img.size
+
+        # Encoder en base64
+        with open(photo_path, 'rb') as f:
+            image_data = base64.b64encode(f.read()).decode()
+
+        await manager.log("info", f"Photo capturee: {width}x{height}")
+        return {
+            "success": True,
+            "image_base64": image_data,
+            "image_path": photo_path,
+            "width": width,
+            "height": height
+        }
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@app.get("/camera/calibration")
+async def get_camera_calibration():
+    """Retourne les coins de calibration du plateau depuis board_calibration.json."""
+    try:
+        from chess_vision.config import CALIBRATION_FILE
+        if not os.path.exists(CALIBRATION_FILE):
+            return {"success": False, "error": "Non calibre (board_calibration.json manquant)"}
+        with open(CALIBRATION_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        corners = data.get("corners", {})
+        if not all(k in corners for k in ("TL", "TR", "BR", "BL")):
+            return {"success": False, "error": "Fichier de calibration incomplet"}
+        return {"success": True, "corners": corners}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@app.post("/camera/calibrate/save")
+async def camera_calibrate_save(data: dict):
+    """Sauvegarde la calibration camera (4 coins du plateau)"""
+    try:
+        from chess_vision.config import CALIBRATION_FILE, EXTRACTED_BOARD_SIZE
+
+        corners = data.get("corners")
+        source_image = data.get("source_image", "")
+
+        if not corners:
+            return {"success": False, "error": "Coins manquants"}
+
+        required_corners = ['TL', 'TR', 'BR', 'BL']
+        for c in required_corners:
+            if c not in corners or 'x' not in corners[c] or 'y' not in corners[c]:
+                return {"success": False, "error": f"Coin {c} invalide"}
+
+        calibration_data = {
+            "corners": {
+                "TL": {"x": corners["TL"]["x"], "y": corners["TL"]["y"]},
+                "TR": {"x": corners["TR"]["x"], "y": corners["TR"]["y"]},
+                "BR": {"x": corners["BR"]["x"], "y": corners["BR"]["y"]},
+                "BL": {"x": corners["BL"]["x"], "y": corners["BL"]["y"]},
+            },
+            "source_image": source_image,
+            "board_size": EXTRACTED_BOARD_SIZE,
+            "calibrated_at": datetime.now().isoformat(),
+            "note": "Coins physiques du plateau 8x8 (angles A8/H8/H1/A1). La zone cimetiere est deduite automatiquement (1 case de bordure). Ne pas deplacer la camera apres calibration.",
+        }
+
+        with open(CALIBRATION_FILE, 'w', encoding='utf-8') as f:
+            json.dump(calibration_data, f, indent=2, ensure_ascii=False)
+
+        await manager.log("info", f"Calibration camera sauvegardee: {CALIBRATION_FILE}")
+        return {"success": True, "file": CALIBRATION_FILE}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+# ============================================================================
+#                         VISION CAMERA
+# ============================================================================
+
+@app.get("/vision/state")
+async def get_vision_state():
+    """Retourne l'etat courant de la vision camera (stabilise)."""
+    return manager.vision.get_state_message()
+
+
+@app.get("/game/history")
     return {"pieces_eliminees": pieces, "count": len(pieces)}
 
 @app.get("/game/history", tags=["Game"])
