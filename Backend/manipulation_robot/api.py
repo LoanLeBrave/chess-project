@@ -186,7 +186,7 @@ class VisionService:
                     if is_capture: board_dict.pop(to_sq, None)
                     board_dict[to_sq] = piece
 
-    def detect_delta(self) -> Optional[dict]:
+    def detect_delta(self, stockfish_board: Optional[dict] = None) -> Optional[dict]:
         if self.camera_baseline is None or not self.stable_board: return None
         baseline, cam = self.camera_baseline, self.stable_board
         dis, app, chg = {}, {}, {}
@@ -197,8 +197,17 @@ class VisionService:
             elif c and not b: app[sq] = c
             elif b and c and b != c: chg[sq] = (b, c)
         if not dis and not app and not chg: return None
+        # Solution 1 : valider le from uniquement sur les cases où Stockfish
+        # confirme qu'une pièce blanche était présente. Cela filtre les faux
+        # "from" générés par une détection transitoire pendant le déplacement.
+        def _is_valid_from(sq_f: str, col_f: str) -> bool:
+            if not col_f.startswith("W"):
+                return False
+            if stockfish_board is not None:
+                return stockfish_board.get(sq_f, "").startswith("W")
+            return True
         for sq_f, col_f in dis.items():
-            if not col_f.startswith("W"): continue
+            if not _is_valid_from(sq_f, col_f): continue
             for sq_t, col_t in app.items():
                 if col_f == col_t: return {"from": sq_f, "to": sq_t, "type": "move"}
             for sq_t, (b_c, c_c) in chg.items():
@@ -225,7 +234,14 @@ class VisionService:
             for v in buf: counts[v] = counts.get(v, 0) + 1
             best_p = max(counts, key=counts.get)
             best_c = counts[best_p]
-            if best_p is not None and best_c >= self.STABLE_THRESHOLD:
+            # Solution 2 : seuil plus élevé pour les cases absentes du baseline.
+            # Une pièce apparaissant sur une case qui était vide (non connue du
+            # baseline) doit être vue dans TOUTES les frames du buffer avant
+            # d'être stabilisée. Cela empêche les détections transitoires
+            # (ArUco en transit pendant un déplacement) de polluer le stable_board.
+            sq_in_baseline = (self.camera_baseline is None or sq in self.camera_baseline)
+            appearance_threshold = self.STABLE_THRESHOLD if sq_in_baseline else len(buf)
+            if best_p is not None and best_c >= appearance_threshold:
                 new_stable[sq], new_conf[sq] = best_p, best_c / len(buf)
             elif best_p is None and best_c >= self.DISAPPEAR_THRESHOLD:
                 new_conf[sq] = 0.0
@@ -321,7 +337,7 @@ _last_anomaly_time = 0.0
 async def _check_vision_move():
     global _vision_move_lock
     if _vision_move_lock or manager.chess.board.turn != chess.WHITE: return
-    delta = manager.vision.detect_delta()
+    delta = manager.vision.detect_delta(stockfish_board=manager.chess._board_to_map())
     if not delta or delta["type"] == "unclear": return
     from_sq, to_sq = delta.get("from"), delta.get("to")
     if delta["type"] == "appeared_only" and to_sq and not from_sq:
