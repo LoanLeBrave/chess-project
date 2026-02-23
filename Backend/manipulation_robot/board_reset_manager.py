@@ -221,8 +221,8 @@ class BoardResetManager:
 
             piece, target = best
             current_sq = (
-                piece.get("position", {}).get("chess", "").lower()
-            )
+                (piece.get("position") or {}).get("chess") or ""
+            ).lower()
 
             if current_sq != target:
                 assignments.append({
@@ -247,7 +247,9 @@ class BoardResetManager:
         for target in targets:
             for piece in pieces:
                 # Utiliser la case chess de la vision plutot que calculer
-                current_sq = piece.get("position", {}).get("chess", "").lower()
+                # Note: .get("chess") peut retourner None si la cle existe mais vaut null
+                pos = piece.get("position") or {}
+                current_sq = (pos.get("chess") or "").lower()
                 if not current_sq or len(current_sq) != 2:
                     # Piece sans position valide (ex: au cimetiere)
                     # Utiliser une distance tres elevee
@@ -325,7 +327,7 @@ class BoardResetManager:
         for p in all_pieces:
             if p.get("zone") != "board":
                 continue
-            sq = p.get("position", {}).get("chess", "").lower()
+            sq = ((p.get("position") or {}).get("chess") or "").lower()
             if sq:
                 occupied.add(sq)
         return occupied
