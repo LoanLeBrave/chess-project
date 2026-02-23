@@ -215,10 +215,14 @@ CAMERA_CONFIG = {
 USE_DEFAULT_ARUCO_PARAMS = False
 
 # Paramètres personnalisés (optimisés pour lumière non uniforme + bords blancs)
+# Optimisations vitesse :
+#   - adaptiveThreshWinSizeMax 100→51, step 3→6 : 32 itérations → 9 (3,5× moins)
+#   - cornerRefinementMethod → CORNER_REFINE_NONE : on n'a besoin que du centre,
+#     pas des coins sub-pixel (élimine ~50 itérations par marqueur)
 ARUCO_PARAMS = {
     'adaptiveThreshWinSizeMin': 5,            # Augmenté: 3→5 (fenêtre plus large = lisse variations lumière)
-    'adaptiveThreshWinSizeMax': 100,          # Augmenté: 50→100 (gère grandes zones lumineuses)
-    'adaptiveThreshWinSizeStep': 3,           # Réduit: 5→3 (plus de tests entre min/max)
+    'adaptiveThreshWinSizeMax': 51,           # Réduit: 100→51 (moins d'itérations, gain vitesse ~2×)
+    'adaptiveThreshWinSizeStep': 6,           # Augmenté: 3→6 (saute plus de tailles, 3,5× moins d'itérations)
     'adaptiveThreshConstant': 15,             # Augmenté: 10→15 (très tolérant aux variations)
     'minMarkerPerimeterRate': 0.015,          # Réduit: 0.02→0.015 (lumière change périmètre apparent)
     'maxMarkerPerimeterRate': 5.0,            # Augmenté: 4.0→5.0 (accepte marqueurs paraissant plus grands)
@@ -226,10 +230,10 @@ ARUCO_PARAMS = {
     'minCornerDistanceRate': 0.03,            # Réduit: 0.05→0.03 (coins peuvent sembler plus proches)
     'minDistanceToBorder': 0,                 # Permet détection près des bords
     'minMarkerDistanceRate': 0.03,            # Réduit: 0.05→0.03 (marqueurs proches OK)
-    'cornerRefinementMethod': cv2.aruco.CORNER_REFINE_SUBPIX,  # Raffinement subpixel
-    'cornerRefinementWinSize': 7,             # Augmenté: 5→7 (fenêtre raffinement plus large)
-    'cornerRefinementMaxIterations': 50,      # Augmenté: 30→50 (plus d'itérations pour converger)
-    'cornerRefinementMinAccuracy': 0.15,      # Augmenté: 0.1→0.15 (accepte raffinement imparfait)
+    'cornerRefinementMethod': cv2.aruco.CORNER_REFINE_NONE,  # Pas de raffinement (centre suffit)
+    'cornerRefinementWinSize': 5,
+    'cornerRefinementMaxIterations': 10,
+    'cornerRefinementMinAccuracy': 0.1,
 }
 
 # ============================================================

@@ -259,30 +259,33 @@ class PieceAnalyzer:
         return self.extended_coords_to_pixel(x, y)
     
     def analyze_pieces(
-        self, 
+        self,
         board_img: np.ndarray,
         transform_matrix: np.ndarray = None,
-        original_img: np.ndarray = None
+        original_img: np.ndarray = None,
+        roi_offset: Tuple[int, int] = (0, 0)
     ) -> List[Dict[str, Any]]:
         """
         Analyse les pièces d'échecs sur la zone complète (plateau + cimetière).
-        
+
         Stratégie de détection :
             - Si original_img + transform_matrix fournis : détecte sur l'image
               originale (haute résolution, ArUcos nets) puis projette les
               coordonnées vers le repère du plateau extrait.
             - Sinon : détecte directement sur board_img (fallback).
-        
+
         Args:
             board_img: Image du plateau extrait et redressé (1000x1000)
             transform_matrix: Matrice de transformation perspective (optionnel)
             original_img: Image originale haute résolution (optionnel)
-            
+            roi_offset: Décalage (x, y) à ajouter aux coordonnées détectées
+                        quand original_img est un recadrage ROI de l'image complète.
+
         Returns:
             Liste des pièces avec coordonnées complètes et zone (board/cemetery)
         """
         if original_img is not None and transform_matrix is not None:
-            return self.analyze_from_original(original_img, transform_matrix)
+            return self.analyze_from_original(original_img, transform_matrix, roi_offset=roi_offset)
         
         # Fallback : détection sur le plateau extrait
         piece_markers = detect_piece_markers(board_img, self.detector)
@@ -303,27 +306,34 @@ class PieceAnalyzer:
     def analyze_from_original(
         self,
         original_img: np.ndarray,
-        transform_matrix: np.ndarray
+        transform_matrix: np.ndarray,
+        roi_offset: Tuple[int, int] = (0, 0)
     ) -> List[Dict[str, Any]]:
         """
         Analyse les pièces depuis l'image originale (haute résolution).
         Transforme ensuite les coordonnées vers le plateau.
-        
+
         Args:
-            original_img: Image originale (BGR)
+            original_img: Image originale ou recadrage ROI (BGR)
             transform_matrix: Matrice de transformation perspective
-            
+            roi_offset: Décalage (x, y) à ajouter aux coordonnées détectées
+                        si original_img est un sous-recadrage de l'image complète.
+
         Returns:
             Liste des pièces avec coordonnées complètes
         """
         piece_markers = detect_piece_markers(original_img, self.detector)
-        
+
         pieces_list = []
-        
+
         for marker_id, data in piece_markers.items():
             cx_orig, cy_orig = data['center']
             piece_info = data['piece_info']
-            
+
+            # Réappliquer le décalage ROI pour revenir dans l'espace de l'image complète
+            cx_orig += roi_offset[0]
+            cy_orig += roi_offset[1]
+
             # Transformer vers le plateau
             point_orig = np.array([[[cx_orig, cy_orig]]], dtype=np.float32)
             point_board = cv2.perspectiveTransform(point_orig, transform_matrix)[0][0]

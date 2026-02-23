@@ -309,11 +309,27 @@ class ChessVisionPipeline:
             result['transform_matrix'] = transform_matrix
             
             # 4. Analyser les pièces
-            # Détection sur l'image originale (ArUcos nets) + projection des coordonnées
+            # Recadrage ROI : on ne fait tourner la détection ArUco que sur la zone
+            # du plateau (+ marge), pas sur l'image complète haute résolution.
+            # Cela réduit la surface analysée et accélère significativement la détection.
+            roi_img = image
+            roi_offset = (0, 0)
+            if board_corners:
+                xs = [c[0] for c in board_corners.values()]
+                ys = [c[1] for c in board_corners.values()]
+                margin = 60  # pixels de marge autour du plateau
+                x_min = max(0, int(min(xs)) - margin)
+                y_min = max(0, int(min(ys)) - margin)
+                x_max = min(image.shape[1], int(max(xs)) + margin)
+                y_max = min(image.shape[0], int(max(ys)) + margin)
+                roi_img = image[y_min:y_max, x_min:x_max]
+                roi_offset = (x_min, y_min)
+
             pieces = self.analyzer.analyze_pieces(
                 board_img,
                 transform_matrix=transform_matrix,
-                original_img=image
+                original_img=roi_img,
+                roi_offset=roi_offset,
             )
             result['pieces'] = pieces
             
