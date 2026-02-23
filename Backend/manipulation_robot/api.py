@@ -47,19 +47,20 @@ class ConfirmPlacementRequest(BaseModel):
     use_camera: bool = Field(True, description="Utilise la caméra comme référence initiale")
 
 class CalibrationPointRequest(BaseModel):
-    point: str = Field(..., regex="^(a1|h8|z)$", description="Identifiant du point")
+    point: str = Field(..., pattern="^(a1|h8|z)$", description="Identifiant du point")
 
 class CalibrationZRequest(BaseModel):
-    direction: str = Field(..., regex="^(up|down)$", description="Sens du mouvement")
+    # Idem ici
+    direction: str = Field(..., pattern="^(up|down)$", description="Sens du mouvement")
 
 class LeaderboardAddRequest(BaseModel):
     player_name: str
     acpl: float
-    result: str = Field(..., regex="^(win|lose|draw|abandoned)$")
+    # Et ici aussi
+    result: str = Field(..., pattern="^(win|lose|draw|abandoned)$")
     difficulty: str
     moves_played: int
     game_duration: Optional[float] = None
-
 # ============================================================================
 #                          CONFIGURATION API
 # ============================================================================
