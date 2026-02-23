@@ -10,11 +10,11 @@ import chess
 # ============================================================================
 
 ROBOT_IP = "192.168.0.11"
-VITESSE = 0.2
-ACCELERATION = 0.4
+VITESSE = 0.3
+ACCELERATION = 0.6
 GRIPPER_OUVERTURE = 25
 DELTA_APPROCHE = 0.03   # 3cm
-DELTA_TRANSIT = 0.12    # 12cm
+DELTA_TRANSIT = 0.09    # 9cm
 DELTA_RELACHE_BASE = 0.001
 
 # ============================================================================
@@ -72,7 +72,7 @@ HAUTEUR_PIECES = {
 
 DIFFICULTY_PRESETS = {
     'beginner': {'skill_level': 3, 'depth': 8, 'time_limit': 0.5},
-    'intermediate': {'skill_level': 10, 'depth': 12, 'time_limit': 1.0},
+    'intermediate': {'skill_level': 10, 'depth': 12, 'time_limit': 0.5},
     'advanced': {'skill_level': 18, 'depth': 18, 'time_limit': 2.0},
 }
 

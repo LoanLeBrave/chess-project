@@ -351,7 +351,7 @@ async def vision_loop():
             if updated and manager.vision.vision_game_enabled and manager.vision.game_started:
                 if manager.status == "idle": await _check_vision_move()
         except Exception as e: print(f"Vision Error: {e}")
-        await asyncio.sleep(0.3 if manager.vision.active_mode else 0.5)
+        await asyncio.sleep(0.15 if manager.vision.active_mode else 0.3)
 
 _vision_move_lock = False
 _last_anomaly = ""
@@ -406,7 +406,7 @@ async def _check_vision_move():
 
                 # Attendre que les pieces se stabilisent physiquement,
                 # puis prendre un nouveau snapshot camera comme baseline
-                await asyncio.sleep(1.0)
+                await asyncio.sleep(0.5)
                 manager.vision.update()  # capture fraiche
                 if manager.vision.stable_board:
                     # Baseline hybride : camera + pieces encore simulees

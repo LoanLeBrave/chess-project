@@ -21,6 +21,10 @@ from ..config import (
     IMAGES_DIR,
 )
 
+# Persistent Picamera2 instance — kept alive between captures to avoid
+# the 2+ second startup + stabilization overhead on every frame.
+_picam2_instance = None
+
 
 def _check_rpicam_available() -> bool:
     """Vérifie si rpicam-still ou libcamera-still est disponible."""
@@ -178,47 +182,68 @@ def _capture_with_rpicam(filepath: str):
         raise RuntimeError(f"{cmd} non trouvé")
 
 
-def _capture_with_picamera2(filepath: str):
-    """Capture avec Picamera2."""
-    from picamera2 import Picamera2
+def _ensure_picamera2() -> "Picamera2":
+    """
+    Returns the persistent Picamera2 instance, creating and starting it if needed.
+    Pays the stabilization delay only once at startup.
+    """
+    global _picam2_instance
     import time
-    
+
+    if _picam2_instance is not None:
+        return _picam2_instance
+
+    from picamera2 import Picamera2
+
+    print("   🔄 Initialisation Picamera2 persistante...")
+    picam2 = Picamera2()
+    config = picam2.create_still_configuration()
+    picam2.configure(config)
+
+    # Focus controls
+    controls = {}
+    if CAMERA_CONFIG.get('autofocus_mode') == 'manual':
+        controls['AfMode'] = 0  # 0 = Manual
+        if CAMERA_CONFIG.get('lens_position') is not None:
+            controls['LensPosition'] = float(CAMERA_CONFIG['lens_position'])
+            print(f"   🔍 Focus manuel: position {CAMERA_CONFIG['lens_position']}")
+    if controls:
+        picam2.set_controls(controls)
+
+    print("   🔄 Démarrage caméra...")
+    picam2.start()
+
+    # Pay stabilization delay only at first startup
+    stabilization_delay = CAMERA_CONFIG.get('stabilization_delay', 2.0)
+    print(f"   ⏳ Stabilisation initiale ({stabilization_delay}s)...")
+    time.sleep(stabilization_delay)
+
+    _picam2_instance = picam2
+    return _picam2_instance
+
+
+def release_picamera2():
+    """Stop and release the persistent Picamera2 instance (call on shutdown)."""
+    global _picam2_instance
+    if _picam2_instance is not None:
+        try:
+            _picam2_instance.stop()
+            _picam2_instance.close()
+        except Exception:
+            pass
+        _picam2_instance = None
+
+
+def _capture_with_picamera2(filepath: str):
+    """Capture avec Picamera2 persistante (pas de re-démarrage entre captures)."""
+    global _picam2_instance
     try:
-        print("   🔄 Initialisation Picamera2...")
-        picam2 = Picamera2()
-        config = picam2.create_still_configuration()
-        picam2.configure(config)
-        
-        print("   🔄 Démarrage caméra...")
-        picam2.start()
-        
-        # Appliquer les contrôles de focus depuis CAMERA_CONFIG
-        controls = {}
-        
-        # Focus manuel si configuré
-        if CAMERA_CONFIG.get('autofocus_mode') == 'manual':
-            controls['AfMode'] = 0  # 0 = Manual focus
-            if CAMERA_CONFIG.get('lens_position') is not None:
-                controls['LensPosition'] = float(CAMERA_CONFIG['lens_position'])
-                print(f"   🔍 Focus manuel: position {CAMERA_CONFIG['lens_position']}")
-        
-        # Appliquer tous les contrôles
-        if controls:
-            picam2.set_controls(controls)
-        
-        # Délai de stabilisation optimisé (configurable)
-        stabilization_delay = CAMERA_CONFIG.get('stabilization_delay', 2.0)
-        print(f"   ⏳ Stabilisation ({stabilization_delay}s)...")
-        time.sleep(stabilization_delay)
-        
+        picam2 = _ensure_picamera2()
         print("   📸 Capture...")
         picam2.capture_file(filepath)
-        
-        print("   🛑 Arrêt caméra...")
-        picam2.stop()
-        picam2.close()
-        
     except Exception as e:
+        # Reset so next call re-initialises cleanly
+        _picam2_instance = None
         raise RuntimeError(f"Erreur Picamera2: {e}")
 
 

@@ -342,37 +342,29 @@ class RobotController:
             # Ouvrir le gripper
             if self.connected:
                 self.gripper.move(GRIPPER_OUVERTURE)
-            if not await self._wait_with_pause_check(0.2):
+            if not await self._wait_with_pause_check(0.05):
                 return False
 
             # Approche haute
             if not await self._move_tcp(p_high):
                 return False
-            if not await self._wait_with_pause_check(0.1):
-                return False
 
             # Approche basse
             if not await self._move_tcp(p_app):
-                return False
-            if not await self._wait_with_pause_check(0.1):
                 return False
 
             # Descente vers la pièce
             if not await self._move_tcp(p_pick, VITESSE / 2):
                 return False
-            if not await self._wait_with_pause_check(0.1):
-                return False
 
             # Fermer le gripper
             if self.connected:
                 self.gripper.close()
-            if not await self._wait_with_pause_check(0.5):
+            if not await self._wait_with_pause_check(0.2):
                 return False
 
             # Remontée
             if not await self._move_tcp(p_app):
-                return False
-            if not await self._wait_with_pause_check(0.1):
                 return False
 
             if not await self._move_tcp(p_high):
@@ -407,25 +399,19 @@ class RobotController:
             # Transit haute
             if not await self._move_tcp(p_high):
                 return False
-            if not await self._wait_with_pause_check(0.1):
-                return False
 
             # Approche
             if not await self._move_tcp(p_app):
-                return False
-            if not await self._wait_with_pause_check(0.1):
                 return False
 
             # Descente vers dépôt
             if not await self._move_tcp(p_deposit, VITESSE / 2):
                 return False
-            if not await self._wait_with_pause_check(0.1):
-                return False
 
             # Ouvrir le gripper
             if self.connected:
                 self.gripper.move(GRIPPER_OUVERTURE)
-            if not await self._wait_with_pause_check(0.3):
+            if not await self._wait_with_pause_check(0.1):
                 return False
 
             # Remontée
@@ -454,42 +440,32 @@ class RobotController:
         # ===== PICK =====
         if self.connected:
             self.gripper.move(GRIPPER_OUVERTURE)
-        if not await self._wait_with_pause_check(0.2):
+        if not await self._wait_with_pause_check(0.05):
             return False
 
         # Approche haute
         if not await self._move_tcp(p_high_pick):
             return False
-        if not await self._wait_with_pause_check(0.1):
-            return False
 
         # Approche moyenne
         if not await self._move_tcp(p_app_pick):
-            return False
-        if not await self._wait_with_pause_check(0.1):
             return False
 
         # Descente vers pièce
         if not await self._move_tcp(p_pick, VITESSE / 2):
             return False
-        if not await self._wait_with_pause_check(0.1):
-            return False
 
         # Fermeture gripper
         if self.connected:
             self.gripper.close()
-        if not await self._wait_with_pause_check(0.5):
+        if not await self._wait_with_pause_check(0.2):
             return False
 
         # Remontée
         if not await self._move_tcp(p_app_pick):
             return False
-        if not await self._wait_with_pause_check(0.1):
-            return False
 
         if not await self._move_tcp(p_high_pick):
-            return False
-        if not await self._wait_with_pause_check(0.1):
             return False
 
         # ===== PLACE =====
@@ -504,25 +480,19 @@ class RobotController:
         # Transit vers destination
         if not await self._move_tcp(p_high_place):
             return False
-        if not await self._wait_with_pause_check(0.1):
-            return False
 
         # Approche
         if not await self._move_tcp(p_app_place):
-            return False
-        if not await self._wait_with_pause_check(0.1):
             return False
 
         # Descente vers dépôt
         if not await self._move_tcp(p_deposit, VITESSE / 2):
             return False
-        if not await self._wait_with_pause_check(0.1):
-            return False
 
         # Ouverture gripper
         if self.connected:
             self.gripper.move(GRIPPER_OUVERTURE)
-        if not await self._wait_with_pause_check(0.3):
+        if not await self._wait_with_pause_check(0.1):
             return False
 
         # Remontée
