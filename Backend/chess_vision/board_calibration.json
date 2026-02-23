@@ -1,0 +1,24 @@
+{
+  "corners": {
+    "TL": {
+      "x": 3217,
+      "y": 2304
+    },
+    "TR": {
+      "x": 3221,
+      "y": 307
+    },
+    "BR": {
+      "x": 1152,
+      "y": 234
+    },
+    "BL": {
+      "x": 1163,
+      "y": 2369
+    }
+  },
+  "source_image": "/home/robot/ur_modbus/chess-project/Backend/chess_vision/images/photo_20260216_092657.jpg",
+  "board_size": 1000,
+  "calibrated_at": "2026-02-16T09:27:16.887620",
+  "note": "Coins du plateau en coordonnees pixels dans l'image originale. Ne pas deplacer la camera apres calibration."
+}
