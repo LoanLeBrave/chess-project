@@ -17,6 +17,7 @@ DELTA_APPROCHE = 0.03   # 3cm
 DELTA_TRANSIT = 0.12    # 12cm
 DELTA_RELACHE_BASE = 0.001
 ESPACEMENT_ELIMINATION = 0.02
+BLEND_RADIUS = 0.01     # 1cm - rayon de lissage pour transitions en transit
 
 # ============================================================================
 #                         FICHIERS DE DONNÉES

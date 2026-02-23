@@ -21,7 +21,7 @@ from config import (
     ROBOT_IP, VITESSE, ACCELERATION,
     GRIPPER_OUVERTURE,
     DELTA_APPROCHE, DELTA_TRANSIT, DELTA_RELACHE_BASE,
-    ESPACEMENT_ELIMINATION,
+    ESPACEMENT_ELIMINATION, BLEND_RADIUS,
     FICHIER_CALIBRATION, FICHIER_POSITION_DEPART,
     PIECE_TYPE_MAP, HAUTEUR_PIECES
 )
@@ -229,13 +229,16 @@ class RobotController:
             await asyncio.sleep(0.01)  # Vérifier toutes les 10ms
         return True
 
-    async def _move_tcp(self, target_pose, speed=VITESSE, acc=ACCELERATION):
-        """Déplace le TCP avec gestion de la pause"""
+    async def _move_tcp(self, target_pose, speed=VITESSE, acc=ACCELERATION, blend=0.0):
+        """Déplace le TCP avec gestion de la pause.
+        blend: rayon de lissage (m) pour enchaîner avec le prochain moveL sans s'arrêter.
+               0.0 = arrêt précis au waypoint (pick/place), BLEND_RADIUS = transition fluide.
+        """
         if self.is_paused:
             return False
-            
+
         if self.connected:
-            self.rtde_c.moveL(target_pose, speed, acc)
+            self.rtde_c.moveL(target_pose, speed, acc, False, blend)
             return True
         else:
             await self.log("debug", f"Simu Move: {target_pose}")
@@ -333,25 +336,19 @@ class RobotController:
             # 1. Monter Z en premier (mouvement vertical pur)
             if not await self._raise_to_transit():
                 return False
-            if not await self._wait_with_pause_check(0.1):
-                return False
 
             # 2. Déplacement horizontal vers au-dessus de la case
-            if not await self._move_tcp(p_high):
-                return False
-            if not await self._wait_with_pause_check(0.1):
+            if not await self._move_tcp(p_high, blend=BLEND_RADIUS):
                 return False
 
-            # 3. Descente verticale vers la pièce
+            # 3. Descente verticale vers la pièce (précision → blend=0)
             if not await self._move_tcp(p_pick, VITESSE / 2):
-                return False
-            if not await self._wait_with_pause_check(0.1):
                 return False
 
             # Fermer le gripper
             if self.connected:
                 self.gripper.close()
-            if not await self._wait_with_pause_check(0.5):
+            if not await self._wait_with_pause_check(0.5):  # Attente mécanique gripper
                 return False
 
             # 4. Remontée verticale pure
@@ -385,25 +382,19 @@ class RobotController:
             # 1. Monter Z en premier (mouvement vertical pur)
             if not await self._raise_to_transit():
                 return False
-            if not await self._wait_with_pause_check(0.1):
-                return False
 
             # 2. Déplacement horizontal vers au-dessus de la case
-            if not await self._move_tcp(p_high):
-                return False
-            if not await self._wait_with_pause_check(0.1):
+            if not await self._move_tcp(p_high, blend=BLEND_RADIUS):
                 return False
 
-            # 3. Descente verticale vers le dépôt
+            # 3. Descente verticale vers le dépôt (précision → blend=0)
             if not await self._move_tcp(p_deposit, VITESSE / 2):
-                return False
-            if not await self._wait_with_pause_check(0.1):
                 return False
 
             # Ouvrir le gripper
             if self.connected:
                 self.gripper.move(GRIPPER_OUVERTURE)
-            if not await self._wait_with_pause_check(0.3):
+            if not await self._wait_with_pause_check(0.3):  # Attente mécanique gripper
                 return False
 
             # 4. Remontée verticale pure
@@ -452,56 +443,47 @@ class RobotController:
         # ===== PICK =====
         if self.connected:
             self.gripper.move(GRIPPER_OUVERTURE)
-        if not await self._wait_with_pause_check(0.2):
+        if not await self._wait_with_pause_check(0.2):  # Attente mécanique gripper
             return False
 
         # 1. Monter Z en premier (mouvement vertical pur, évite collision)
         if not await self._raise_to_transit():
             return False
-        if not await self._wait_with_pause_check(0.1):
-            return False
 
         # 2. Déplacement horizontal vers au-dessus du pick
-        if not await self._move_tcp(p_high_pick):
-            return False
-        if not await self._wait_with_pause_check(0.1):
+        #    blend=BLEND_RADIUS : pas d'arrêt complet en haut, transition fluide vers descente
+        if not await self._move_tcp(p_high_pick, blend=BLEND_RADIUS):
             return False
 
-        # 3. Descente verticale vers la pièce
+        # 3. Descente verticale vers la pièce (précision requise → blend=0)
         if not await self._move_tcp(p_pick, VITESSE / 2):
-            return False
-        if not await self._wait_with_pause_check(0.1):
             return False
 
         # Fermeture gripper
         if self.connected:
             self.gripper.close()
-        if not await self._wait_with_pause_check(0.5):
+        if not await self._wait_with_pause_check(0.5):  # Attente mécanique gripper
             return False
 
         # 4. Remontée verticale pure jusqu'au transit
-        if not await self._move_tcp(p_high_pick):
-            return False
-        if not await self._wait_with_pause_check(0.1):
+        #    blend=BLEND_RADIUS : enchaîne directement avec le déplacement horizontal
+        if not await self._move_tcp(p_high_pick, blend=BLEND_RADIUS):
             return False
 
         # ===== PLACE =====
         # 5. Déplacement horizontal vers au-dessus de la destination
-        if not await self._move_tcp(p_high_place):
-            return False
-        if not await self._wait_with_pause_check(0.1):
+        #    blend=BLEND_RADIUS : transition fluide vers la descente
+        if not await self._move_tcp(p_high_place, blend=BLEND_RADIUS):
             return False
 
-        # 6. Descente verticale vers le dépôt
+        # 6. Descente verticale vers le dépôt (précision requise → blend=0)
         if not await self._move_tcp(p_deposit, VITESSE / 2):
-            return False
-        if not await self._wait_with_pause_check(0.1):
             return False
 
         # Ouverture gripper
         if self.connected:
             self.gripper.move(GRIPPER_OUVERTURE)
-        if not await self._wait_with_pause_check(0.3):
+        if not await self._wait_with_pause_check(0.3):  # Attente mécanique gripper
             return False
 
         # 7. Remontée verticale pure
