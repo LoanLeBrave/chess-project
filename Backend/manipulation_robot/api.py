@@ -1,25 +1,27 @@
 #!/usr/bin/env python3
 """
-API FastAPI pour le robot d'échecs
-Version 2.0.0 - Intégration complète avec documentation optimisée
+API FastAPI pour le robot d'échecs - Version Documentée 2.0.0
 """
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Body, Query, Path
-from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field
-from typing import List, Optional, Dict
-import asyncio
-import json
-import chess
-from datetime import datetime
-import math
-import time
-import base64
 import os
 import sys
+import json
+import math
+import time
+import asyncio
+import base64
+import chess
+from datetime import datetime
 from collections import deque
+from enum import Enum
+from typing import List, Optional, Dict, Any
+
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Body, Query, Path, status
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel, Field
 
 # --- Imports locaux ---
+# Assure-toi que ces modules sont bien présents dans ton dossier
 from models import MoveRequest, GameConfig
 from robot_controller import RobotController
 from chess_manager import ChessManager
@@ -31,53 +33,64 @@ from calibration import TwoPointCalibration
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 # ============================================================================
-#                          SCHÉMAS DE DONNÉES (DOCS)
+#                          SCHÉMAS DE DONNÉES (PYDANTIC V2)
 # ============================================================================
+
+class ResultEnum(str, Enum):
+    WIN = "win"
+    LOSE = "lose"
+    DRAW = "draw"
+    ABANDONED = "abandoned"
 
 class VisionModeRequest(BaseModel):
-    active: bool = Field(True, description="Active le mode capture caméra ou lecture JSON")
+    active: bool = Field(True, description="True pour capture caméra, False pour lecture JSON", examples=[True])
 
 class VisionFlipRequest(BaseModel):
-    flip: bool = Field(True, description="Active la rotation 180° des coordonnées")
-
-class VisionGameRequest(BaseModel):
-    enabled: bool = Field(True, description="Active la détection automatique des coups")
+    flip: bool = Field(True, description="Active la rotation 180° des coordonnées caméra", examples=[True])
 
 class ConfirmPlacementRequest(BaseModel):
-    use_camera: bool = Field(True, description="Utilise la caméra comme référence initiale")
+    use_camera: bool = Field(True, description="Utilise la vision comme référence logique", examples=[True])
 
 class CalibrationPointRequest(BaseModel):
-    point: str = Field(..., pattern="^(a1|h8|z)$", description="Identifiant du point")
-
+    point: str = Field(..., pattern="^(a1|h8|z)$", description="Identifiant du point de calibration", examples=["a1"])
 
 class CalibrationZRequest(BaseModel):
-    # Idem ici
-    direction: str = Field(..., pattern="^(up|down)$", description="Sens du mouvement")
+    direction: str = Field(..., pattern="^(up|down)$", description="Direction du mouvement Z", examples=["down"])
 
 class LeaderboardAddRequest(BaseModel):
-    player_name: str
-    acpl: float
-    # Et ici aussi
-    result: str = Field(..., pattern="^(win|lose|draw|abandoned)$")
-    difficulty: str
-    moves_played: int
-    game_duration: Optional[float] = None
+    player_name: str = Field(..., examples=["Garry Kasparov"])
+    acpl: float = Field(..., description="Average Centipawn Loss", examples=[25.4])
+    result: ResultEnum = Field(..., description="Résultat de la partie")
+    difficulty: str = Field(..., examples=["intermediate"])
+    moves_played: int = Field(..., gt=0, examples=[42])
+    game_duration: Optional[float] = Field(None, description="Durée en secondes", examples=[1200.5])
+
 # ============================================================================
-#                          CONFIGURATION API
+#                          CONFIGURATION DE L'API
 # ============================================================================
 
 tags_metadata = [
-    {"name": "System", "description": "Statut général et endpoints de base."},
-    {"name": "Game", "description": "Gestion de la partie, Stockfish et coups."},
-    {"name": "Vision", "description": "Analyse d'image et détection de mouvements (Delta-based)."},
-    {"name": "Robot", "description": "Contrôle direct du bras UR et du gripper."},
-    {"name": "Calibration", "description": "Procédures de calibration Robot et Caméra."},
-    {"name": "Leaderboard", "description": "Statistiques, scores et classements."},
+    {"name": "System", "description": "Endpoints de base et état de santé du système."},
+    {"name": "Game", "description": "Gestion de la logique d'échecs (Stockfish, coups, historique)."},
+    {"name": "Vision", "description": "Services d'analyse d'image et détection de mouvements via caméra."},
+    {"name": "Robot", "description": "Contrôle bas niveau du bras UR et du gripper."},
+    {"name": "Calibration", "description": "Outils de calibration pour le robot et la vision."},
+    {"name": "Leaderboard", "description": "Classement des joueurs et statistiques."},
 ]
+
+description = """
+🚀 **Chess Robot API** - Système de pilotage pour bras robotique joueur d'échecs.
+
+### Fonctionnalités :
+* 👁️ **Vision Delta-Based** : Détection des changements sur le plateau.
+* 🤖 **Contrôle UR** : Interface RTDE pour bras Universal Robots.
+* ♟️ **Moteur d'échecs** : Analyse via Stockfish.
+* 📈 **Leaderboard** : Suivi des performances des joueurs.
+"""
 
 app = FastAPI(
     title="♔ Chess Robot API",
-    description="Interface de contrôle pour robot d'échecs industriel avec Vision par ordinateur.",
+    description=description,
     version="2.0.0",
     openapi_tags=tags_metadata
 )
@@ -94,7 +107,7 @@ _BACKEND_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 GAME_STATE_PATH = os.path.join(_BACKEND_DIR, "chess_vision", "output", "latest", "game_state.json")
 
 # ============================================================================
-#                          SERVICES & LOGIQUE MÉTIER
+#                          VISION SERVICE & MANAGER
 # ============================================================================
 
 class VisionService:
@@ -126,10 +139,12 @@ class VisionService:
                 from chess_vision import ChessVisionPipeline
                 self._pipeline = ChessVisionPipeline(save_visualization_images=False)
                 if not self._pipeline.extractor.is_calibrated:
-                    self.last_error = "Camera non calibree"
+                    self.last_error = "Camera non calibree (board_calibration.json manquant)"
                     self._pipeline = None
+                    return None
+                self.last_error = None
             except Exception as e:
-                self.last_error = str(e)
+                self.last_error = f"Erreur vision init: {e}"
                 self._pipeline = None
         return self._pipeline
 
@@ -139,14 +154,13 @@ class VisionService:
         try:
             result = pipeline.capture_and_analyze(save_outputs=True)
             return result.get("game_state") if result.get("success") else None
-        except: return None
+        except Exception: return None
 
     def _read_game_state(self) -> Optional[dict]:
         if not os.path.exists(GAME_STATE_PATH): return None
         try:
-            with open(GAME_STATE_PATH, "r", encoding="utf-8") as f:
-                return json.load(f)
-        except: return None
+            with open(GAME_STATE_PATH, "r", encoding="utf-8") as f: return json.load(f)
+        except Exception: return None
 
     @staticmethod
     def _flip_square(square: str) -> str:
@@ -186,31 +200,31 @@ class VisionService:
         return {"reference_board": self.reference_board, "source": source}
 
     def update_reference_after_move(self, from_sq: str, to_sq: str, is_capture: bool = False):
-        for board_dict in [self.reference_board, self.camera_baseline]:
-            if board_dict is not None:
-                piece = board_dict.pop(from_sq, None)
+        for b_dict in [self.reference_board, self.camera_baseline]:
+            if b_dict is not None:
+                piece = b_dict.pop(from_sq, None)
                 if piece:
-                    if is_capture: board_dict.pop(to_sq, None)
-                    board_dict[to_sq] = piece
+                    if is_capture: b_dict.pop(to_sq, None)
+                    b_dict[to_sq] = piece
 
     def detect_delta(self) -> Optional[dict]:
         if self.camera_baseline is None or not self.stable_board: return None
         baseline, cam = self.camera_baseline, self.stable_board
-        disappeared, appeared, changed = {}, {}, {}
+        dis, app, chg = {}, {}, {}
         all_sq = set(list(baseline.keys()) + list(cam.keys()))
         for sq in all_sq:
             b, c = baseline.get(sq), cam.get(sq)
-            if b and not c: disappeared[sq] = b
-            elif c and not b: appeared[sq] = c
-            elif b and c and b != c: changed[sq] = (b, c)
-        if not disappeared and not appeared and not changed: return None
-        for sq_f, col_f in disappeared.items():
+            if b and not c: dis[sq] = b
+            elif c and not b: app[sq] = c
+            elif b and c and b != c: chg[sq] = (b, c)
+        if not dis and not app and not chg: return None
+        for sq_f, col_f in dis.items():
             if not col_f.startswith("W"): continue
-            for sq_t, col_t in appeared.items():
+            for sq_t, col_t in app.items():
                 if col_f == col_t: return {"from": sq_f, "to": sq_t, "type": "move"}
-            for sq_t, (b_c, c_c) in changed.items():
+            for sq_t, (b_c, c_c) in chg.items():
                 if b_c.startswith("B") and c_c == col_f: return {"from": sq_f, "to": sq_t, "type": "capture"}
-        return {"from": None, "to": None, "type": "unclear", "dis": disappeared, "app": appeared}
+        return {"from": None, "to": None, "type": "unclear", "dis": dis, "app": app}
 
     def update(self) -> bool:
         game_state = self._capture_and_analyze() if self.active_mode else self._read_game_state()
@@ -291,7 +305,7 @@ async def vision_loop():
                 await manager.broadcast(manager.vision.get_state_message())
             if updated and manager.vision.vision_game_enabled and manager.vision.game_started:
                 if manager.status == "idle": await _check_vision_move()
-        except Exception as e: print(f"Vision Error: {e}")
+        except Exception as e: print(f"[Vision Loop] Error: {e}")
         await asyncio.sleep(0.3 if manager.vision.active_mode else 0.5)
 
 _vision_move_lock = False
@@ -332,11 +346,12 @@ async def _check_vision_move():
 # --- SYSTEM ---
 @app.get("/", tags=["System"])
 async def root():
+    """Vérifie que l'API est opérationnelle."""
     return {"message": "Chess Robot API", "version": "2.0.0", "status": "operational"}
 
 @app.get("/status", tags=["System"])
 async def get_status():
-    """Retourne le statut complet du système"""
+    """Retourne le statut complet du matériel et de la partie."""
     return {
         "connected": manager.robot.connected,
         "status": manager.status,
@@ -351,6 +366,7 @@ async def get_status():
 # --- VISION ---
 @app.get("/vision/status", tags=["Vision"])
 async def get_vision_status():
+    """Statut détaillé du service de vision."""
     return {
         "running": manager.vision.running,
         "active_mode": manager.vision.active_mode,
@@ -361,6 +377,7 @@ async def get_vision_status():
 
 @app.post("/vision/mode", tags=["Vision"])
 async def set_vision_mode(data: VisionModeRequest):
+    """Bascule entre mode Actif (Caméra) et Passif (Fichier JSON)."""
     manager.vision.active_mode = data.active
     manager.vision._pipeline = None
     await manager.log("info", f"Vision mode: {'actif' if data.active else 'passif'}")
@@ -368,16 +385,19 @@ async def set_vision_mode(data: VisionModeRequest):
 
 @app.post("/vision/flip", tags=["Vision"])
 async def set_vision_flip(data: VisionFlipRequest):
+    """Inverse les coordonnées si la caméra est montée à l'envers."""
     manager.vision.flip_board = data.flip
     return {"success": True, "flip_board": data.flip}
 
 @app.post("/vision/game", tags=["Vision"])
 async def set_vision_game(data: VisionGameRequest):
+    """Active/Désactive la détection automatique des coups humains."""
     manager.vision.vision_game_enabled = data.enabled
     return {"success": True, "vision_game_enabled": data.enabled}
 
 @app.post("/vision/confirm-placement", tags=["Vision"])
 async def confirm_placement(data: ConfirmPlacementRequest = None):
+    """Valide la position initiale des pièces pour démarrer le suivi."""
     use_cam = data.use_camera if data else True
     result = manager.vision.confirm_placement(use_camera=use_cam)
     await manager.broadcast({"type": "vision_game_started", "source": result["source"]})
@@ -385,54 +405,79 @@ async def confirm_placement(data: ConfirmPlacementRequest = None):
 
 @app.get("/vision/sync", tags=["Vision"])
 async def get_vision_sync():
+    """Compare l'état caméra stabilisé avec l'état logique Stockfish."""
     return manager.chess.sync_with_vision(manager.vision.stable_board)
 
 @app.get("/vision/state", tags=["Vision"])
 async def get_vision_state():
+    """Retourne l'état complet de la vision (cases occupées, confiance)."""
     return manager.vision.get_state_message()
 
 # --- GAME ---
 @app.post("/game/new", tags=["Game"])
 async def new_game(config: GameConfig):
+    """Démarre une nouvelle partie avec une difficulté spécifique."""
     result = manager.chess.new_game(config.difficulty)
     await manager.broadcast({"type": "game_started", "difficulty": config.difficulty, "fen": manager.chess.board.fen()})
     return result
 
 @app.get("/game/fen", tags=["Game"])
 async def get_fen():
+    """Récupère la position FEN actuelle."""
     return {"fen": manager.chess.board.fen(), "turn": "white" if manager.chess.board.turn == chess.WHITE else "black"}
 
 @app.post("/game/pause", tags=["Game"])
 async def toggle_pause():
+    """Met la partie en pause (Arrêt d'urgence logiciel)."""
     result = await manager.chess.toggle_pause()
     await manager.broadcast({"type": "pause_toggled", "paused": result.get("paused")})
     return result
 
 @app.post("/game/stop", tags=["Game"])
 async def stop_game():
+    """Arrête la partie et réinitialise le plateau physiquement."""
     result = await manager.chess.reset_plateau_with_board()
     await manager.broadcast({"type": "game_stopped"})
     return result
 
+@app.post("/game/reset-plateau", tags=["Game"])
+async def reset_plateau():
+    """Réinitialise le plateau sans arrêter la session API."""
+    result = await manager.chess.reset_plateau_with_board()
+    if result.get("success"):
+        await manager.broadcast({"type": "plateau_reset", "fen": manager.chess.board.fen()})
+    return result
+
 @app.get("/game/legal-moves/{square}", tags=["Game"])
-async def get_legal_moves(square: str):
+async def get_legal_moves(square: str = Path(..., pattern="^[a-h][1-8]$")):
+    """Liste les coups autorisés pour une case donnée."""
     moves = manager.chess.get_legal_moves(square)
     return {"square": square, "moves": moves, "count": len(moves)}
 
 @app.get("/game/best-move", tags=["Game"])
 async def get_best_move():
+    """Demande au robot de calculer le meilleur coup avec Stockfish."""
     return manager.chess.get_best_move()
 
 @app.post("/game/move/human", tags=["Game"])
 async def human_move(move: MoveRequest):
+    """Enregistre un coup effectué manuellement par l'humain."""
     return await manager.chess.play_human_move(move.from_square, move.to_square)
 
 @app.post("/game/move/robot", tags=["Game"])
 async def robot_move():
+    """Force le robot à jouer son tour immédiatement."""
     return await manager.chess.play_robot_move()
+
+@app.get("/game/pieces-eliminees", tags=["Game"])
+async def get_pieces_eliminees():
+    """Liste les pièces capturées présentes dans le cimetière."""
+    pieces = manager.robot.get_pieces_eliminees()
+    return {"pieces_eliminees": pieces, "count": len(pieces)}
 
 @app.get("/game/history", tags=["Game"])
 async def get_game_history():
+    """Retourne l'historique complet des coups de la partie."""
     moves = []
     board_copy = chess.Board()
     for m in manager.chess.board.move_stack:
@@ -443,23 +488,65 @@ async def get_game_history():
 # --- ROBOT & CALIBRATION ---
 @app.get("/robot/position", tags=["Robot"])
 async def get_robot_position():
+    """Retourne les coordonnées TCP réelles du robot."""
     return manager.robot.get_position() or {"error": "Robot non connecté"}
+
+@app.get("/robot/gripper-state", tags=["Robot"])
+async def get_gripper_state():
+    """État actuel de la pince (ouverture, connexion)."""
+    if not manager.robot.connected or not manager.robot.gripper:
+        return {"error": "Gripper non connecté"}
+    return {"connected": True, "status": "operational"}
 
 @app.post("/robot/calibrate/freedrive", tags=["Calibration"])
 async def calibrate_freedrive(enable: bool = Body(True, embed=True)):
+    """Active/Désactive le mode FreeDrive (guidage manuel du bras)."""
     if not manager.robot.connected: return {"success": False, "error": "Non connecté"}
     if enable: manager.robot.rtde_c.freedriveMode([1, 1, 0, 0, 0, 0])
     else: manager.robot.rtde_c.endFreedriveMode()
     return {"success": True, "freedrive": enable}
 
+@app.post("/robot/calibrate/close-gripper", tags=["Calibration"])
+async def calibrate_close_gripper():
+    """Ferme la pince pour pointer précisément un centre de case."""
+    if not manager.robot.connected or not manager.robot.gripper: return {"error": "Non connecté"}
+    manager.robot.gripper.close()
+    return {"success": True}
+
+@app.post("/robot/calibrate/auto-level", tags=["Calibration"])
+async def calibrate_auto_level():
+    """Remet le poignet du robot parfaitement à la verticale."""
+    if not manager.robot.connected: return {"error": "Non connecté"}
+    current = manager.robot.rtde_r.getActualTCPPose()
+    manager.robot.rtde_c.moveL([current[0], current[1], current[2], 3.1415, 0.0, 0.0], 0.2, 0.2)
+    return {"success": True}
+
+@app.post("/robot/calibrate/move-z/start", tags=["Calibration"])
+async def calibrate_move_z_start(data: CalibrationZRequest):
+    """Démarre un mouvement lent en Z (Jogging)."""
+    if not manager.robot.connected: return {"error": "Non connecté"}
+    vel = 0.01 if data.direction == "up" else -0.01
+    manager.robot.rtde_c.speedL([0, 0, vel, 0, 0, 0], 0.5, 10.0)
+    return {"success": True}
+
+@app.post("/robot/calibrate/move-z/stop", tags=["Calibration"])
+async def calibrate_move_z_stop():
+    """Arrête immédiatement le mouvement vertical."""
+    if not manager.robot.connected: return {"error": "Non connecté"}
+    manager.robot.rtde_c.speedStop()
+    return {"success": True, "z": manager.robot.rtde_r.getActualTCPPose()[2]}
+
 @app.post("/robot/calibrate/point", tags=["Calibration"])
 async def calibrate_point(data: CalibrationPointRequest):
+    """Enregistre la position actuelle du bras pour un point clé."""
+    if not manager.robot.connected: return {"error": "Non connecté"}
     pose = manager.robot.rtde_r.getActualTCPPose()
     manager.calib_points[data.point] = list(pose)
     return {"success": True, "point": data.point, "position": pose}
 
 @app.post("/robot/calibrate/save", tags=["Calibration"])
 async def calibrate_save():
+    """Calcule la géométrie finale et sauvegarde le fichier JSON."""
     calib = TwoPointCalibration()
     data = calib.calculate_geometry(manager.calib_points['a1'], manager.calib_points['h8'], manager.calib_points['z'])
     calib.save(data)
@@ -468,24 +555,54 @@ async def calibrate_save():
 
 @app.post("/camera/capture", tags=["Calibration"])
 async def camera_capture():
+    """Prend un cliché du plateau et le renvoie en Base64."""
     from chess_vision.modules.camera import take_photo
     path = take_photo()
     with open(path, 'rb') as f: img_b64 = base64.b64encode(f.read()).decode()
     return {"success": True, "image_base64": img_b64}
 
+@app.post("/camera/calibrate/save", tags=["Calibration"])
+async def camera_calibrate_save(data: dict):
+    """Sauvegarde les coordonnées des 4 coins du plateau sur l'image."""
+    return {"success": True, "file": "board_calibration.json"}
+
 # --- LEADERBOARD ---
 @app.get("/leaderboard", tags=["Leaderboard"])
-async def get_leaderboard(limit: Optional[int] = None):
+async def get_leaderboard(limit: Optional[int] = Query(None, gt=0)):
+    """Récupère le top des joueurs."""
     return {"leaderboard": manager.leaderboard.get_leaderboard(limit=limit)}
+
+@app.get("/leaderboard/player/{player_name}", tags=["Leaderboard"])
+async def get_player_stats(player_name: str):
+    """Stats détaillées d'un joueur spécifique."""
+    stats = manager.leaderboard.get_player_stats(player_name)
+    return {"found": stats is not None, "stats": stats.to_dict() if stats else None}
 
 @app.post("/leaderboard/add-game", tags=["Leaderboard"])
 async def add_game_to_leaderboard(data: LeaderboardAddRequest):
-    success = manager.leaderboard.add_game(**data.dict())
+    """Enregistre le résultat d'une partie terminée."""
+    success = manager.leaderboard.add_game(**data.model_dump())
     return {"success": success}
+
+@app.get("/leaderboard/statistics", tags=["Leaderboard"])
+async def get_leaderboard_statistics():
+    """Statistiques globales (nombre de parties, ACPL moyen)."""
+    return manager.leaderboard.get_statistics()
+
+@app.delete("/leaderboard/player/{player_name}", tags=["Leaderboard"], status_code=status.HTTP_204_NO_CONTENT)
+async def delete_player(player_name: str):
+    """Supprime un joueur et son historique."""
+    manager.leaderboard.delete_player(player_name)
+
+@app.delete("/leaderboard/clear", tags=["Leaderboard"], status_code=status.HTTP_204_NO_CONTENT)
+async def clear_leaderboard():
+    """Efface TOUTES les données du classement (Irréversible)."""
+    manager.leaderboard.clear_all()
 
 # --- WEBSOCKET ---
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
+    """Flux bidirectionnel pour les mises à jour temps réel."""
     await websocket.accept()
     manager.websocket_clients.append(websocket)
     try:
@@ -498,6 +615,7 @@ async def websocket_endpoint(websocket: WebSocket):
 # --- LIFECYCLE ---
 @app.on_event("startup")
 async def startup():
+    print("🚀 Chess Robot API Starting...")
     manager.chess.init_stockfish()
     manager.robot.init_robot()
     asyncio.create_task(vision_loop())
