@@ -16,6 +16,7 @@ import cv2
 import numpy as np
 from typing import Dict, List, Tuple, Any
 
+from .preprocessing import preprocess
 from ..config import (
     ARUCO_DICT_TYPE,
     ARUCO_PARAMS,
@@ -88,12 +89,9 @@ class ArucoDetector:
         Returns:
             Dict {marker_id: {'center': (x, y), 'corners': array, 'size': float}}
         """
-        # Conversion en niveaux de gris si nécessaire
-        if len(image.shape) == 3:
-            gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-        else:
-            gray = image
-        
+        # Prétraitement (contraste, débruitage, etc.) + conversion en niveaux de gris
+        gray = preprocess(image)
+
         # Détection
         corners, ids, rejected = self.detector.detectMarkers(gray)
         
@@ -131,28 +129,25 @@ class ArucoDetector:
         Returns:
             Tuple (markers_dict, rejected_corners)
         """
-        if len(image.shape) == 3:
-            gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-        else:
-            gray = image
-        
+        gray = preprocess(image)
+
         corners, ids, rejected = self.detector.detectMarkers(gray)
-        
+
         results = {}
-        
+
         if ids is not None:
             for i, marker_id in enumerate(ids.flatten()):
                 marker_id = int(marker_id)
                 marker_corners = corners[i][0]
-                
+
                 center_x = marker_corners[:, 0].mean()
                 center_y = marker_corners[:, 1].mean()
-                
+
                 results[marker_id] = {
                     'center': (center_x, center_y),
                     'corners': marker_corners,
                 }
-        
+
         return results, rejected
 
 

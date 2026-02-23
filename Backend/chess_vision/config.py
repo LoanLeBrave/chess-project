@@ -233,6 +233,50 @@ ARUCO_PARAMS = {
 }
 
 # ============================================================
+# PIPELINE DE PRÉTRAITEMENT D'IMAGE
+# ============================================================
+# Chaque step est appliquée dans l'ordre avant la détection ArUco.
+# Mettre enabled=True pour activer, False pour désactiver.
+#
+# Steps disponibles (voir modules/preprocessing.py) :
+#   clahe     - Contraste adaptatif local (lumière non uniforme)
+#   denoise   - Débruitage (bruit capteur)
+#   sharpen   - Accentuation des contours
+#   gamma     - Correction luminosité (< 1.0 = éclaircit)
+#   bilateral - Lissage doux (préserve les bords)
+#
+# Ajouter une step : écrire step_xxx() dans preprocessing.py
+#                    puis l'ajouter ici avec enabled=True.
+
+PREPROCESSING_PIPELINE = [
+    {
+        'name': 'clahe',
+        'enabled': False,
+        'params': {'clip_limit': 2.0, 'tile_size': 8},
+    },
+    {
+        'name': 'denoise',
+        'enabled': False,
+        'params': {'strength': 10},
+    },
+    {
+        'name': 'sharpen',
+        'enabled': False,
+        'params': {'strength': 1.5},
+    },
+    {
+        'name': 'gamma',
+        'enabled': False,
+        'params': {'gamma': 1.0},
+    },
+    {
+        'name': 'bilateral',
+        'enabled': False,
+        'params': {'d': 9, 'sigma': 75},
+    },
+]
+
+# ============================================================
 # COULEURS POUR VISUALISATION (BGR pour OpenCV)
 # ============================================================
 COLORS = {
