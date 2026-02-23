@@ -1,4 +1,4 @@
-import { Play, Pause, Square, RotateCcw, Home } from 'lucide-react';
+import { Play, Pause, Square, RotateCcw, Home, LayoutGrid, Loader2 } from 'lucide-react';
 import type { GameState } from '../App';
 
 interface ControlPanelProps {
@@ -6,12 +6,21 @@ interface ControlPanelProps {
   onPause: () => void;
   onStop: () => void;
   onNewGame: () => void;
+  onReplaceBoard: () => void;
+  isReplacingBoard?: boolean;
 }
 
-export function ControlPanel({ gameState, onPause, onStop, onNewGame }: ControlPanelProps) {
+export function ControlPanel({
+  gameState,
+  onPause,
+  onStop,
+  onNewGame,
+  onReplaceBoard,
+  isReplacingBoard = false,
+}: ControlPanelProps) {
   return (
     <div className="bg-slate-800/50 backdrop-blur-sm rounded-xl p-4 border border-slate-700">
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-2">
         <button
           onClick={onPause}
           className={`
@@ -71,6 +80,32 @@ export function ControlPanel({ gameState, onPause, onStop, onNewGame }: ControlP
         >
           <Home className="w-4 h-4" />
           Menu
+        </button>
+
+        <button
+          onClick={onReplaceBoard}
+          disabled={isReplacingBoard}
+          className={`
+            flex items-center justify-center gap-2 px-3 py-2 rounded-lg font-semibold text-sm
+            transition-all duration-200 shadow-lg
+            ${isReplacingBoard
+              ? 'bg-purple-700/50 text-purple-300 cursor-not-allowed'
+              : 'bg-purple-600 hover:bg-purple-500 text-white hover:scale-105'
+            }
+          `}
+          title="Replace toutes les pieces a leur position initiale via le robot"
+        >
+          {isReplacingBoard ? (
+            <>
+              <Loader2 className="w-4 h-4 animate-spin" />
+              Replacement…
+            </>
+          ) : (
+            <>
+              <LayoutGrid className="w-4 h-4" />
+              Replacer
+            </>
+          )}
         </button>
       </div>
     </div>
