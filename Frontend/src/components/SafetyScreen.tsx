@@ -81,7 +81,7 @@ export function SafetyScreen({ onContinue, onBack }: SafetyScreenProps) {
                 className="p-4 bg-slate-800/50 border-slate-700 hover:border-slate-600 transition-all duration-300"
               >
                 {/* Image pour chaque carte */}
-                <div className="w-full aspect-square bg-slate-900/80 rounded-lg mb-3 flex items-center justify-center overflow-hidden">
+                <div className="w-56 h-56 mx-auto bg-slate-900/80 rounded-lg mb-3 flex items-center justify-center overflow-hidden">
                   <img 
                     src={images[index]} 
                     alt={`${rule.title} - Robot UR7e`}
@@ -92,9 +92,9 @@ export function SafetyScreen({ onContinue, onBack }: SafetyScreenProps) {
                   <div className={`w-8 h-8 rounded-lg ${rule.iconBg} flex items-center justify-center`}>
                     <Icon className={`w-4 h-4 ${rule.iconColor}`} strokeWidth={2} />
                   </div>
-                  <h3 className="text-base font-bold text-white">{rule.title}</h3>
+                  <h3 className="text-xl font-bold text-white">{rule.title}</h3>
                 </div>
-                <p className="text-slate-400 text-xs leading-relaxed text-center">{rule.description}</p>
+                <p className="text-slate-400 text-base leading-relaxed text-center">{rule.description}</p>
               </Card>
             );
           })}
