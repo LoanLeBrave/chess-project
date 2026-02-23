@@ -5,6 +5,7 @@ interface LeaderboardScreenProps {
   onBack: () => void;
 }
 
+
 interface PlayerScore {
   rank: number;
   name: string;

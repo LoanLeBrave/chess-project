@@ -171,6 +171,7 @@ class LeaderboardManager:
         # Trier par ACPL croissant (plus bas = meilleur)
         rankings.sort(key=lambda x: x['acpl'])
         
+        
         # Assigner les rangs
         for i, player in enumerate(rankings, 1):
             player['rank'] = i
