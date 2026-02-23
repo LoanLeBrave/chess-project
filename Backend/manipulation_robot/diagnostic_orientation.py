@@ -12,12 +12,12 @@ def diagnostiquer_orientation():
     """Analyse l'orientation du mapping pour détecter les inversions"""
 
     print("\n" + "=" * 60)
-    print("🔍 DIAGNOSTIC D'ORIENTATION DE L'ÉCHIQUIER")
+    print(" DIAGNOSTIC D'ORIENTATION DE L'ÉCHIQUIER")
     print("=" * 60 + "\n")
 
     # Charger le mapping
     if not os.path.exists(FICHIER_MAPPING):
-        print(f"❌ Fichier {FICHIER_MAPPING} non trouvé!")
+        print(f" Fichier {FICHIER_MAPPING} non trouvé!")
         return
 
     with open(FICHIER_MAPPING, 'r') as f:
@@ -37,7 +37,7 @@ def diagnostiquer_orientation():
             tcp = cases[coin]['tcp']
             print(f"{coin.upper()}: X={tcp[0]:.4f}, Y={tcp[1]:.4f}, Z={tcp[2]:.4f}")
         else:
-            print(f"{coin.upper()}: ❌ Non trouvé")
+            print(f"{coin.upper()}:  Non trouvé")
 
     # Vérifier l'orientation
     if all(c in cases for c in coins):
@@ -54,42 +54,42 @@ def diagnostiquer_orientation():
         delta_x_ligne1 = h1[0] - a1[0]  # a1 -> h1
         delta_x_ligne8 = h8[0] - a8[0]  # a8 -> h8
 
-        print(f"\n📐 AXE X (colonnes a → h):")
+        print(f"\n AXE X (colonnes a → h):")
         print(f"   Ligne 1: a1→h1 = {delta_x_ligne1:+.4f} m ({delta_x_ligne1 * 1000:+.1f} mm)")
         print(f"   Ligne 8: a8→h8 = {delta_x_ligne8:+.4f} m ({delta_x_ligne8 * 1000:+.1f} mm)")
 
         if delta_x_ligne1 > 0 and delta_x_ligne8 > 0:
             print("   ✓ X augmente de a vers h (normal)")
         elif delta_x_ligne1 < 0 and delta_x_ligne8 < 0:
-            print("   ⚠️  X DIMINUE de a vers h (INVERSÉ!)")
+            print("     X DIMINUE de a vers h (INVERSÉ!)")
         else:
-            print("   ❌ Orientation incohérente!")
+            print("    Orientation incohérente!")
 
         # Axe Y (1 vers 8)
         delta_y_col_a = a8[1] - a1[1]  # a1 -> a8
         delta_y_col_h = h8[1] - h1[1]  # h1 -> h8
 
-        print(f"\n📐 AXE Y (rangées 1 → 8):")
+        print(f"\n AXE Y (rangées 1 → 8):")
         print(f"   Colonne a: a1→a8 = {delta_y_col_a:+.4f} m ({delta_y_col_a * 1000:+.1f} mm)")
         print(f"   Colonne h: h1→h8 = {delta_y_col_h:+.4f} m ({delta_y_col_h * 1000:+.1f} mm)")
 
         if delta_y_col_a > 0 and delta_y_col_h > 0:
             print("   ✓ Y augmente de 1 vers 8 (normal)")
         elif delta_y_col_a < 0 and delta_y_col_h < 0:
-            print("   ⚠️  Y DIMINUE de 1 vers 8 (INVERSÉ!)")
+            print("     Y DIMINUE de 1 vers 8 (INVERSÉ!)")
         else:
-            print("   ❌ Orientation incohérente!")
+            print("    Orientation incohérente!")
 
         # Distance entre cases
         taille_case_x = abs(delta_x_ligne1) / 7  # 8 cases = 7 intervalles
         taille_case_y = abs(delta_y_col_a) / 7
 
-        print(f"\n📏 TAILLE DES CASES:")
+        print(f"\n TAILLE DES CASES:")
         print(f"   Largeur (X): {taille_case_x * 1000:.1f} mm")
         print(f"   Hauteur (Y): {taille_case_y * 1000:.1f} mm")
 
         if abs(taille_case_x - taille_case_y) > 0.002:  # >2mm de différence
-            print("   ⚠️  Cases non carrées! Vérifier le mapping")
+            print("     Cases non carrées! Vérifier le mapping")
         else:
             print("   ✓ Cases carrées")
 
@@ -104,7 +104,7 @@ def diagnostiquer_orientation():
             tcp = cases[case]['tcp']
             print(f"{case.upper()}: X={tcp[0]:.4f}, Y={tcp[1]:.4f}")
         else:
-            print(f"{case.upper()}: ❌ Non trouvé")
+            print(f"{case.upper()}:  Non trouvé")
 
     if all(c in cases for c in cases_centre):
         d4 = cases['d4']['tcp']
@@ -135,7 +135,7 @@ def diagnostiquer_orientation():
             expected_offset = -140  # mm (négatif car centre est à gauche de h1)
 
             if abs(distance_x * 1000 - expected_offset) > 20:  # >20mm d'erreur
-                print(f"   ⚠️  ATTENTION: Expected ~{expected_offset}mm, got {distance_x * 1000:.1f}mm")
+                print(f"     ATTENTION: Expected ~{expected_offset}mm, got {distance_x * 1000:.1f}mm")
 
     # Vérifier la position du trou
     print("\n" + "=" * 60)
@@ -153,7 +153,7 @@ def diagnostiquer_orientation():
         print(f"Trou théorique: X={trou_x:.4f}, Y={trou_y:.4f}")
         print(f"Offset du trou: ΔX=+16mm, ΔY=+11mm par rapport à h1")
 
-        print("\n💡 REMARQUE:")
+        print("\n  REMARQUE:")
         print("   Si le trou est physiquement À DROITE de h1 (X+),")
         print("   mais que h1[X] est PLUS GRAND que a1[X],")
         print("   alors l'orientation X est peut-être inversée!")

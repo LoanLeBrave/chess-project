@@ -41,7 +41,7 @@ def load_calibration():
         with open(FICHIER_CALIBRATION, 'r') as f:
             return json.load(f)
     except FileNotFoundError:
-        print(f"❌ Fichier {FICHIER_CALIBRATION} introuvable. Lancez la calibration.")
+        print(f" Fichier {FICHIER_CALIBRATION} introuvable. Lancez la calibration.")
         sys.exit(1)
 
 
@@ -81,8 +81,8 @@ def print_interface(case, off_x, off_y):
     print("=" * 60)
     print("🔧 TEST & DEBUG CALIBRATION (Indépendant)")
     print("=" * 60)
-    print(f"🎯 CASE VISÉE          : {case.upper()}")
-    print(f"📏 OFFSET MANUEL       : X={off_x * 1000:+.1f} mm | Y={off_y * 1000:+.1f} mm")
+    print(f"CASE VISÉE          : {case.upper()}")
+    print(f"OFFSET MANUEL       : X={off_x * 1000:+.1f} mm | Y={off_y * 1000:+.1f} mm")
     print("-" * 60)
     print("COMMANDES PRINCIPALES :")
     print("  [ENTRÉE]  : Descendre sur la case (Vérification)")
@@ -99,7 +99,7 @@ def print_interface(case, off_x, off_y):
 def main():
     calib_data = load_calibration()
 
-    print(f"🤖 Connexion au robot {ROBOT_IP}...")
+    print(f" Connexion au robot {ROBOT_IP}...")
     try:
         rtde_c = RTDEControlInterface(ROBOT_IP)
         rtde_r = RTDEReceiveInterface(ROBOT_IP)
@@ -107,7 +107,7 @@ def main():
         gripper.activate()
         gripper.close()  # Pointe fine
     except Exception as e:
-        print(f"❌ Erreur connexion: {e}")
+        print(f" Erreur connexion: {e}")
         return
 
     manual_offset_x = 0.0
@@ -130,7 +130,7 @@ def main():
                 if pose[2] < safe_z - 0.05:
                     pose[2] = safe_z
                     rtde_c.moveL(pose, 0.5, 0.3)
-                print("\n👋 Fin du test.")
+                print("\n Fin du test.")
                 break
 
             elif key == ' ':
@@ -159,12 +159,12 @@ def main():
                     rtde_c.moveL(pose_basse, 0.1, 0.1)
                     need_refresh = True
                 except Exception as e:
-                    print(f"❌ Erreur mouvement: {e}")
+                    print(f" Erreur mouvement: {e}")
                     time.sleep(2)
                     need_refresh = True
 
             elif key.lower() == 'c':
-                print("\n⌨️  Entrez la case (ex: e4) : ", end='', flush=True)
+                print("\n Entrez la case (ex: e4) : ", end='', flush=True)
                 fd = sys.stdin.fileno()
                 termios.tcsetattr(fd, termios.TCSADRAIN, termios.tcgetattr(1))
                 new_case = sys.stdin.readline().strip().lower()

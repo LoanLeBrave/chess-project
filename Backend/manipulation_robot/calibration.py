@@ -45,10 +45,10 @@ class TwoPointCalibration:
             # On ferme le gripper pour qu'il rentre bien dans le trou (pointe fine)
             self.gripper.close()
             self.connected = True
-            print("✅ Robot connecté.")
+            print(" Robot connecté.")
             return True
         except Exception as e:
-            print(f"❌ Erreur connexion: {e}")
+            print(f"Erreur connexion: {e}")
             return False
 
     def enable_freedrive(self):
@@ -90,7 +90,7 @@ class TwoPointCalibration:
         Combine Freedrive, Ajustement clavier et Auto-Level.
         """
         print("\n" + "=" * 60)
-        print(f"🎯 ÉTAPE : {step_name}")
+        print(f" ÉTAPE : {step_name}")
         print("=" * 60)
         print("COMMANDES :")
         print("  [F]      : Activer/Désactiver FREEDRIVE (X/Y SEULEMENT)")
@@ -116,7 +116,7 @@ class TwoPointCalibration:
             pose = self.rtde_r.getActualTCPPose()
             state_str = "LIBRE (X/Y)" if freedrive_active else "BLOQUÉ (Clavier)"
             # On affiche Rx et Ry pour aider à voir si on est droit
-            print(f"\r📍 Z={pose[2]:.4f} | RX={pose[3]:.2f} RY={pose[4]:.2f} | {state_str}   ", end="", flush=True)
+            print(f"\r Z={pose[2]:.4f} | RX={pose[3]:.2f} RY={pose[4]:.2f} | {state_str}   ", end="", flush=True)
 
             key = self.get_key_non_blocking()
 
@@ -126,14 +126,14 @@ class TwoPointCalibration:
                 if key == '\x1b':
                     self.rtde_c.speedStop()
                     if freedrive_active: self.disable_freedrive()
-                    print("\n❌ Annulation.")
+                    print("\n Annulation.")
                     sys.exit(0)
 
                 # Validation
                 elif key.lower() == 'q':
                     self.rtde_c.speedStop()
                     if freedrive_active: self.disable_freedrive()
-                    print(f"\n✅ Position {step_name} enregistrée.")
+                    print(f"\n Position {step_name} enregistrée.")
                     return pose
 
                 # Toggle Freedrive
@@ -155,14 +155,14 @@ class TwoPointCalibration:
                         self.disable_freedrive()
                         freedrive_active = False
 
-                    print("\n⚖️  Correction de la verticalité...")
+                    print("\n  Correction de la verticalité...")
                     current = self.rtde_r.getActualTCPPose()
 
                     # Vertical standard [pi, 0, 0]
                     vertical_pose = [current[0], current[1], current[2], 3.1415, 0.0, 0.0]
 
                     self.rtde_c.moveL(vertical_pose, 0.2, 0.2)
-                    print("✅ Gripper verticalisé.")
+                    print(" Gripper verticalisé.")
                     time.sleep(0.5)
                     continue
 
@@ -223,14 +223,14 @@ class TwoPointCalibration:
 
         # === AFFICHAGE DÉTAILLÉ ===
         print("\n" + "=" * 50)
-        print("📊 RÉSULTATS DE LA CALIBRATION")
+        print(" RÉSULTATS DE LA CALIBRATION")
         print("=" * 50)
-        print(f"📏 Échelle calculée (DXF vs Réel) : {scale:.4f}")
-        print(f"📐 Angle de rotation corrigé    : {math.degrees(rotation):.2f}°")
-        print(f"↕️  Hauteur Z fixée à            : {center_z:.4f} m")
+        print(f" Échelle calculée (DXF vs Réel) : {scale:.4f}")
+        print(f" Angle de rotation corrigé    : {math.degrees(rotation):.2f}°")
+        print(f"↕  Hauteur Z fixée à            : {center_z:.4f} m")
         print("-" * 50)
-        print(f"🔲 TAILLE DU PLATEAU ESTIMÉE    : {board_size * 1000:.1f} mm")
-        print(f"⬜ TAILLE D'UNE CASE            : {square_size * 1000:.1f} mm")
+        print(f" TAILLE DU PLATEAU ESTIMÉE    : {board_size * 1000:.1f} mm")
+        print(f" TAILLE D'UNE CASE            : {square_size * 1000:.1f} mm")
         print("=" * 50 + "\n")
 
         return {
@@ -245,9 +245,9 @@ class TwoPointCalibration:
         try:
             with open(FICHIER_CALIBRATION, 'w') as f:
                 json.dump(data, f, indent=4)
-            print(f"💾 Sauvegardé dans {FICHIER_CALIBRATION}")
+            print(f" Sauvegardé dans {FICHIER_CALIBRATION}")
         except Exception as e:
-            print(f"❌ Erreur sauvegarde: {e}")
+            print(f" Erreur sauvegarde: {e}")
 
     def run(self):
         if not self.init_robot():
@@ -259,21 +259,21 @@ class TwoPointCalibration:
         p1 = self.interactive_positioning("TROU HAUT-GAUCHE (Côté A8)")
 
         # Sécurité
-        print("⬆️ Remontée de sécurité...")
+        print(" Remontée de sécurité...")
         self.rtde_c.moveL([p1[0], p1[1], p1[2] + 0.1, p1[3], p1[4], p1[5]], 0.5, 0.3)
 
         # Point 2 : Trou Bas-Droite
         p2 = self.interactive_positioning("TROU BAS-DROITE (Côté H1)")
 
         # Remontée
-        print("⬆️ Remontée de sécurité...")
+        print("Remontée de sécurité...")
         self.rtde_c.moveL([p2[0], p2[1], p2[2] + 0.1, p2[3], p2[4], p2[5]], 0.5, 0.3)
 
         # Point 3 : Surface Z
         p_z = self.interactive_positioning("SURFACE DU PLATEAU (Posez le bout du gripper au ras du plateau)")
 
         # Remontée finale
-        print("⬆️ Remontée finale...")
+        print(" Remontée finale...")
         self.rtde_c.moveL([p_z[0], p_z[1], p_z[2] + 0.1, p_z[3], p_z[4], p_z[5]], 0.5, 0.3)
 
         # Calcul et Sauvegarde (avec les 3 points)
@@ -281,7 +281,7 @@ class TwoPointCalibration:
         self.save(data)
 
         self.rtde_c.stopScript()
-        print("\n✅ CALIBRATION TERMINÉE AVEC SUCCÈS")
+        print("\n CALIBRATION TERMINÉE AVEC SUCCÈS")
 
 if __name__ == "__main__":
     calib = TwoPointCalibration()

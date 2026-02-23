@@ -161,13 +161,13 @@ class ChessManager:
         if self.is_paused:
             # PAUSE D'URGENCE
             self.robot.pause_urgence()
-            await self.log("warning", "🛑 PAUSE D'URGENCE - Robot arrêté immédiatement!")
+            await self.log("warning", " PAUSE D'URGENCE - Robot arrêté immédiatement!")
             self.set_status("paused", "PAUSE D'URGENCE")
             return {"success": True, "paused": True, "message": "PAUSE D'URGENCE - Robot arrêté!"}
         else:
             # Reprise
             self.robot.reprendre_script()
-            await self.log("info", "▶️ Partie reprise - Robot réactivé")
+            await self.log("info", " Partie reprise - Robot réactivé")
             self.set_status("idle", "Partie reprise")
             return {"success": True, "paused": False, "message": "Partie reprise"}
 

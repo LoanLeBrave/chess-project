@@ -76,7 +76,7 @@ class LeaderboardManager:
             print(f"✓ Leaderboard sauvegardé: {len(self.games)} parties")
             return True
         except Exception as e:
-            print(f"❌ Erreur sauvegarde leaderboard: {e}")
+            print(f" Erreur sauvegarde leaderboard: {e}")
             return False
     
 import json

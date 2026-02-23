@@ -727,11 +727,11 @@ async def get_vision_sync():
 @app.on_event("startup")
 async def startup():
     """Initialisation au démarrage"""
-    print("🚀 Démarrage de l'API Chess Robot...")
+    print(" Démarrage de l'API Chess Robot...")
     manager.chess.init_stockfish()
     manager.robot.init_robot()
     asyncio.create_task(vision_loop())
-    print("✅ API prête!")
+    print("API prête!")
 
 # ============================================================================
 #                          ROUTES API
@@ -759,7 +759,7 @@ async def new_game(config: GameConfig):
     """Démarre une nouvelle partie"""
     hybrid_manager.reset()
     result = manager.chess.new_game(config.difficulty)
-    await manager.log("info", f"🎮 Nouvelle partie - Difficulté: {config.difficulty}")
+    await manager.log("info", f"Nouvelle partie - Difficulté: {config.difficulty}")
     await manager.broadcast({
         "type": "game_started",
         "difficulty": config.difficulty,
@@ -822,7 +822,7 @@ async def get_best_move(): return manager.chess.get_best_move()
 @app.post("/game/move/human", tags=["Game"])
 async def human_move(move: MoveRequest):
     """Joue le coup du joueur humain"""
-    await manager.log("info", f"👤 Coup humain: {move.from_square} → {move.to_square}")
+    await manager.log("info", f" Coup humain: {move.from_square} → {move.to_square}")
     return await manager.chess.play_human_move(move.from_square, move.to_square)
 
 @app.post("/game/move/robot", tags=["Game"])

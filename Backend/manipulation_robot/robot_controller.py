@@ -65,9 +65,9 @@ class RobotController:
             try:
                 self.rtde_c.stopScript()  # Arrêt immédiat sécurisé
                 self.is_paused = True
-                print("⚠️ Robot arrêté en urgence")
+                print(" Robot arrêté en urgence")
             except Exception as e:
-                print(f"❌ Erreur pause urgence: {e}")
+                print(f" Erreur pause urgence: {e}")
 
     def reprendre_script(self):
         """Tente de relancer le programme après une pause"""
@@ -75,9 +75,9 @@ class RobotController:
             try:
                 self.rtde_c.reuploadScript()  # Relance la connexion
                 self.is_paused = False
-                print("✅ Robot repris")
+                print("Robot repris")
             except Exception as e:
-                print(f"❌ Erreur reprise: {e}")
+                print(f" Erreur reprise: {e}")
 
     def set_log_callback(self, callback):
         """Définit le callback pour les logs"""
@@ -99,7 +99,7 @@ class RobotController:
         try:
             # Charger la calibration
             if not os.path.exists(FICHIER_CALIBRATION):
-                print(f"⚠ Fichier calibration introuvable: {FICHIER_CALIBRATION}")
+                print(f" Fichier calibration introuvable: {FICHIER_CALIBRATION}")
                 return False
 
             with open(FICHIER_CALIBRATION, 'r') as f:
@@ -112,14 +112,14 @@ class RobotController:
                     self.calib_scale = data["board_size"] / 20.0
 
                 self.is_calibrated = True
-                print(f"✓ Calibration chargée (Scale: {self.calib_scale:.4f})")
+                print(f" Calibration chargée (Scale: {self.calib_scale:.4f})")
 
             # Charger la position de départ (home)
             if os.path.exists(FICHIER_POSITION_DEPART):
                 with open(FICHIER_POSITION_DEPART, 'r') as f:
                     data = json.load(f)
                     self.position_depart = data.get("position_depart")
-                    print("✓ Position de départ chargée")
+                    print("Position de départ chargée")
 
             # Connexion au robot
             print(f"Connexion robot {ROBOT_IP}...")
@@ -134,11 +134,11 @@ class RobotController:
             self.gripper.move(GRIPPER_OUVERTURE)
 
             self.connected = True
-            print("✓ Robot connecté et prêt!")
+            print(" Robot connecté et prêt!")
             return True
 
         except Exception as e:
-            print(f"⚠ Erreur initialisation: {e}")
+            print(f" Erreur initialisation: {e}")
             self.connected = False
             return False
 
