@@ -24,6 +24,7 @@ from models import MoveRequest, GameConfig
 from robot_controller import RobotController
 from chess_manager import ChessManager
 from leaderboard_manager import LeaderboardManager
+from board_reset_manager import BoardResetManager
 from config import FICHIER_CALIBRATION
 from calibration import TwoPointCalibration
 
@@ -399,6 +400,7 @@ class ApplicationManager:
         self.robot = RobotController()
         self.chess = ChessManager(self.robot)
         self.leaderboard = LeaderboardManager()
+        self.board_reset = BoardResetManager(self.robot)
         self.vision = VisionService()
 
         # Injecter le VisionService dans le ChessManager
@@ -414,6 +416,8 @@ class ApplicationManager:
         self.chess.set_broadcast_callback(self.broadcast)
         self.chess.set_log_callback(self.log)
         self.chess.set_status_callback(self.set_status)
+        self.board_reset.set_log_callback(self.log)
+        self.board_reset.set_broadcast_callback(self.broadcast)
 
     async def broadcast(self, message: dict):
         """Envoie un message à tous les clients WebSocket"""
@@ -769,7 +773,7 @@ async def stop_game():
 @app.post("/game/reset-plateau")
 async def reset_plateau():
     """Remet toutes les pièces à leur position initiale"""
-    await manager.log("info", "🔄 Demande de reset du plateau")
+    await manager.log("info", "Demande de reset du plateau")
     result = await manager.chess.reset_plateau_with_board()
     
     if result.get("success"):
@@ -778,6 +782,41 @@ async def reset_plateau():
             "fen": manager.chess.board.fen()
         })
     
+    return result
+
+
+@app.post("/game/replace-board")
+async def replace_board():
+    """
+    Replace toutes les pieces a leur position initiale
+    en utilisant la vision camera (game_state.json).
+
+    Prerequis : infinite_chess_vision doit tourner en parallele.
+    """
+    if manager.status == "replacing":
+        return {"success": False, "error": "Replacement deja en cours"}
+
+    manager.set_status("replacing", "Replacement du plateau en cours")
+    await manager.log("info", "Replacement du plateau demande")
+
+    try:
+        result = await manager.board_reset.replace_board()
+
+        if result.get("success"):
+            # Reinitialiser le plateau logique
+            manager.chess.board.reset()
+            manager.chess.robot.reset_tracking()
+            await manager.broadcast({
+                "type": "board_replaced",
+                "fen": manager.chess.board.fen(),
+                "moves_executed": result.get("moves_executed", 0),
+            })
+            await manager.log("info", "Plateau replace avec succes")
+        else:
+            await manager.log("warning", result.get("error", "Echec du replacement"))
+    finally:
+        manager.set_status("idle")
+
     return result
 
 
