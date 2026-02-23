@@ -49,6 +49,7 @@ class ConfirmPlacementRequest(BaseModel):
 class CalibrationPointRequest(BaseModel):
     point: str = Field(..., pattern="^(a1|h8|z)$", description="Identifiant du point")
 
+
 class CalibrationZRequest(BaseModel):
     # Idem ici
     direction: str = Field(..., pattern="^(up|down)$", description="Sens du mouvement")
