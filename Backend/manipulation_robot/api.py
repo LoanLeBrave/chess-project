@@ -282,10 +282,17 @@ manager = ApplicationManager()
 # ============================================================================
 
 async def vision_loop():
+    """
+    Boucle de vision.
+    manager.vision.update() appelle subprocess.run (rpicam-still) qui est bloquant.
+    On l'exécute dans un thread via run_in_executor pour ne pas bloquer l'event loop
+    (et donc ne pas bloquer les await du robot).
+    """
     manager.vision.running = True
+    loop = asyncio.get_event_loop()
     while manager.vision.running:
         try:
-            updated = manager.vision.update()
+            updated = await loop.run_in_executor(None, manager.vision.update)
             if updated and manager.websocket_clients:
                 await manager.broadcast(manager.vision.get_state_message())
             if updated and manager.vision.vision_game_enabled and manager.vision.game_started:
