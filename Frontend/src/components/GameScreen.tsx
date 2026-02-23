@@ -73,6 +73,8 @@ export function GameScreen({ difficulty, gameState, setGameState, onReturnToMenu
     confirmPlacement,
     illegalMoveAlert,
     dismissIllegalAlert,
+    replaceBoard,
+    isReplacingBoard,
   } = useChessRobot(addLog, addMove);
 
   // Initialiser la partie via l'API au montage
@@ -204,6 +206,11 @@ export function GameScreen({ difficulty, gameState, setGameState, onReturnToMenu
     addLog('info', 'Nouvelle partie démarrée');
   };
 
+  const handleReplaceBoard = async () => {
+    addLog('info', 'Replacement du plateau demandé…');
+    await replaceBoard();
+  };
+
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
     const secs = seconds % 60;
@@ -244,6 +251,8 @@ export function GameScreen({ difficulty, gameState, setGameState, onReturnToMenu
               onPause={handlePause}
               onStop={handleStop}
               onNewGame={handleNewGame}
+              onReplaceBoard={handleReplaceBoard}
+              isReplacingBoard={isReplacingBoard}
             />
 
             {/* Player Turn Status + Vision Controls */}

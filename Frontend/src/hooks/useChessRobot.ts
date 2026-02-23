@@ -40,6 +40,8 @@ export interface UseChessRobotReturn {
   initGame: (difficulty: string) => Promise<void>;
   confirmPlacement: (useCamera: boolean) => Promise<boolean>;
   dismissIllegalAlert: () => void;
+  replaceBoard: () => Promise<boolean>;
+  isReplacingBoard: boolean;
 }
 
 const API_BASE = `http://${window.location.hostname}:8000`;
@@ -93,6 +95,7 @@ export function useChessRobot(
   const [visionState, setVisionState] = useState<VisionState | null>(null);
   const [visionGameStarted, setVisionGameStarted] = useState(false);
   const [illegalMoveAlert, setIllegalMoveAlert] = useState<IllegalMoveAlert | null>(null);
+  const [isReplacingBoard, setIsReplacingBoard] = useState(false);
   const wsRef = useRef<WebSocket | null>(null);
 
   // --- WebSocket ---
@@ -179,6 +182,29 @@ export function useChessRobot(
           if (msg.type === 'vision_game_started') {
             setVisionGameStarted(true);
             addLog('info', `Placement confirme (${msg.source}, ${msg.pieces_count} pieces)`);
+          }
+
+          if (msg.type === 'board_reset_started') {
+            setIsReplacingBoard(true);
+            addLog('info', `Replacement demarre (${msg.total_moves ?? '?'} mouvements)`);
+          }
+
+          if (msg.type === 'board_reset_progress') {
+            addLog('robot',
+              `[${msg.current}/${msg.total}] ${msg.piece_color ?? ''} ${msg.piece_type ?? ''}: ${msg.from ?? '?'} → ${msg.to ?? '?'}`
+            );
+          }
+
+          if (msg.type === 'board_replaced') {
+            setIsReplacingBoard(false);
+            setFen(msg.fen ?? INITIAL_FEN);
+            setIsWhiteTurn(true);
+            addLog('info', `Plateau replace (${msg.moves_executed ?? '?'} mouvements)`);
+          }
+
+          if (msg.type === 'board_reset_interrupted') {
+            setIsReplacingBoard(false);
+            addLog('warning', 'Replacement interrompu');
           }
 
           if (msg.type === 'vision_anomaly') {
@@ -396,6 +422,27 @@ export function useChessRobot(
     setIllegalMoveAlert(null);
   }, []);
 
+  // --- Replace board via API ---
+  const replaceBoard = useCallback(async (): Promise<boolean> => {
+    if (isReplacingBoard) return false;
+    setIsReplacingBoard(true);
+    try {
+      const res = await fetch(`${API_BASE}/game/replace-board`, { method: 'POST' });
+      const data = await res.json();
+      if (!data.success) {
+        addLog('error', data.error || 'Echec du replacement du plateau');
+        setIsReplacingBoard(false);
+        return false;
+      }
+      // Le WS board_replaced / board_reset_interrupted gere setIsReplacingBoard
+      return true;
+    } catch {
+      addLog('error', 'Erreur connexion API pour replace-board');
+      setIsReplacingBoard(false);
+      return false;
+    }
+  }, [isReplacingBoard, addLog]);
+
   return {
     fen,
     isWhiteTurn,
@@ -415,5 +462,7 @@ export function useChessRobot(
     initGame,
     confirmPlacement,
     dismissIllegalAlert,
+    replaceBoard,
+    isReplacingBoard,
   };
 }
