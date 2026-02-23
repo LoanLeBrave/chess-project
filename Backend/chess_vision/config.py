@@ -251,27 +251,27 @@ ARUCO_PARAMS = {
 PREPROCESSING_PIPELINE = [
     {
         'name': 'clahe',
-        'enabled': False,
+        'enabled': True,           # Contraste adaptatif — aide quand la lumière est inégale
         'params': {'clip_limit': 2.0, 'tile_size': 8},
     },
     {
-        'name': 'denoise',
-        'enabled': False,
-        'params': {'strength': 10},
-    },
-    {
         'name': 'sharpen',
-        'enabled': False,
+        'enabled': True,           # Netteté — rend les bords noir/blanc du marqueur plus nets
         'params': {'strength': 1.5},
     },
     {
+        'name': 'denoise',
+        'enabled': False,          # Débruitage — désactivé par défaut (peut effacer des détails)
+        'params': {'strength': 10},
+    },
+    {
         'name': 'gamma',
-        'enabled': False,
+        'enabled': False,          # Luminosité — désactivé par défaut
         'params': {'gamma': 1.0},
     },
     {
         'name': 'bilateral',
-        'enabled': False,
+        'enabled': False,          # Lissage doux — désactivé par défaut
         'params': {'d': 9, 'sigma': 75},
     },
 ]

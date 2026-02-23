@@ -27,13 +27,24 @@ def step_clahe(image: np.ndarray, clip_limit: float = 2.0, tile_size: int = 8) -
     Égalisation adaptative de l'histogramme (CLAHE).
     Améliore le contraste local, très efficace pour lumière non uniforme.
 
+    Appliqué sur le canal L de l'espace LAB (si couleur) pour
+    préserver les teintes tout en boostant le contraste.
+    Si déjà en niveaux de gris, appliqué directement.
+
     Paramètres dans config.py :
         clip_limit  : limite de rognage (2.0 = modéré, 4.0 = fort)
         tile_size   : taille de la grille en pixels (8 = fin, 16 = large)
     """
-    gray = _to_gray(image)
     clahe = cv2.createCLAHE(clipLimit=clip_limit, tileGridSize=(tile_size, tile_size))
-    return clahe.apply(gray)
+    if len(image.shape) == 3:
+        # Image couleur : appliquer CLAHE sur le canal luminosité (LAB)
+        lab = cv2.cvtColor(image, cv2.COLOR_BGR2LAB)
+        l, a, b = cv2.split(lab)
+        l = clahe.apply(l)
+        lab = cv2.merge([l, a, b])
+        return cv2.cvtColor(lab, cv2.COLOR_LAB2BGR)
+    else:
+        return clahe.apply(image)
 
 
 def step_denoise(image: np.ndarray, strength: int = 10) -> np.ndarray:
@@ -108,6 +119,10 @@ def preprocess(image: np.ndarray) -> np.ndarray:
     """
     Applique le pipeline de prétraitement défini dans config.py.
 
+    Les steps sont appliquées sur l'image couleur (BGR) quand c'est
+    possible (ex: CLAHE), puis la conversion en niveaux de gris
+    est faite en dernier, juste avant de rendre le résultat.
+
     Les steps désactivées (enabled=False) sont ignorées.
     L'ordre d'application suit PREPROCESSING_PIPELINE.
 
@@ -119,7 +134,7 @@ def preprocess(image: np.ndarray) -> np.ndarray:
     """
     from ..config import PREPROCESSING_PIPELINE
 
-    result = _to_gray(image)
+    result = image.copy()
 
     for step in PREPROCESSING_PIPELINE:
         if not step.get('enabled', False):
@@ -135,7 +150,8 @@ def preprocess(image: np.ndarray) -> np.ndarray:
 
         result = fn(result, **params)
 
-    return result
+    # Conversion finale en niveaux de gris (requis par le détecteur ArUco)
+    return _to_gray(result)
 
 
 # ─── Utilitaire interne ───────────────────────────────────────────────────────
