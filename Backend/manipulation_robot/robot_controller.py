@@ -294,18 +294,6 @@ class RobotController:
             if not success:
                 return False  # Interrompu par pause
 
-            # Retour en position de sécurité
-            p_safe = list(p_end)
-            p_safe[2] = self.calib_origin[2] + DELTA_TRANSIT
-            success = await self._move_tcp(p_safe)
-            
-            if not success:
-                return False
-
-            # Retour position home si définie
-            if self.position_depart and not self.is_paused:
-                await self._move_tcp(self.position_depart)
-
             return True
 
         except Exception as e:
@@ -345,10 +333,10 @@ class RobotController:
             if not await self._move_tcp(p_pick, VITESSE / 2):
                 return False
 
-            # Fermer le gripper
+            # Fermer le gripper (rq_close_and_wait : bloquant)
             if self.connected:
                 self.gripper.close()
-            if not await self._wait_with_pause_check(0.5):  # Attente mécanique gripper
+            if not await self._wait_with_pause_check(0.5):
                 return False
 
             # 4. Remontée verticale pure
@@ -391,11 +379,9 @@ class RobotController:
             if not await self._move_tcp(p_deposit, VITESSE / 2):
                 return False
 
-            # Ouvrir le gripper
+            # Ouvrir le gripper (rq_move_and_wait_mm : bloquant)
             if self.connected:
                 self.gripper.move(GRIPPER_OUVERTURE)
-            if not await self._wait_with_pause_check(0.3):  # Attente mécanique gripper
-                return False
 
             # 4. Remontée verticale pure
             if not await self._move_tcp(p_high):
@@ -442,8 +428,8 @@ class RobotController:
 
         # ===== PICK =====
         if self.connected:
-            self.gripper.move(GRIPPER_OUVERTURE)
-        if not await self._wait_with_pause_check(0.2):  # Attente mécanique gripper
+            self.gripper.move(GRIPPER_OUVERTURE)  # rq_move_and_wait_mm : bloquant
+        if not await self._wait_with_pause_check(0.05):  # petite marge de sécurité
             return False
 
         # 1. Monter Z en premier (mouvement vertical pur, évite collision)
@@ -459,7 +445,7 @@ class RobotController:
         if not await self._move_tcp(p_pick, VITESSE / 2):
             return False
 
-        # Fermeture gripper
+        # Fermeture gripper (rq_close_and_wait : bloquant jusqu'à saisie complète)
         if self.connected:
             self.gripper.close()
         if not await self._wait_with_pause_check(0.5):  # Attente mécanique gripper
@@ -480,11 +466,9 @@ class RobotController:
         if not await self._move_tcp(p_deposit, VITESSE / 2):
             return False
 
-        # Ouverture gripper
+        # Ouverture gripper (rq_move_and_wait_mm : bloquant jusqu'à ouverture complète)
         if self.connected:
             self.gripper.move(GRIPPER_OUVERTURE)
-        if not await self._wait_with_pause_check(0.3):  # Attente mécanique gripper
-            return False
 
         # 7. Remontée verticale pure
         if not await self._move_tcp(p_high_place):
