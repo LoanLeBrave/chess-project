@@ -203,7 +203,7 @@ CAMERA_CONFIG = {
     'timeout': 50,                    # Temps stabilisation (ms) - ULTRA-RAPIDE (focus manuel)
     'stabilization_delay': 0.3,       # Délai stabilisation Picamera2 (s) - Réduit: 2.0→0.3
     'autofocus_mode': 'manual',       # 'auto', 'manual', 'continuous'
-    'lens_position': 12.0,            # Position focus manuel (0.0-10.0) - Optimisé pour ArUco
+    'lens_position': 10.0,            # Position focus manuel (0.0-10.0) - Optimisé pour ArUco
     'autofocus_on_capture': False,    # Force autofocus avant capture
 }
 
