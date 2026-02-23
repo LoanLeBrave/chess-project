@@ -96,6 +96,7 @@ class VisionService:
         self.reference_board: Optional[dict[str, str]] = None
         self.camera_baseline: Optional[dict[str, str]] = None
         self.game_started: bool = False
+        self._stability_counter: int = 0
 
     def _get_pipeline(self):
         if self._pipeline is None:
@@ -186,7 +187,7 @@ class VisionService:
                     if is_capture: board_dict.pop(to_sq, None)
                     board_dict[to_sq] = piece
 
-    def detect_delta(self, stockfish_board: Optional[dict] = None) -> Optional[dict]:
+    def detect_delta(self, chess_board=None, stockfish_board: Optional[dict] = None) -> Optional[dict]:
         if self.camera_baseline is None or not self.stable_board: return None
         baseline, cam = self.camera_baseline, self.stable_board
         dis, app, chg = {}, {}, {}
@@ -197,9 +198,25 @@ class VisionService:
             elif c and not b: app[sq] = c
             elif b and c and b != c: chg[sq] = (b, c)
         if not dis and not app and not chg: return None
-        # Solution 1 : valider le from uniquement sur les cases où Stockfish
-        # confirme qu'une pièce blanche était présente. Cela filtre les faux
-        # "from" générés par une détection transitoire pendant le déplacement.
+
+        # ── Approche principale : Stockfish-first ─────────────────────────────
+        # On cherche un coup légal dont la case d'arrivée est visible dans la
+        # caméra ET dont la case de départ est maintenant vide. Le "from" est
+        # déduit de Stockfish, jamais des disparitions caméra (trop instables).
+        if chess_board is not None:
+            candidate_to_squares = list(app.keys()) + list(chg.keys())
+            for sq_t in candidate_to_squares:
+                for move in chess_board.legal_moves:
+                    if chess.square_name(move.to_square) != sq_t:
+                        continue
+                    sq_f = chess.square_name(move.from_square)
+                    # La case de départ doit être vide dans la caméra actuelle
+                    if cam.get(sq_f):
+                        continue
+                    move_type = "capture" if chess_board.is_capture(move) else "move"
+                    return {"from": sq_f, "to": sq_t, "type": move_type}
+
+        # ── Fallback : approche originale avec filtre stockfish_board ─────────
         def _is_valid_from(sq_f: str, col_f: str) -> bool:
             if not col_f.startswith("W"):
                 return False
@@ -247,6 +264,12 @@ class VisionService:
                 new_conf[sq] = 0.0
             elif sq in self.stable_board:
                 new_stable[sq], new_conf[sq] = self.stable_board[sq], 1.0 - (counts.get(None, 0) / len(buf))
+        # Compteur de stabilité : incrémenté si le plateau n'a pas changé,
+        # remis à zéro dès qu'une case change (pièce en mouvement).
+        if new_stable == self.stable_board:
+            self._stability_counter += 1
+        else:
+            self._stability_counter = 0
         self.stable_board, self.confidence = new_stable, new_conf
         return True
 
@@ -334,10 +357,20 @@ _vision_move_lock = False
 _last_anomaly = ""
 _last_anomaly_time = 0.0
 
+# Nombre de frames consécutives stables exigées avant de tenter une détection.
+# Cela garantit que la pièce est posée et le plateau figé, pas en transit.
+_MIN_STABLE_FRAMES = 2
+
 async def _check_vision_move():
     global _vision_move_lock
     if _vision_move_lock or manager.chess.board.turn != chess.WHITE: return
-    delta = manager.vision.detect_delta(stockfish_board=manager.chess._board_to_map())
+    # Attendre que le plateau ait été stable pendant N frames consécutives :
+    # cela élimine les fausses détections pendant le déplacement physique.
+    if manager.vision._stability_counter < _MIN_STABLE_FRAMES: return
+    delta = manager.vision.detect_delta(
+        chess_board=manager.chess.board,
+        stockfish_board=manager.chess._board_to_map(),
+    )
     if not delta or delta["type"] == "unclear": return
     from_sq, to_sq = delta.get("from"), delta.get("to")
     if delta["type"] == "appeared_only" and to_sq and not from_sq:
@@ -367,8 +400,9 @@ async def _check_vision_move():
                         manager.vision.update_reference_after_move(r_from, r_to, r_capture)
                         hybrid_manager.on_move_played(r_from, r_to, bool(r_capture))
 
-                # Vider les buffers pour repartir clean
+                # Vider les buffers et réinitialiser la stabilité pour repartir clean
                 manager.vision._buffers.clear()
+                manager.vision._stability_counter = 0
 
                 # Attendre que les pieces se stabilisent physiquement,
                 # puis prendre un nouveau snapshot camera comme baseline
