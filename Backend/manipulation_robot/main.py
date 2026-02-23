@@ -9,7 +9,7 @@ from api import app
 
 if __name__ == "__main__":
     print("=" * 60)
-    print("     ♔ CHESS ROBOT API v2.0 ♚")
+    print("    CHESS ROBOT API v2.0 ")
     print("=" * 60)
     print("\nNouvelles fonctionnalités:")
     print("  - Suivi des pièces éliminées")

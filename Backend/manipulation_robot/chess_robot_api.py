@@ -577,7 +577,7 @@ class ChessRobotManager:
             if self.connected and self.rtde_c:
                 try:
                     self.rtde_c.stopScript()  # Arrêt immédiat au lieu de pauseScript
-                    await self.log("warning", "🛑 PAUSE D'URGENCE - Robot arrêté immédiatement!")
+                    await self.log("warning", " PAUSE D'URGENCE - Robot arrêté immédiatement!")
                 except Exception as e:
                     await self.log("error", f"Erreur lors de l'arrêt du robot: {e}")
             self.set_status("paused", "PAUSE D'URGENCE")
@@ -798,7 +798,7 @@ if __name__ == "__main__":
     import uvicorn
 
     print("=" * 60)
-    print("     ♔ CHESS ROBOT API ♚")
+    print(" CHESS ROBOT API ")
     print("=" * 60)
     print("\nDémarrage du serveur...")
     print("Interface: http://localhost:8000")
