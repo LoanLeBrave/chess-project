@@ -11,10 +11,10 @@ const API_BASE = `http://${window.location.hostname}:8000`;
 
 const CORNER_NAMES = ['TL', 'TR', 'BR', 'BL'] as const;
 const CORNER_LABELS: Record<string, string> = {
-  TL: 'Haut-Gauche',
-  TR: 'Haut-Droite',
-  BR: 'Bas-Droite',
-  BL: 'Bas-Gauche',
+  TL: 'Coin A8 (Haut-Gauche)',
+  TR: 'Coin H8 (Haut-Droite)',
+  BR: 'Coin H1 (Bas-Droite)',
+  BL: 'Coin A1 (Bas-Gauche)',
 };
 const CORNER_COLORS: Record<string, string> = {
   TL: '#ef4444',
@@ -119,53 +119,50 @@ export function CameraCalibrationScreen({ onComplete, onCancel }: CameraCalibrat
   }, [drawCanvas]);
 
   const drawGrid = (ctx: CanvasRenderingContext2D, pts: Corner[], scale: number) => {
-    // Calcul de la transformation perspective simplifiee
-    // On interpole bilineairement entre les 4 coins
+    // Les 4 coins cliqués représentent les coins physiques du plateau 8x8 (A8, H8, H1, A1).
+    // Le cimetière est affiché via extrapolation bilinéaire au-delà de ces coins.
     const tl = { x: pts[0].x * scale, y: pts[0].y * scale };
     const tr = { x: pts[1].x * scale, y: pts[1].y * scale };
     const br = { x: pts[2].x * scale, y: pts[2].y * scale };
     const bl = { x: pts[3].x * scale, y: pts[3].y * scale };
-
-    ctx.strokeStyle = 'rgba(0, 255, 0, 0.4)';
-    ctx.lineWidth = 1;
 
     const interpolate = (u: number, v: number) => ({
       x: (1 - u) * (1 - v) * tl.x + u * (1 - v) * tr.x + u * v * br.x + (1 - u) * v * bl.x,
       y: (1 - u) * (1 - v) * tl.y + u * (1 - v) * tr.y + u * v * br.y + (1 - u) * v * bl.y,
     });
 
-    // Lignes horizontales et verticales (grille 10x10)
+    // Convertit un index de grille 10x10 [0..10] en paramètre bilinéaire :
+    //   i=0  → -1/8 (bord extérieur cimetière)
+    //   i=1  →  0   (bord gauche/haut du plateau 8x8)
+    //   i=9  →  1   (bord droit/bas du plateau 8x8)
+    //   i=10 →  9/8 (bord extérieur cimetière)
+    const g = (i: number) => (i - 1) / 8;
+
+    // Grille 10x10 complète (cimetière inclus via extrapolation)
+    ctx.strokeStyle = 'rgba(0, 255, 0, 0.4)';
+    ctx.lineWidth = 1;
     for (let i = 0; i <= 10; i++) {
-      const t = i / 10;
-      // Ligne horizontale
+      // Ligne horizontale (v constant = g(i), u de g(0) à g(10))
       ctx.beginPath();
-      const h0 = interpolate(0, t);
-      const h1 = interpolate(1, t);
-      ctx.moveTo(h0.x, h0.y);
-      ctx.lineTo(h1.x, h1.y);
+      ctx.moveTo(interpolate(g(0), g(i)).x, interpolate(g(0), g(i)).y);
+      ctx.lineTo(interpolate(g(10), g(i)).x, interpolate(g(10), g(i)).y);
       ctx.stroke();
 
-      // Ligne verticale
+      // Ligne verticale (u constant = g(i), v de g(0) à g(10))
       ctx.beginPath();
-      const v0 = interpolate(t, 0);
-      const v1 = interpolate(t, 1);
-      ctx.moveTo(v0.x, v0.y);
-      ctx.lineTo(v1.x, v1.y);
+      ctx.moveTo(interpolate(g(i), g(0)).x, interpolate(g(i), g(0)).y);
+      ctx.lineTo(interpolate(g(i), g(10)).x, interpolate(g(i), g(10)).y);
       ctx.stroke();
     }
 
-    // Bordure du plateau central 8x8 (1/10 a 9/10)
-    ctx.strokeStyle = 'rgba(0, 200, 255, 0.7)';
+    // Bordure du plateau 8x8 en bleu (exactement aux coins cliqués)
+    ctx.strokeStyle = 'rgba(0, 200, 255, 0.8)';
     ctx.lineWidth = 2;
-    const inner = [
-      interpolate(0.1, 0.1),
-      interpolate(0.9, 0.1),
-      interpolate(0.9, 0.9),
-      interpolate(0.1, 0.9),
-    ];
     ctx.beginPath();
-    ctx.moveTo(inner[0].x, inner[0].y);
-    for (let i = 1; i < 4; i++) ctx.lineTo(inner[i].x, inner[i].y);
+    ctx.moveTo(interpolate(0, 0).x, interpolate(0, 0).y);
+    ctx.lineTo(interpolate(1, 0).x, interpolate(1, 0).y);
+    ctx.lineTo(interpolate(1, 1).x, interpolate(1, 1).y);
+    ctx.lineTo(interpolate(0, 1).x, interpolate(0, 1).y);
     ctx.closePath();
     ctx.stroke();
   };
@@ -262,7 +259,7 @@ export function CameraCalibrationScreen({ onComplete, onCancel }: CameraCalibrat
             </div>
             <div>
               <h1 className="text-xl font-bold text-white">Calibration Camera</h1>
-              <p className="text-slate-400 text-xs">Cliquez les 4 coins du plateau sur la photo</p>
+              <p className="text-slate-400 text-xs">Cliquez les 4 coins du plateau d'échecs 8×8 (sans le cimetière)</p>
             </div>
           </div>
           <button

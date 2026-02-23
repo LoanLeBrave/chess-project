@@ -1327,7 +1327,7 @@ async def camera_calibrate_save(data: dict):
             "source_image": source_image,
             "board_size": EXTRACTED_BOARD_SIZE,
             "calibrated_at": datetime.now().isoformat(),
-            "note": "Coins du plateau en coordonnees pixels dans l'image originale. Ne pas deplacer la camera apres calibration.",
+            "note": "Coins physiques du plateau 8x8 (angles A8/H8/H1/A1). La zone cimetiere est deduite automatiquement (1 case de bordure). Ne pas deplacer la camera apres calibration.",
         }
 
         with open(CALIBRATION_FILE, 'w', encoding='utf-8') as f:

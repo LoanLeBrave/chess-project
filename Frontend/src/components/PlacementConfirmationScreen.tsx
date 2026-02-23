@@ -27,13 +27,16 @@ const STARTING_POSITION: Record<string, string> = {
   a8: 'BR', b8: 'BN', c8: 'BB', d8: 'BQ', e8: 'BK', f8: 'BB', g8: 'BN', h8: 'BR',
 };
 
-// Convertit une case échecs (ex: 'e4') en coordonnées u/v [0,1] dans la grille 10x10
+// Convertit une case échecs (ex: 'e4') en coordonnées u/v [0,1] dans le plateau 8x8.
+// Les coins calibrés sont les coins physiques du plateau 8x8 (A8=TL, H8=TR, H1=BR, A1=BL).
+// u=0 → bord gauche (colonne A), u=1 → bord droit (colonne H)
+// v=0 → bord haut (rangée 8),   v=1 → bord bas (rangée 1)
 function squareToUV(square: string): { u: number; v: number } {
   const col = (square.codePointAt(0) ?? 0) - ('a'.codePointAt(0) ?? 0) + 1; // a=1 … h=8
   const row = Number.parseInt(square[1], 10);                                 // 1-8
   return {
-    u: (col + 0.5) / 10,
-    v: (9 - row + 0.5) / 10,
+    u: (col - 0.5) / 8,       // centre de la colonne dans [0,1]
+    v: (8 - row + 0.5) / 8,   // centre de la rangée dans [0,1] (rangée 8 en haut)
   };
 }
 
@@ -80,22 +83,25 @@ export function PlacementConfirmationScreen({ onConfirm, onBack }: Readonly<Plac
       BL: { x: corners.BL.x * scale, y: corners.BL.y * scale },
     };
 
-    // Grille 10×10
+    // Grille 10×10 (cimetière inclus via extrapolation bilinéaire)
+    // Les coins calibrés sont les coins du plateau 8x8 → le cimetière s'étend au-delà.
+    // g(i) mappe l'index [0..10] vers le paramètre bilinéaire :
+    //   i=0 → -1/8 (cimetière), i=1 → 0 (bord plateau), i=9 → 1, i=10 → 9/8 (cimetière)
+    const g = (i: number) => (i - 1) / 8;
     ctx.strokeStyle = 'rgba(0, 255, 0, 0.35)';
     ctx.lineWidth = 1;
     ctx.setLineDash([]);
     for (let i = 0; i <= 10; i++) {
-      const t = i / 10;
-      const h0 = lerp(sc, 0, t); const h1 = lerp(sc, 1, t);
+      const h0 = lerp(sc, g(0), g(i)); const h1 = lerp(sc, g(10), g(i));
       ctx.beginPath(); ctx.moveTo(h0.x, h0.y); ctx.lineTo(h1.x, h1.y); ctx.stroke();
-      const v0 = lerp(sc, t, 0); const v1 = lerp(sc, t, 1);
+      const v0 = lerp(sc, g(i), g(0)); const v1 = lerp(sc, g(i), g(10));
       ctx.beginPath(); ctx.moveTo(v0.x, v0.y); ctx.lineTo(v1.x, v1.y); ctx.stroke();
     }
 
-    // Contour du plateau 8×8 (de 1/10 à 9/10)
+    // Contour du plateau 8×8 (exactement aux coins calibrés)
     ctx.strokeStyle = 'rgba(0, 200, 255, 0.7)';
     ctx.lineWidth = 2;
-    const p = [lerp(sc, 0.1, 0.1), lerp(sc, 0.9, 0.1), lerp(sc, 0.9, 0.9), lerp(sc, 0.1, 0.9)];
+    const p = [lerp(sc, 0, 0), lerp(sc, 1, 0), lerp(sc, 1, 1), lerp(sc, 0, 1)];
     ctx.beginPath();
     ctx.moveTo(p[0].x, p[0].y);
     p.slice(1).forEach(pt => ctx.lineTo(pt.x, pt.y));
