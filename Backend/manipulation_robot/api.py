@@ -279,6 +279,25 @@ class ApplicationManager:
 manager = ApplicationManager()
 hybrid_manager = HybridBoardManager()
 
+# Chemin du fichier game_state (mode passif, quand active_mode=False)
+GAME_STATE_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "game_state.json")
+
+# ============================================================================
+#                          APPLICATION FASTAPI
+# ============================================================================
+
+tags_metadata = [
+    {"name": "System", "description": "Statut général et endpoints de base."},
+    {"name": "Game", "description": "Gestion de la partie, Stockfish et coups."},
+    {"name": "Vision", "description": "Analyse d'image et détection de mouvements."},
+    {"name": "Robot", "description": "Contrôle direct du bras UR et du gripper."},
+    {"name": "Calibration", "description": "Procédures de calibration Robot et Caméra."},
+    {"name": "Leaderboard", "description": "Statistiques, scores et classements."},
+]
+
+app = FastAPI(title="Chess Robot API", version="2.0.0", openapi_tags=tags_metadata)
+app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
+
 # ============================================================================
 #                          BOUCLES & LOGIQUE MÉTIER
 # ============================================================================
@@ -296,6 +315,8 @@ async def vision_loop():
         await asyncio.sleep(0.3 if manager.vision.active_mode else 0.5)
 
 _vision_move_lock = False
+_last_anomaly = ""
+_last_anomaly_time = 0.0
 
 async def _check_vision_move():
     global _vision_move_lock
@@ -661,35 +682,10 @@ async def startup():
     manager.robot.init_robot()
     asyncio.create_task(vision_loop())
     print("✅ API prête!")
-            res = await manager.chess.play_vision_move(from_sq, to_sq)
-            if res.get("success"):
-                manager.vision.update_reference_after_move(from_sq, to_sq, delta["type"] == "capture")
-                r_resp = res.get("robot_response", {})
-                if r_resp.get("success"):
-                    manager.vision.update_reference_after_move(r_resp.get("from"), r_resp.get("to"), False)
-                await asyncio.sleep(1.0)
-                manager.vision.update()
-                if manager.vision.stable_board: manager.vision.camera_baseline = dict(manager.vision.stable_board)
-        finally: _vision_move_lock = False
-    else:
-        await manager.broadcast({"type": "vision_anomaly", "message": f"Illegal: {from_sq}->{to_sq}"})
 
 # ============================================================================
 #                          ROUTES API
 # ============================================================================
-
-tags_metadata = [
-    {"name": "System", "description": "Statut général et endpoints de base."},
-    {"name": "Game", "description": "Gestion de la partie, Stockfish et coups."},
-    {"name": "Vision", "description": "Analyse d'image et détection de mouvements."},
-    {"name": "Robot", "description": "Contrôle direct du bras UR et du gripper."},
-    {"name": "Calibration", "description": "Procédures de calibration Robot et Caméra."},
-    {"name": "Leaderboard", "description": "Statistiques, scores et classements."},
-]
-
-app = FastAPI(title="Chess Robot API", version="2.0.0", openapi_tags=tags_metadata)
-
-app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
 
 # --- SYSTEM ---
 @app.get("/", tags=["System"])
@@ -706,37 +702,6 @@ async def get_status():
         "pieces_eliminees": manager.robot.get_pieces_eliminees(),
         "game_result": manager.chess.get_game_result() if manager.chess.board.is_game_over() else None
     }
-
-# --- VISION ---
-@app.get("/vision/status", tags=["Vision"])
-async def get_vision_status():
-    return {"running": manager.vision.running, "active_mode": manager.vision.active_mode, "last_error": manager.vision.last_error}
-
-@app.post("/vision/mode", tags=["Vision"])
-async def set_vision_mode(data: VisionModeRequest):
-    manager.vision.active_mode = data.active
-    return {"success": True}
-
-@app.post("/vision/flip", tags=["Vision"])
-async def set_vision_flip(data: VisionFlipRequest):
-    manager.vision.flip_board = data.flip
-    return {"success": True}
-
-@app.post("/vision/game", tags=["Vision"])
-async def set_vision_game(data: VisionGameRequest):
-    manager.vision.vision_game_enabled = data.enabled
-    return {"success": True}
-
-@app.post("/vision/confirm-placement", tags=["Vision"])
-async def confirm_placement(data: ConfirmPlacementRequest = None):
-    res = manager.vision.confirm_placement(use_camera=data.use_camera if data else True)
-    return {"success": True, **res}
-
-@app.get("/vision/sync", tags=["Vision"])
-async def get_vision_sync(): return manager.chess.sync_with_vision(manager.vision.stable_board)
-
-@app.get("/vision/state", tags=["Vision"])
-async def get_vision_state(): return manager.vision.get_state_message()
 
 # --- GAME ---
 @app.post("/game/new", tags=["Game"])
@@ -1112,19 +1077,7 @@ async def camera_calibrate_save(data: dict):
         return {"success": False, "error": str(e)}
 
 
-# ============================================================================
-#                         VISION CAMERA
-# ============================================================================
-
-@app.get("/vision/state")
-async def get_vision_state():
-    """Retourne l'etat courant de la vision camera (stabilise)."""
-    return manager.vision.get_state_message()
-
-
-@app.get("/game/history")
-    return {"pieces_eliminees": pieces, "count": len(pieces)}
-
+# --- GAME HISTORY ---
 @app.get("/game/history", tags=["Game"])
 async def get_game_history():
     moves = []
@@ -1133,36 +1086,6 @@ async def get_game_history():
         moves.append({"san": board_copy.san(m), "uci": m.uci()})
         board_copy.push(m)
     return {"moves": moves}
-
-# --- ROBOT & CALIBRATION ---
-@app.get("/robot/position", tags=["Robot"])
-async def get_robot_position(): return manager.robot.get_position() or {"error": "Non connecté"}
-
-@app.post("/robot/calibrate/freedrive", tags=["Calibration"])
-async def calibrate_freedrive(enable: bool = Body(True, embed=True)):
-    if enable: manager.robot.rtde_c.freedriveMode([1, 1, 0, 0, 0, 0])
-    else: manager.robot.rtde_c.endFreedriveMode()
-    return {"success": True}
-
-@app.post("/robot/calibrate/point", tags=["Calibration"])
-async def calibrate_point(data: CalibrationPointRequest):
-    pose = manager.robot.rtde_r.getActualTCPPose()
-    manager.calib_points[data.point] = list(pose)
-    return {"success": True, "point": data.point}
-
-@app.post("/robot/calibrate/save", tags=["Calibration"])
-async def calibrate_save():
-    calib = TwoPointCalibration()
-    d = calib.calculate_geometry(manager.calib_points['a1'], manager.calib_points['h8'], manager.calib_points['z'])
-    calib.save(d)
-    return {"success": True}
-
-@app.post("/camera/capture", tags=["Calibration"])
-async def camera_capture():
-    from chess_vision.modules.camera import take_photo
-    p = take_photo()
-    with open(p, 'rb') as f: img = base64.b64encode(f.read()).decode()
-    return {"success": True, "image_base64": img}
 
 # --- LEADERBOARD ---
 @app.get("/leaderboard", tags=["Leaderboard"])
@@ -1180,12 +1103,6 @@ async def websocket_endpoint(websocket: WebSocket):
     try:
         while True: await websocket.receive_text()
     except WebSocketDisconnect: manager.websocket_clients.remove(websocket)
-
-@app.on_event("startup")
-async def startup():
-    manager.chess.init_stockfish()
-    manager.robot.init_robot()
-    asyncio.create_task(vision_loop())
 
 if __name__ == "__main__":
     import uvicorn
