@@ -79,22 +79,47 @@ class LeaderboardManager:
             print(f"❌ Erreur sauvegarde leaderboard: {e}")
             return False
     
-    def add_game(self, player_name: str, acpl: float, result: str, 
-                 difficulty: str, moves_played: int, 
-                 game_duration: Optional[float] = None) -> bool:
-        """Ajoute une partie au leaderboard"""
-        game = GameResult(
-            player_name=player_name,
-            acpl=round(acpl, 2),
-            result=result,
-            difficulty=difficulty,
-            moves_played=moves_played,
-            timestamp=datetime.now().isoformat(),
-            game_duration=game_duration
-        )
+import json
+import os
+
+class LeaderboardManager:
+    def __init__(self, filename="leaderboard_data.json"):
+        self.filename = filename
+
+    def add_game(self, player_name, acpl, result, difficulty, moves_played, game_duration=None):
+        # 1. Charger les données existantes
+        games = []
+        if os.path.exists(self.filename):
+            with open(self.filename, 'r', encoding='utf-8') as f:
+                try:
+                    games = json.load(f)
+                except json.JSONDecodeError:
+                    games = []
+
+        # 2. Préparer la nouvelle entrée
+        new_game = {
+            "name": player_name,
+            "acpl": acpl,
+            "result": result,
+            "difficulty": difficulty,
+            "moves_played": moves_played,
+            "duration": game_duration,
+            "date": datetime.now().isoformat()
+        }
         
-        self.games.append(game)
-        return self.save_data()
+        # 3. Ajouter et Trier (ACPL le plus bas = meilleur)
+        games.append(new_game)
+        # On trie par ACPL croissant
+        games.sort(key=lambda x: x['acpl'])
+
+        # 4. Garder uniquement les 10 meilleurs
+        top_10_games = games[:10]
+
+        # 5. Sauvegarder immédiatement dans le fichier
+        with open(self.filename, 'w', encoding='utf-8') as f:
+            json.dump(top_10_games, f, indent=2, ensure_ascii=False)
+            
+        return True
     
     def get_player_stats(self, player_name: str) -> Optional[PlayerStats]:
         """Récupère les statistiques d'un joueur"""
@@ -145,6 +170,7 @@ class LeaderboardManager:
         
         # Trier par ACPL croissant (plus bas = meilleur)
         rankings.sort(key=lambda x: x['acpl'])
+        
         
         # Assigner les rangs
         for i, player in enumerate(rankings, 1):
