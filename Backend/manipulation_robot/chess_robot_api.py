@@ -262,7 +262,9 @@ class ChessRobotManager:
         return position
 
     async def _prendre_piece(self, case: str):
-        """Prend une pièce sur une case"""
+        """Prend une pièce sur une case.
+        Z monte en premier pour éviter les déplacements diagonaux.
+        """
         case = case.lower()
         if case not in self.cases:
             await self.log("error", f"Case {case} non mappée!")
@@ -276,29 +278,40 @@ class ChessRobotManager:
         if piece:
             self.piece_courante = piece.piece_type
 
-        await self.log("robot", f"Approche {case.upper()}...")
-        self.rtde_c.moveL(self._pos_avec_z(tcp, DELTA_APPROCHE), VITESSE, ACCELERATION)
+        # 1. Monter Z en premier (mouvement vertical pur, évite collision)
+        current_pose = self.rtde_r.getActualTCPPose()
+        z_transit = tcp[2] + DELTA_TRANSIT
+        if current_pose[2] < z_transit - 0.005:
+            pose_montee = list(current_pose)
+            pose_montee[2] = z_transit
+            self.rtde_c.moveL(pose_montee, VITESSE, ACCELERATION)
+            if not await self._wait_with_pause_check(0.2): return False
+
+        # 2. Déplacement horizontal vers au-dessus de la case
+        await self.log("robot", f"Transit vers {case.upper()}...")
+        self.rtde_c.moveL(self._pos_avec_z(tcp, DELTA_TRANSIT), VITESSE, ACCELERATION)
         if not await self._wait_with_pause_check(0.2): return False
 
+        # 3. Descente verticale vers la pièce
         await self.log("robot", f"Descente...")
-        self.rtde_c.moveL(tcp, VITESSE, ACCELERATION)
+        self.rtde_c.moveL(tcp, VITESSE / 2, ACCELERATION)
         if not await self._wait_with_pause_check(0.2): return False
 
         await self.log("robot", f"Fermeture gripper...")
         self.gripper.close()
         if not await self._wait_with_pause_check(0.3): return False
 
+        # 4. Remontée verticale pure jusqu'au transit
         await self.log("robot", f"Remontée...")
-        self.rtde_c.moveL(self._pos_avec_z(tcp, DELTA_APPROCHE), VITESSE, ACCELERATION)
-        if not await self._wait_with_pause_check(0.1): return False
-
         self.rtde_c.moveL(self._pos_avec_z(tcp, DELTA_TRANSIT), VITESSE, ACCELERATION)
         if not await self._wait_with_pause_check(0.2): return False
 
         return True
 
     async def _poser_piece(self, case: str):
-        """Pose une pièce sur une case"""
+        """Pose une pièce sur une case.
+        Z monte en premier pour éviter les déplacements diagonaux.
+        """
         case = case.lower()
         if case not in self.cases:
             await self.log("error", f"Case {case} non mappée!")
@@ -309,44 +322,67 @@ class ChessRobotManager:
         hauteur_piece = HAUTEUR_PIECES.get(self.piece_courante, 0.005)
         delta_relache = DELTA_RELACHE_BASE + hauteur_piece
 
+        # 1. Monter Z en premier (mouvement vertical pur, évite collision)
+        current_pose = self.rtde_r.getActualTCPPose()
+        z_transit = tcp[2] + DELTA_TRANSIT
+        if current_pose[2] < z_transit - 0.005:
+            pose_montee = list(current_pose)
+            pose_montee[2] = z_transit
+            self.rtde_c.moveL(pose_montee, VITESSE, ACCELERATION)
+            if not await self._wait_with_pause_check(0.2): return False
+
+        # 2. Déplacement horizontal vers au-dessus de la case
         await self.log("robot", f"Transit vers {case.upper()}...")
         self.rtde_c.moveL(self._pos_avec_z(tcp, DELTA_TRANSIT), VITESSE, ACCELERATION)
         if not await self._wait_with_pause_check(0.2): return False
 
-        self.rtde_c.moveL(self._pos_avec_z(tcp, DELTA_APPROCHE), VITESSE, ACCELERATION)
-        if not await self._wait_with_pause_check(0.1): return False
-
+        # 3. Descente verticale vers le dépôt
         await self.log("robot", f"Dépose...")
-        self.rtde_c.moveL(self._pos_avec_z(tcp, delta_relache), VITESSE, ACCELERATION)
+        self.rtde_c.moveL(self._pos_avec_z(tcp, delta_relache), VITESSE / 2, ACCELERATION)
         if not await self._wait_with_pause_check(0.2): return False
 
         self.gripper.move(GRIPPER_OUVERTURE)
         if not await self._wait_with_pause_check(0.3): return False
 
-        self.rtde_c.moveL(self._pos_avec_z(tcp, DELTA_APPROCHE), VITESSE, ACCELERATION)
+        # 4. Remontée verticale pure
+        self.rtde_c.moveL(self._pos_avec_z(tcp, DELTA_TRANSIT), VITESSE, ACCELERATION)
         if not await self._wait_with_pause_check(0.2): return False
 
         return True
 
     async def _deposer_defausse(self):
-        """Dépose une pièce dans la zone de défausse"""
+        """Dépose une pièce dans la zone de défausse.
+        Z monte en premier pour éviter les déplacements diagonaux.
+        """
         pos_defausse = self._get_position_defausse()
 
         if pos_defausse:
             await self.log("robot", f"Dépôt en zone de défausse...")
             pos_haute = list(pos_defausse)
             pos_haute[2] += DELTA_TRANSIT
+
+            # 1. Monter Z en premier (mouvement vertical pur)
+            current_pose = self.rtde_r.getActualTCPPose()
+            if current_pose[2] < pos_haute[2] - 0.005:
+                pose_montee = list(current_pose)
+                pose_montee[2] = pos_haute[2]
+                self.rtde_c.moveL(pose_montee, VITESSE, ACCELERATION)
+                if not await self._wait_with_pause_check(0.2): return
+
+            # 2. Déplacement horizontal vers la défausse
             self.rtde_c.moveL(pos_haute, VITESSE, ACCELERATION)
             if not await self._wait_with_pause_check(0.2): return
 
+            # 3. Descente verticale vers le dépôt
             pos_relache = list(pos_defausse)
             pos_relache[2] += DELTA_RELACHE_BASE + 0.01
-            self.rtde_c.moveL(pos_relache, VITESSE, ACCELERATION)
+            self.rtde_c.moveL(pos_relache, VITESSE / 2, ACCELERATION)
             if not await self._wait_with_pause_check(0.2): return
 
             self.gripper.move(GRIPPER_OUVERTURE)
             if not await self._wait_with_pause_check(0.3): return
 
+            # 4. Remontée verticale pure
             self.rtde_c.moveL(pos_haute, VITESSE, ACCELERATION)
             if not await self._wait_with_pause_check(0.2): return
         else:
@@ -356,7 +392,7 @@ class ChessRobotManager:
             pose_haute[2] += 0.05
             self.rtde_c.moveL(pose_haute, VITESSE, ACCELERATION)
             if not await self._wait_with_pause_check(0.1): return
-            
+
             self.gripper.move(GRIPPER_OUVERTURE)
             if not await self._wait_with_pause_check(0.3): return
 

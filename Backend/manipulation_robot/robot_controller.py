@@ -311,20 +311,18 @@ class RobotController:
 
     async def _prendre_piece(self, case: str):
         """
-        Prend une pièce sur une case (utilisé par chess_manager pour reset)
-        Retourne True si succès, False si interrompu
+        Prend une pièce sur une case (utilisé par chess_manager pour reset).
+        Z monte en premier pour éviter les collisions diagonales.
+        Retourne True si succès, False si interrompu.
         """
         try:
             cx, cy = self.get_square_center(case)
             p_pick = self.cam_to_robot(cx, cy, use_piece_height=True)
 
-            # Hauteur de transit absolue
             z_transit = self.calib_origin[2] + DELTA_TRANSIT
 
             p_high = list(p_pick)
             p_high[2] = z_transit
-            p_app = list(p_pick)
-            p_app[2] += DELTA_APPROCHE
 
             # Ouvrir le gripper
             if self.connected:
@@ -332,19 +330,19 @@ class RobotController:
             if not await self._wait_with_pause_check(0.2):
                 return False
 
-            # Approche haute
+            # 1. Monter Z en premier (mouvement vertical pur)
+            if not await self._raise_to_transit():
+                return False
+            if not await self._wait_with_pause_check(0.1):
+                return False
+
+            # 2. Déplacement horizontal vers au-dessus de la case
             if not await self._move_tcp(p_high):
                 return False
             if not await self._wait_with_pause_check(0.1):
                 return False
 
-            # Approche basse
-            if not await self._move_tcp(p_app):
-                return False
-            if not await self._wait_with_pause_check(0.1):
-                return False
-
-            # Descente vers la pièce
+            # 3. Descente verticale vers la pièce
             if not await self._move_tcp(p_pick, VITESSE / 2):
                 return False
             if not await self._wait_with_pause_check(0.1):
@@ -356,12 +354,7 @@ class RobotController:
             if not await self._wait_with_pause_check(0.5):
                 return False
 
-            # Remontée
-            if not await self._move_tcp(p_app):
-                return False
-            if not await self._wait_with_pause_check(0.1):
-                return False
-
+            # 4. Remontée verticale pure
             if not await self._move_tcp(p_high):
                 return False
 
@@ -373,37 +366,35 @@ class RobotController:
 
     async def _poser_piece(self, case: str):
         """
-        Pose une pièce sur une case (utilisé par chess_manager pour reset)
-        Retourne True si succès, False si interrompu
+        Pose une pièce sur une case (utilisé par chess_manager pour reset).
+        Z monte en premier pour éviter les collisions diagonales.
+        Retourne True si succès, False si interrompu.
         """
         try:
             cx, cy = self.get_square_center(case)
             p_place = self.cam_to_robot(cx, cy, use_piece_height=True)
 
-            # Hauteur de transit absolue
             z_transit = self.calib_origin[2] + DELTA_TRANSIT
 
             p_high = list(p_place)
             p_high[2] = z_transit
-            p_app = list(p_place)
-            p_app[2] += DELTA_APPROCHE
 
             p_deposit = list(p_place)
             p_deposit[2] += DELTA_RELACHE_BASE
 
-            # Transit haute
+            # 1. Monter Z en premier (mouvement vertical pur)
+            if not await self._raise_to_transit():
+                return False
+            if not await self._wait_with_pause_check(0.1):
+                return False
+
+            # 2. Déplacement horizontal vers au-dessus de la case
             if not await self._move_tcp(p_high):
                 return False
             if not await self._wait_with_pause_check(0.1):
                 return False
 
-            # Approche
-            if not await self._move_tcp(p_app):
-                return False
-            if not await self._wait_with_pause_check(0.1):
-                return False
-
-            # Descente vers dépôt
+            # 3. Descente verticale vers le dépôt
             if not await self._move_tcp(p_deposit, VITESSE / 2):
                 return False
             if not await self._wait_with_pause_check(0.1):
@@ -415,8 +406,8 @@ class RobotController:
             if not await self._wait_with_pause_check(0.3):
                 return False
 
-            # Remontée
-            if not await self._move_tcp(p_app):
+            # 4. Remontée verticale pure
+            if not await self._move_tcp(p_high):
                 return False
 
             return True
@@ -425,18 +416,38 @@ class RobotController:
             await self.log("error", f"Erreur dépose pièce: {e}")
             return False
 
+    async def _raise_to_transit(self):
+        """
+        Monte verticalement jusqu'à la hauteur de transit en gardant X/Y courants.
+        Evite les mouvements diagonaux qui risquent de renverser des pièces.
+        Retourne True si succès, False si interrompu ou position indisponible.
+        """
+        z_transit = self.calib_origin[2] + DELTA_TRANSIT
+        current = self.get_position()
+        if current is None:
+            return True  # Mode simulation, on continue
+        if current["z"] >= z_transit - 0.005:
+            return True  # Déjà suffisamment haut, rien à faire
+        p_raise = [current["x"], current["y"], z_transit, 3.14, 0.0, 0.0]
+        return await self._move_tcp(p_raise)
+
     async def _sequence_pick_and_place(self, p_pick, p_place):
         """
-        Séquence complète prendre et poser
-        Retourne True si succès, False si interrompu
+        Séquence complète prendre et poser.
+        Les mouvements Z et XY sont toujours séparés pour éviter les collisions.
+        Retourne True si succès, False si interrompu.
         """
-        # Hauteur de transit absolue
         z_transit = self.calib_origin[2] + DELTA_TRANSIT
 
+        # Positions hautes (transit) au-dessus de chaque case
         p_high_pick = list(p_pick)
         p_high_pick[2] = z_transit
-        p_app_pick = list(p_pick)
-        p_app_pick[2] += DELTA_APPROCHE
+
+        p_high_place = list(p_place)
+        p_high_place[2] = z_transit
+
+        p_deposit = list(p_place)
+        p_deposit[2] += DELTA_RELACHE_BASE
 
         # ===== PICK =====
         if self.connected:
@@ -444,19 +455,19 @@ class RobotController:
         if not await self._wait_with_pause_check(0.2):
             return False
 
-        # Approche haute
+        # 1. Monter Z en premier (mouvement vertical pur, évite collision)
+        if not await self._raise_to_transit():
+            return False
+        if not await self._wait_with_pause_check(0.1):
+            return False
+
+        # 2. Déplacement horizontal vers au-dessus du pick
         if not await self._move_tcp(p_high_pick):
             return False
         if not await self._wait_with_pause_check(0.1):
             return False
 
-        # Approche moyenne
-        if not await self._move_tcp(p_app_pick):
-            return False
-        if not await self._wait_with_pause_check(0.1):
-            return False
-
-        # Descente vers pièce
+        # 3. Descente verticale vers la pièce
         if not await self._move_tcp(p_pick, VITESSE / 2):
             return False
         if not await self._wait_with_pause_check(0.1):
@@ -468,39 +479,20 @@ class RobotController:
         if not await self._wait_with_pause_check(0.5):
             return False
 
-        # Remontée
-        if not await self._move_tcp(p_app_pick):
-            return False
-        if not await self._wait_with_pause_check(0.1):
-            return False
-
+        # 4. Remontée verticale pure jusqu'au transit
         if not await self._move_tcp(p_high_pick):
             return False
         if not await self._wait_with_pause_check(0.1):
             return False
 
         # ===== PLACE =====
-        p_high_place = list(p_place)
-        p_high_place[2] = z_transit
-        p_app_place = list(p_place)
-        p_app_place[2] += DELTA_APPROCHE
-
-        p_deposit = list(p_place)
-        p_deposit[2] += DELTA_RELACHE_BASE
-
-        # Transit vers destination
+        # 5. Déplacement horizontal vers au-dessus de la destination
         if not await self._move_tcp(p_high_place):
             return False
         if not await self._wait_with_pause_check(0.1):
             return False
 
-        # Approche
-        if not await self._move_tcp(p_app_place):
-            return False
-        if not await self._wait_with_pause_check(0.1):
-            return False
-
-        # Descente vers dépôt
+        # 6. Descente verticale vers le dépôt
         if not await self._move_tcp(p_deposit, VITESSE / 2):
             return False
         if not await self._wait_with_pause_check(0.1):
@@ -512,8 +504,8 @@ class RobotController:
         if not await self._wait_with_pause_check(0.3):
             return False
 
-        # Remontée
-        if not await self._move_tcp(p_app_place):
+        # 7. Remontée verticale pure
+        if not await self._move_tcp(p_high_place):
             return False
 
         return True
