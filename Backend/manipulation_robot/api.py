@@ -48,6 +48,10 @@ class VisionModeRequest(BaseModel):
 class VisionFlipRequest(BaseModel):
     flip: bool = Field(True, description="Active la rotation 180° des coordonnées caméra", examples=[True])
 
+# C'est celle-ci qui manquait probablement dans ton fichier !
+class VisionGameRequest(BaseModel):
+    enabled: bool = Field(True, description="Active la détection automatique des coups", examples=[True])
+
 class ConfirmPlacementRequest(BaseModel):
     use_camera: bool = Field(True, description="Utilise la vision comme référence logique", examples=[True])
 
@@ -64,7 +68,6 @@ class LeaderboardAddRequest(BaseModel):
     difficulty: str = Field(..., examples=["intermediate"])
     moves_played: int = Field(..., gt=0, examples=[42])
     game_duration: Optional[float] = Field(None, description="Durée en secondes", examples=[1200.5])
-
 # ============================================================================
 #                          CONFIGURATION DE L'API
 # ============================================================================
