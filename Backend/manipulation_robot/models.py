@@ -30,6 +30,15 @@ class RobotPosition(BaseModel):
     rz: float
 
 
+class ReplaceBoardResponse(BaseModel):
+    """Reponse de l'endpoint POST /game/replace-board"""
+    success: bool
+    message: str = ""
+    moves_executed: int = 0
+    total_planned: int = 0
+    error: str = ""
+
+
 # ============================================================================
 #                         CLASSE PIÈCE ÉLIMINÉE
 # ============================================================================
