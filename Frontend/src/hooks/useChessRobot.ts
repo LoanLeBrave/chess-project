@@ -7,6 +7,20 @@ export interface MoveEvaluation {
   centipawnLoss: number;
 }
 
+export interface VisionState {
+  board: { [square: string]: string };
+  confidence: { [square: string]: number };
+  pieces_count: number;
+  game_started: boolean;
+  reference_set: boolean;
+}
+
+export interface IllegalMoveAlert {
+  message: string;
+  suggestions: string[];
+  timestamp: number;
+}
+
 export interface UseChessRobotReturn {
   fen: string;
   isWhiteTurn: boolean;
@@ -15,12 +29,17 @@ export interface UseChessRobotReturn {
   robotStatus: RobotStatus;
   acplScore: number;
   moveEvaluations: MoveEvaluation[];
+  visionState: VisionState | null;
+  visionGameStarted: boolean;
+  illegalMoveAlert: IllegalMoveAlert | null;
   setRobotStatus: (status: RobotStatus) => void;
   onMove: (from: string, to: string) => Promise<boolean>;
   getLegalMoves: (square: string) => Promise<string[]>;
   getBestMove: () => Promise<{ from: string; to: string } | null>;
   resetGame: () => void;
   initGame: (difficulty: string) => Promise<void>;
+  confirmPlacement: (useCamera: boolean) => Promise<boolean>;
+  dismissIllegalAlert: () => void;
 }
 
 const API_BASE = `http://${window.location.hostname}:8000`;
@@ -71,6 +90,9 @@ export function useChessRobot(
   const [robotStatus, setRobotStatus] = useState<RobotStatus>('disconnected');
   const [moveEvaluations, setMoveEvaluations] = useState<MoveEvaluation[]>([]);
   const [acplScore, setAcplScore] = useState(0);
+  const [visionState, setVisionState] = useState<VisionState | null>(null);
+  const [visionGameStarted, setVisionGameStarted] = useState(false);
+  const [illegalMoveAlert, setIllegalMoveAlert] = useState<IllegalMoveAlert | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
 
   // --- WebSocket ---
@@ -108,6 +130,16 @@ export function useChessRobot(
               });
               addLog('robot', `Robot joue: ${msg.san || msg.from + ' -> ' + msg.to}`);
               setRobotStatus('idle');
+            } else if (msg.player === 'human') {
+              // Coup humain detecte par la vision camera
+              onMoveComplete({
+                from: msg.from,
+                to: msg.to,
+                piece: msg.san ? msg.san[0] : 'Piece',
+                player: 'human'
+              });
+              addLog('player', `Coup detecte: ${msg.san || msg.from + ' -> ' + msg.to}`);
+              setRobotStatus('thinking');
             }
           }
 
@@ -132,6 +164,37 @@ export function useChessRobot(
             setFen(msg.fen);
             setIsWhiteTurn(msg.fen.split(' ')[1] === 'w');
             setRobotStatus(msg.robot_connected ? 'idle' : 'disconnected');
+          }
+
+          if (msg.type === 'vision_state') {
+            setVisionState({
+              board: msg.board || {},
+              confidence: msg.confidence || {},
+              pieces_count: msg.pieces_count || 0,
+              game_started: msg.game_started || false,
+              reference_set: msg.reference_set || false,
+            });
+          }
+
+          if (msg.type === 'vision_game_started') {
+            setVisionGameStarted(true);
+            addLog('info', `Placement confirme (${msg.source}, ${msg.pieces_count} pieces)`);
+          }
+
+          if (msg.type === 'vision_anomaly') {
+            addLog('warning', msg.message || 'Anomalie vision detectee');
+            const suggestions: string[] = [];
+            if (msg.suggestions) {
+              for (const s of msg.suggestions) {
+                addLog('warning', s);
+                suggestions.push(s);
+              }
+            }
+            setIllegalMoveAlert({
+              message: msg.message || 'Anomalie vision detectee',
+              suggestions,
+              timestamp: Date.now(),
+            });
           }
         } catch { /* ignore parse errors */ }
       };
@@ -295,6 +358,26 @@ export function useChessRobot(
     }
   }, []);
 
+  // --- Confirm placement ---
+  const confirmPlacement = useCallback(async (useCamera: boolean): Promise<boolean> => {
+    try {
+      const res = await fetch(`${API_BASE}/vision/confirm-placement`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ use_camera: useCamera }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setVisionGameStarted(true);
+        return true;
+      }
+      return false;
+    } catch {
+      addLog('error', 'Erreur confirmation placement');
+      return false;
+    }
+  }, [addLog]);
+
   // --- Reset game ---
   const resetGame = useCallback(() => {
     setFen(INITIAL_FEN);
@@ -304,8 +387,14 @@ export function useChessRobot(
     setRobotStatus('idle');
     setMoveEvaluations([]);
     setAcplScore(0);
+    setVisionGameStarted(false);
+    setIllegalMoveAlert(null);
     addLog('info', 'Partie reinitialisee');
   }, [addLog]);
+
+  const dismissIllegalAlert = useCallback(() => {
+    setIllegalMoveAlert(null);
+  }, []);
 
   return {
     fen,
@@ -315,11 +404,16 @@ export function useChessRobot(
     robotStatus,
     acplScore,
     moveEvaluations,
+    visionState,
+    visionGameStarted,
+    illegalMoveAlert,
     setRobotStatus,
     onMove,
     getLegalMoves,
     getBestMove,
     resetGame,
     initGame,
+    confirmPlacement,
+    dismissIllegalAlert,
   };
 }

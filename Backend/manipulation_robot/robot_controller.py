@@ -242,18 +242,24 @@ class RobotController:
             await asyncio.sleep(0.1)
             return True
 
-    async def execute_move(self, from_sq: str, to_sq: str, is_capture: bool, captured_piece=None):
+    async def execute_move(self, from_sq: str, to_sq: str, is_capture: bool, captured_piece=None, precise_pick_coords=None):
         """
         Exécute un mouvement complet sur le robot
         Retourne True si succès, False si interrompu par pause
+
+        precise_pick_coords: tuple (x, y) en coordonnees camera precises pour le pick.
+                             Si None, utilise le centre geometrique de la case.
         """
         if not self.is_calibrated:
             await self.log("error", "Robot non calibré !")
             return False
 
         try:
-            # Positions de départ et arrivée
-            cx1, cy1 = self.get_square_center(from_sq)
+            # Position de depart : coords precises camera si dispo, sinon centre geometrique
+            if precise_pick_coords:
+                cx1, cy1 = precise_pick_coords
+            else:
+                cx1, cy1 = self.get_square_center(from_sq)
             p_start = self.cam_to_robot(cx1, cy1, use_piece_height=True)
 
             cx2, cy2 = self.get_square_center(to_sq)

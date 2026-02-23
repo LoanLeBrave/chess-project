@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { Eye, EyeOff, Camera, CheckCircle, AlertTriangle, X } from 'lucide-react';
 import { ChessBoard } from './ChessBoard';
 import { ControlPanel } from './ControlPanel';
 import { MoveHistory } from './MoveHistory';
@@ -31,6 +32,7 @@ export function GameScreen({ difficulty, gameState, setGameState, onReturnToMenu
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [moves, setMoves] = useState<ChessMove[]>([]);
   const [showScoreSaved, setShowScoreSaved] = useState(false);
+  const [showVision, setShowVision] = useState(true);
 
   const addLog = (type: LogEntry['type'], message: string) => {
     const newLog: LogEntry = {
@@ -61,17 +63,29 @@ export function GameScreen({ difficulty, gameState, setGameState, onReturnToMenu
     gameResult,
     robotStatus,
     acplScore,
+    visionState,
+    visionGameStarted,
     onMove,
     getLegalMoves,
     getBestMove,
     resetGame,
     initGame,
+    confirmPlacement,
+    illegalMoveAlert,
+    dismissIllegalAlert,
   } = useChessRobot(addLog, addMove);
 
   // Initialiser la partie via l'API au montage
   useEffect(() => {
     initGame(difficulty);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Auto-dismiss illegal move alert after 8s
+  useEffect(() => {
+    if (!illegalMoveAlert) return;
+    const timer = setTimeout(dismissIllegalAlert, 8000);
+    return () => clearTimeout(timer);
+  }, [illegalMoveAlert, dismissIllegalAlert]);
 
   // Sauvegarder le score via l'API quand la partie se termine
   const saveScoreToLeaderboard = async (result: 'win' | 'lose' | 'draw' | 'abandoned') => {
@@ -232,12 +246,62 @@ export function GameScreen({ difficulty, gameState, setGameState, onReturnToMenu
               onNewGame={handleNewGame}
             />
 
-            {/* Player Turn Status - Compact */}
-            <PlayerTurnStatus isPlayerTurn={isWhiteTurn} />
+            {/* Player Turn Status + Vision Controls */}
+            <div className="flex items-center gap-2">
+              <div className="flex-1">
+                <PlayerTurnStatus isPlayerTurn={isWhiteTurn} />
+              </div>
+
+              {/* Boutons de confirmation du placement */}
+              {!visionGameStarted && (
+                <>
+                  <button
+                    onClick={() => confirmPlacement(true)}
+                    className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium bg-green-600 hover:bg-green-500 text-white transition-colors"
+                    title="La camera voit les pieces — utiliser comme reference"
+                  >
+                    <Camera className="w-4 h-4" />
+                    Confirmer (camera)
+                  </button>
+                  <button
+                    onClick={() => confirmPlacement(false)}
+                    className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium bg-amber-600 hover:bg-amber-500 text-white transition-colors"
+                    title="La camera ne voit pas tous les pions — simuler la position initiale"
+                  >
+                    <CheckCircle className="w-4 h-4" />
+                    Confirmer (manuel)
+                  </button>
+                </>
+              )}
+
+              {/* Indicateur partie vision active */}
+              {visionGameStarted && (
+                <div className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium bg-green-700/50 text-green-300 border border-green-600/50">
+                  <CheckCircle className="w-4 h-4" />
+                  Vision active
+                </div>
+              )}
+
+              {/* Toggle vision overlay */}
+              <button
+                onClick={() => setShowVision(!showVision)}
+                className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                  showVision
+                    ? 'bg-cyan-600 text-white'
+                    : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
+                }`}
+                title="Afficher/masquer la vision camera"
+              >
+                {showVision ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
+                {showVision && visionState && (
+                  <span className="text-xs opacity-75">{visionState.pieces_count}p</span>
+                )}
+              </button>
+            </div>
             
             {/* Chess Board - Flexible size */}
             <div className="flex-1 min-h-0">
-              <ChessBoard 
+              <ChessBoard
                 fen={fen}
                 isWhiteTurn={isWhiteTurn}
                 robotStatus={robotStatus}
@@ -245,6 +309,9 @@ export function GameScreen({ difficulty, gameState, setGameState, onReturnToMenu
                 onMove={onMove}
                 getLegalMoves={getLegalMoves}
                 getBestMove={getBestMove}
+                showVision={showVision}
+                visionBoard={visionState?.board}
+                visionConfidence={visionState?.confidence}
               />
             </div>
           </div>
@@ -279,6 +346,34 @@ export function GameScreen({ difficulty, gameState, setGameState, onReturnToMenu
         acplScore={acplScore}
         moves={moves.length}
       />
+
+      {/* Illegal Move Alert */}
+      {illegalMoveAlert && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 animate-in slide-in-from-bottom-4">
+          <div className="bg-red-900/95 backdrop-blur-sm border border-red-500 rounded-xl px-5 py-4 shadow-2xl max-w-md">
+            <div className="flex items-start gap-3">
+              <AlertTriangle className="w-6 h-6 text-red-400 flex-shrink-0 mt-0.5" />
+              <div className="flex-1">
+                <p className="text-red-100 font-semibold text-sm">{illegalMoveAlert.message}</p>
+                {illegalMoveAlert.suggestions.length > 0 && (
+                  <ul className="mt-1.5 space-y-0.5">
+                    {illegalMoveAlert.suggestions.map((s, i) => (
+                      <li key={i} className="text-red-300 text-xs">{s}</li>
+                    ))}
+                  </ul>
+                )}
+                <p className="text-red-400/70 text-xs mt-2">Replacez la piece et rejouez un coup legal</p>
+              </div>
+              <button
+                onClick={dismissIllegalAlert}
+                className="text-red-400 hover:text-red-200 transition-colors flex-shrink-0"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

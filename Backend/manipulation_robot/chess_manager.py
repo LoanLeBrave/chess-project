@@ -24,12 +24,15 @@ class ChessManager:
         self.engine = None
         self.difficulty = "intermediate"
         self.robot = robot_controller
-        
+
         # Callback pour broadcast
         self.broadcast_callback = None
         self.log_callback = None
         self.status_callback = None
         self.is_paused = False
+
+        # Reference au VisionService (injectee depuis api.py)
+        self.vision_service = None
 
     def set_broadcast_callback(self, callback):
         """Définit le callback pour le broadcast"""
@@ -168,6 +171,21 @@ class ChessManager:
             self.set_status("idle", "Partie reprise")
             return {"success": True, "paused": False, "message": "Partie reprise"}
 
+    def _get_precise_coords(self, square: str):
+        """
+        Retourne les coordonnees precises (x, y) de la piece sur `square`
+        via la vision camera, ou None si non disponible.
+        """
+        if not self.vision_service:
+            return None
+        piece_data = self.vision_service.find_piece_at(square)
+        if not piece_data:
+            return None
+        board_pos = piece_data.get("position", {}).get("board")
+        if not board_pos or "x" not in board_pos or "y" not in board_pos:
+            return None
+        return (board_pos["x"], board_pos["y"])
+
     async def play_human_move(self, from_sq: str, to_sq: str):
         """Joue le coup du joueur humain"""
         try:
@@ -207,10 +225,13 @@ class ChessManager:
         if piece:
             self.robot.piece_courante = piece.piece_type
 
+        # Coordonnees precises de la camera si disponibles
+        precise_coords = self._get_precise_coords(from_sq)
+
         # Exécuter sur le robot
         self.set_status("moving", f"Déplacement {from_sq} → {to_sq}")
-        success = await self.robot.execute_move(from_sq, to_sq, is_capture, captured_piece)
-        
+        success = await self.robot.execute_move(from_sq, to_sq, is_capture, captured_piece, precise_pick_coords=precise_coords)
+
         if not success:
             await self.log("warning", "Mouvement interrompu par PAUSE")
             return {"success": False, "error": "Mouvement interrompu"}
@@ -237,6 +258,55 @@ class ChessManager:
             return {"success": True, "san": san, "game_over": True, "result": result}
 
         return {"success": True, "san": san}
+
+    async def play_vision_move(self, from_sq: str, to_sq: str):
+        """
+        Enregistre un coup humain detecte par la camera.
+        Le joueur a DEJA bouge la piece physiquement, donc le robot ne la deplace pas.
+        Apres enregistrement, enchaine automatiquement avec le coup du robot.
+        """
+        try:
+            move = chess.Move.from_uci(f"{from_sq}{to_sq}")
+
+            # Verifier promotion
+            piece = self.board.piece_at(chess.parse_square(from_sq))
+            if piece and piece.piece_type == chess.PAWN:
+                to_rank = to_sq[1]
+                if (piece.color == chess.WHITE and to_rank == '8') or \
+                        (piece.color == chess.BLACK and to_rank == '1'):
+                    move = chess.Move.from_uci(f"{from_sq}{to_sq}q")
+
+            if move not in self.board.legal_moves:
+                move = chess.Move.from_uci(f"{from_sq}{to_sq}q")
+                if move not in self.board.legal_moves:
+                    return {"success": False, "error": "Coup illegal"}
+        except Exception:
+            return {"success": False, "error": "Format de coup invalide"}
+
+        # Enregistrer le coup dans Stockfish (PAS de mouvement robot)
+        san = self.board.san(move)
+        self.board.push(move)
+
+        await self.log("player", f"Coup vision detecte: {san} ({from_sq} -> {to_sq})")
+
+        await self.broadcast({
+            "type": "move",
+            "player": "human",
+            "from": from_sq,
+            "to": to_sq,
+            "san": san,
+            "fen": self.board.fen()
+        })
+
+        # Verifier fin de partie
+        if self.board.is_game_over():
+            result = self.get_game_result()
+            await self.broadcast({"type": "game_over", "result": result})
+            return {"success": True, "san": san, "game_over": True, "result": result}
+
+        # Enchainer avec le coup du robot
+        robot_result = await self.play_robot_move()
+        return {"success": True, "san": san, "robot_response": robot_result}
 
     async def play_robot_move(self):
         """Calcule et joue le coup du robot avec évaluation"""
@@ -297,9 +367,12 @@ class ChessManager:
 
             await self.log("robot", f"Coup choisi: {from_sq} → {to_sq} (eval: {evaluation})")
 
+            # Coordonnees precises de la camera si disponibles
+            precise_coords = self._get_precise_coords(from_sq)
+
             # Exécuter sur le robot
             self.set_status("moving", f"Déplacement {from_sq} → {to_sq}")
-            success = await self.robot.execute_move(from_sq, to_sq, is_capture, captured_piece)
+            success = await self.robot.execute_move(from_sq, to_sq, is_capture, captured_piece, precise_pick_coords=precise_coords)
             
             if not success:
                 await self.log("warning", "Mouvement interrompu par PAUSE")
@@ -429,6 +502,115 @@ class ChessManager:
                 return case_name
         
         return None
+
+    # ------------------------------------------------------------------
+    #  Synchronisation vision camera <-> Stockfish
+    # ------------------------------------------------------------------
+
+    def _board_to_map(self) -> dict:
+        """Convertit l'etat python-chess en {case: code_piece} pour comparaison."""
+        result = {}
+        type_map = {
+            chess.PAWN: "P", chess.KNIGHT: "N", chess.BISHOP: "B",
+            chess.ROOK: "R", chess.QUEEN: "Q", chess.KING: "K",
+        }
+        for sq in chess.SQUARES:
+            piece = self.board.piece_at(sq)
+            if piece:
+                color_char = "W" if piece.color == chess.WHITE else "B"
+                type_char = type_map.get(piece.piece_type, "?")
+                result[chess.square_name(sq)] = f"{color_char}{type_char}"
+        return result
+
+    def sync_with_vision(self, stabilized_board: dict) -> dict:
+        """
+        Compare l'etat Stockfish avec l'etat camera stabilise.
+        Detecte les coups (simples et captures) et retourne les anomalies.
+        Ne modifie PAS l'etat de Stockfish.
+        """
+        expected = self._board_to_map()
+
+        # Cases ou le contenu differe entre Stockfish et camera
+        disappeared = {}  # case: code — piece Stockfish absente dans camera
+        appeared = {}     # case: code — piece camera absente dans Stockfish
+        changed = {}      # case: (expected_code, detected_code)
+
+        for sq in set(list(expected.keys()) + list(stabilized_board.keys())):
+            exp = expected.get(sq)
+            det = stabilized_board.get(sq)
+            if exp and not det:
+                disappeared[sq] = exp
+            elif det and not exp:
+                appeared[sq] = det
+            elif exp and det and exp != det:
+                changed[sq] = (exp, det)
+
+        result = {
+            "in_sync": len(disappeared) == 0 and len(appeared) == 0 and len(changed) == 0,
+            "disappeared": disappeared,
+            "appeared": appeared,
+            "changed": changed,
+        }
+
+        if result["in_sync"]:
+            return result
+
+        # Tenter de deduire un coup a partir des differences
+        # Cas 1 : Coup simple — piece disparait de A, apparait sur B (case vide)
+        # Cas 2 : Capture — piece disparait de A, piece adverse disparait de B,
+        #         piece attaquante apparait sur B (= changed: expected=adverse, detected=attaquant)
+
+        detected_move = None
+        suggestions = []
+
+        # Coup simple : une piece blanche disparait, et apparait sur une case vide
+        for sq_from, code_from in disappeared.items():
+            if not code_from.startswith("W"):
+                continue  # On cherche les coups des blancs
+            for sq_to, code_to in appeared.items():
+                if code_from == code_to:
+                    detected_move = {"from": sq_from, "to": sq_to}
+                    break
+            if detected_move:
+                break
+
+        # Capture : une piece blanche disparait de A, et la case B passe de piece noire a piece blanche
+        if not detected_move:
+            for sq_from, code_from in disappeared.items():
+                if not code_from.startswith("W"):
+                    continue
+                for sq_to, (exp_code, det_code) in changed.items():
+                    # La case avait une piece noire, maintenant a la piece blanche
+                    if exp_code.startswith("B") and det_code == code_from:
+                        detected_move = {"from": sq_from, "to": sq_to}
+                        break
+                if detected_move:
+                    break
+
+        if detected_move:
+            from_sq = detected_move["from"]
+            to_sq = detected_move["to"]
+            # Verifier la legalite (avec et sans promotion)
+            legal = False
+            for suffix in ["", "q", "r", "b", "n"]:
+                try:
+                    move = chess.Move.from_uci(f"{from_sq}{to_sq}{suffix}")
+                    if move in self.board.legal_moves:
+                        legal = True
+                        detected_move["to"] = to_sq  # garder la notation simple
+                        break
+                except ValueError:
+                    continue
+            detected_move["legal"] = legal
+            result["detected_move"] = detected_move
+            state = "legal" if legal else "illegal"
+            suggestions.append(f"Coup detecte: {disappeared.get(from_sq, '?')} {from_sq} -> {to_sq} ({state})")
+        else:
+            for sq, code in disappeared.items():
+                suggestions.append(f"Piece manquante: {code} en {sq}")
+
+        result["suggestions"] = suggestions
+        return result
 
     def close(self):
         """Ferme Stockfish"""

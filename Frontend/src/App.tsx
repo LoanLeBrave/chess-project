@@ -43,6 +43,7 @@ function App() {
     setCurrentScreen('welcome');
   };
 
+
   const handleSafetyContinue = () => {
     setCurrentScreen('difficulty');
   };
