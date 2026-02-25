@@ -415,7 +415,7 @@ export function GameScreen({ difficulty, gameState, setGameState, onReturnToMenu
       {/* Illegal Move Alert */}
       {illegalMoveAlert && (
         <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 animate-in slide-in-from-bottom-4">
-          <div className="bg-red-900/95 backdrop-blur-sm border border-red-500 rounded-xl px-5 py-4 shadow-2xl max-w-md">
+          <div className="bg-red-900 border border-red-500 rounded-xl px-5 py-4 shadow-2xl max-w-md">
             <div className="flex items-start gap-3">
               <AlertTriangle className="w-6 h-6 text-red-400 flex-shrink-0 mt-0.5" />
               <div className="flex-1">
