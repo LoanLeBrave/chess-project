@@ -27,9 +27,8 @@ export function ScoreSavedNotification({
           className="fixed top-6 left-1/2 -translate-x-1/2 z-50"
         >
           <div className="
-            bg-gradient-to-r from-green-500/20 to-emerald-500/20
-            backdrop-blur-xl rounded-2xl border-2 border-green-500/50
-            shadow-2xl shadow-green-500/30 p-4 pr-6
+            bg-green-900 rounded-2xl border-2 border-green-600
+            shadow-2xl p-4 pr-6
             flex items-center gap-4 min-w-[400px]
           ">
             {/* Icon */}

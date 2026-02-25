@@ -318,7 +318,7 @@ class ChessVisionPipeline:
             if board_corners:
                 xs = [c[0] for c in board_corners.values()]
                 ys = [c[1] for c in board_corners.values()]
-                margin = 60  # pixels de marge autour du plateau
+                margin = 150  # pixels de marge autour du plateau
                 x_min = max(0, int(min(xs)) - margin)
                 y_min = max(0, int(min(ys)) - margin)
                 x_max = min(image.shape[1], int(max(xs)) + margin)
