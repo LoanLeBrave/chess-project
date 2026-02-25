@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Lock, Unlock, CheckCircle, MoveVertical, Hand, ArrowLeft, ChevronUp, ChevronDown, SkipForward, AlignVerticalSpaceAround, Camera } from 'lucide-react';
+import { Lock, Unlock, CheckCircle, MoveVertical, Hand, ArrowLeft, ChevronUp, ChevronDown, SkipForward, AlignVerticalSpaceAround, Camera, Home } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { CameraCalibrationScreen } from './CameraCalibrationScreen';
 
@@ -42,10 +42,12 @@ export function CalibrationScreen({ onCalibrationComplete, onBack }: Calibration
     if (newPin.every(digit => digit !== '')) {
       const enteredPin = newPin.join('');
       if (enteredPin === CORRECT_PIN) {
-        // Fermer le gripper pour la calibration
-        fetch(`${API_BASE}/robot/calibrate/close-gripper`, {
-          method: 'POST',
-        }).catch(() => {});
+        // Remettre la pince droite, puis fermer le gripper
+        fetch(`${API_BASE}/robot/calibrate/auto-level`, { method: 'POST' })
+          .catch(() => {})
+          .finally(() => {
+            fetch(`${API_BASE}/robot/calibrate/close-gripper`, { method: 'POST' }).catch(() => {});
+          });
         setTimeout(() => {
           setIsUnlocked(true);
         }, 300);
@@ -119,7 +121,7 @@ export function CalibrationScreen({ onCalibrationComplete, onBack }: Calibration
   const [movingZ, setMovingZ] = useState<'up' | 'down' | null>(null);
 
   const startMoveZ = useCallback((direction: 'up' | 'down') => {
-    if (!isUnlocked || movingDirection.current === direction) return;
+    if (!isUnlocked || freedriveActive || movingDirection.current === direction) return;
     movingDirection.current = direction;
     setMovingZ(direction);
     fetch(`${API_BASE}/robot/calibrate/move-z/start`, {
@@ -181,7 +183,7 @@ export function CalibrationScreen({ onCalibrationComplete, onBack }: Calibration
         fetch(`${API_BASE}/robot/calibrate/move-z/stop`, { method: 'POST' }).catch(() => {});
       }
     };
-  }, [isUnlocked, startMoveZ, stopMoveZ]);
+  }, [isUnlocked, freedriveActive, startMoveZ, stopMoveZ]);
 
   const handleToggleFreedrive = async () => {
     const newState = !freedriveActive;
@@ -200,6 +202,18 @@ export function CalibrationScreen({ onCalibrationComplete, onBack }: Calibration
     fetch(`${API_BASE}/robot/calibrate/auto-level`, {
       method: 'POST',
     }).catch(() => {});
+  };
+
+  const [homeSaved, setHomeSaved] = useState(false);
+  const handleSaveHome = async () => {
+    try {
+      const resp = await fetch(`${API_BASE}/robot/save-home-position`, { method: 'POST' });
+      const data = await resp.json();
+      if (data.success) {
+        setHomeSaved(true);
+        setTimeout(() => setHomeSaved(false), 3000);
+      }
+    } catch { /* continue */ }
   };
 
   // Afficher la calibration camera si demandee
@@ -379,7 +393,7 @@ export function CalibrationScreen({ onCalibrationComplete, onBack }: Calibration
                       Hauteur Z (Contact avec le plateau)
                     </h3>
                     <p className="text-slate-400 text-xs mb-3">
-                      Utilisez les boutons à droite pour descendre le bout de la pince jusqu'à ce qu'elle touche le plateau de l'échiquier.
+                      Utilisez les boutons à droite pour descendre le bout de la pince jusqu'à ce qu'elle touche le plateau de l'échiquier, ou activez le FreeDrive pour guider le robot manuellement.
                     </p>
                     
                     {calibrationStep === 'z' && !zCalibrated && (
@@ -418,9 +432,8 @@ export function CalibrationScreen({ onCalibrationComplete, onBack }: Calibration
                   {/* Toggle Freedrive */}
                   <button
                     onClick={handleToggleFreedrive}
-                    disabled={calibrationStep === 'z'}
                     className={`w-full px-4 py-3 rounded-lg text-sm font-medium transition-all
-                      flex items-center justify-center gap-2 group disabled:opacity-50 disabled:cursor-not-allowed
+                      flex items-center justify-center gap-2 group
                       ${freedriveActive
                         ? 'bg-green-500/20 hover:bg-green-500/30 border border-green-500/50 hover:border-green-400 text-green-400'
                         : 'bg-slate-700/50 hover:bg-slate-600/50 border border-slate-600 hover:border-cyan-400 text-white'
@@ -445,6 +458,26 @@ export function CalibrationScreen({ onCalibrationComplete, onBack }: Calibration
                     </div>
                     <span>Remettre la pince droite</span>
                   </button>
+
+                  {/* Save home position */}
+                  <button
+                    onClick={handleSaveHome}
+                    className={`w-full border px-4 py-3 rounded-lg text-sm font-medium transition-all
+                      flex items-center justify-center gap-2 group
+                      ${homeSaved
+                        ? 'bg-green-500/20 border-green-500/50 text-green-400'
+                        : 'bg-slate-700/50 hover:bg-slate-600/50 border-slate-600 hover:border-amber-400 text-white'
+                      }`}
+                  >
+                    <div className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all
+                      ${homeSaved ? 'bg-green-500/30' : 'bg-amber-500/20 group-hover:bg-amber-500/30'}`}>
+                      {homeSaved
+                        ? <CheckCircle className="w-5 h-5 text-green-400" strokeWidth={2.5} />
+                        : <Home className="w-5 h-5 text-amber-400" strokeWidth={2.5} />
+                      }
+                    </div>
+                    <span>{homeSaved ? 'Position sauvegardée !' : 'Sauvegarder position de démarrage'}</span>
+                  </button>
                 </div>
               </div>
 
@@ -463,8 +496,9 @@ export function CalibrationScreen({ onCalibrationComplete, onBack }: Calibration
                     onMouseLeave={stopMoveZ}
                     onTouchStart={() => startMoveZ('up')}
                     onTouchEnd={stopMoveZ}
+                    disabled={freedriveActive}
                     className={`w-full border text-white px-4 py-3 rounded-lg text-sm font-medium transition-all
-                      flex items-center justify-center gap-2 group select-none
+                      flex items-center justify-center gap-2 group select-none disabled:opacity-40 disabled:cursor-not-allowed
                       ${movingZ === 'up'
                         ? 'bg-cyan-500/20 border-cyan-400'
                         : 'bg-slate-700/50 hover:bg-slate-600/50 border-slate-600 hover:border-cyan-400'
@@ -484,8 +518,9 @@ export function CalibrationScreen({ onCalibrationComplete, onBack }: Calibration
                     onMouseLeave={stopMoveZ}
                     onTouchStart={() => startMoveZ('down')}
                     onTouchEnd={stopMoveZ}
+                    disabled={freedriveActive}
                     className={`w-full border text-white px-4 py-3 rounded-lg text-sm font-medium transition-all
-                      flex items-center justify-center gap-2 group select-none
+                      flex items-center justify-center gap-2 group select-none disabled:opacity-40 disabled:cursor-not-allowed
                       ${movingZ === 'down'
                         ? 'bg-cyan-500/20 border-cyan-400'
                         : 'bg-slate-700/50 hover:bg-slate-600/50 border-slate-600 hover:border-cyan-400'

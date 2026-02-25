@@ -8,7 +8,7 @@ import os
 import sys
 import json
 import math
-import time
+import timeAna
 import asyncio
 import base64
 import chess
@@ -27,7 +27,7 @@ from robot_controller import RobotController
 from chess_manager import ChessManager
 from leaderboard_manager import LeaderboardManager
 from board_reset_manager import BoardResetManager
-from config import FICHIER_CALIBRATION
+from config import FICHIER_CALIBRATION, FICHIER_POSITION_DEPART
 from calibration import TwoPointCalibration
 from hybrid_board_manager import HybridBoardManager
 
@@ -281,6 +281,24 @@ class VisionService:
             "reference_set": self.reference_board is not None,
         }
 
+    def get_occupied_cimetiere_cells(self) -> set:
+        """
+        Retourne les cases du cimetière actuellement occupées d'après la vision
+        (pièces avec zone='cemetery', placées par le robot OU manuellement par un joueur).
+
+        La notation vision (ex: 'A0') est normalisée en minuscules ('a0') pour
+        correspondre à la notation utilisée par RobotController.
+        """
+        if not self.last_game_state:
+            return set()
+        occupied = set()
+        for piece in self.last_game_state.get("pieces", []):
+            if piece.get("zone") == "cemetery":
+                grid = piece.get("position", {}).get("grid")
+                if grid:
+                    occupied.add(grid.lower())
+        return occupied
+
 # ============================================================================
 #                          APPLICATION MANAGER
 # ============================================================================
@@ -297,6 +315,7 @@ class ApplicationManager:
         self.websocket_clients: List[WebSocket] = []
         self.calib_points: dict = {}
         self.robot.set_log_callback(self.log)
+        self.robot.set_cimetiere_vision_callback(self.vision.get_occupied_cimetiere_cells)
         self.chess.set_broadcast_callback(self.broadcast)
         self.chess.set_log_callback(self.log)
         self.chess.set_status_callback(self.set_status)
@@ -724,6 +743,17 @@ async def get_vision_sync():
     return sync_result
 
 
+async def _move_to_waiting_position():
+    """Déplace le robot vers la position d'attente de jeu au démarrage."""
+    await asyncio.sleep(0.5)  # Laisser le temps à l'initialisation de se terminer
+    if manager.robot.connected and manager.robot.is_calibrated and manager.robot.position_depart:
+        try:
+            await manager.robot._move_tcp(manager.robot.position_depart)
+            print("✓ Robot en position d'attente")
+        except Exception as e:
+            print(f"⚠ Erreur position d'attente: {e}")
+
+
 @app.on_event("startup")
 async def startup():
     """Initialisation au démarrage"""
@@ -731,6 +761,7 @@ async def startup():
     manager.chess.init_stockfish()
     manager.robot.init_robot()
     asyncio.create_task(vision_loop())
+    asyncio.create_task(_move_to_waiting_position())
     print("API prête!")
 
 # ============================================================================
@@ -785,11 +816,40 @@ async def toggle_pause():
 
 @app.post("/game/stop", tags=["Game"])
 async def stop_game():
-    """Arrête la partie et remet le plateau en place"""
-    result = await manager.chess.reset_plateau_with_board()
-    if result.get("success"):
-        await manager.broadcast({"type": "game_stopped"})
-    return result
+    """Arrête immédiatement tous les processus de jeu (sans déplacer les pièces physiquement)."""
+    # 1. Arrêt matériel immédiat du robot
+    if manager.robot.connected and manager.robot.rtde_c:
+        try:
+            manager.robot.rtde_c.stopScript()
+        except Exception:
+            pass
+
+    # 2. Désactiver la détection vision pour éviter tout nouveau coup automatique
+    manager.vision.game_started = False
+    manager.vision._buffers.clear()
+    manager.vision._stability_counter = 0
+
+    # 3. Réinitialiser les flags de pause
+    manager.chess.is_paused = False
+    manager.robot.is_paused = False
+
+    # 4. Relancer le script robot pour que la connexion reste opérationnelle
+    if manager.robot.connected and manager.robot.rtde_c:
+        try:
+            await asyncio.sleep(0.15)
+            manager.robot.rtde_c.reuploadScript()
+            await asyncio.sleep(0.15)
+        except Exception:
+            pass
+
+    # 5. Reset virtuel uniquement (aucun déplacement physique)
+    manager.chess.board.reset()
+    manager.robot.reset_tracking()
+
+    manager.set_status("idle", "Partie arrêtée")
+    await manager.log("info", "Partie arrêtée — tous les processus de jeu stoppés")
+    await manager.broadcast({"type": "game_stopped"})
+    return {"success": True}
 
 @app.post("/game/reset-plateau", tags=["Game"])
 async def reset_plateau():
@@ -811,6 +871,23 @@ async def replace_board():
             await manager.broadcast({"type": "board_replaced", "fen": manager.chess.board.fen()})
     finally: manager.set_status("idle")
     return result
+
+@app.post("/game/confirm-promotion", tags=["Game"])
+async def confirm_promotion(data: dict):
+    """
+    Confirme la case où le joueur a placé la pièce de promotion (dame).
+    À appeler après avoir reçu l'événement WebSocket 'promotion_required'.
+
+    Body: {"from_sq": "a0"}  — n'importe quelle case accessible (cimetière, bord, etc.)
+    """
+    from_sq = data.get("from_sq", "").strip().lower()
+    if not from_sq:
+        return {"success": False, "error": "Paramètre from_sq manquant"}
+    success = manager.chess.confirm_promotion(from_sq)
+    if not success:
+        return {"success": False, "error": "Aucune promotion en attente"}
+    await manager.log("info", f"Promotion confirmée — dame en {from_sq}")
+    return {"success": True}
 
 @app.get("/game/legal-moves/{square}", tags=["Game"])
 async def get_legal_moves(square: str = Path(..., pattern="^[a-h][1-8]$")):
@@ -837,6 +914,19 @@ async def get_pieces_eliminees():
         "pieces_eliminees": pieces,
         "count": len(pieces)
     }
+
+
+@app.post("/robot/reconnect", tags=["Robot"])
+async def reconnect_robot():
+    """Reconnecte complètement le robot (RTDE + gripper) après un blocage ou un timeout."""
+    success = await manager.robot.reconnect()
+    if success:
+        manager.set_status("idle", "Robot reconnecté")
+        await manager.broadcast({"type": "robot_reconnected", "success": True})
+    else:
+        manager.set_status("error", "Échec de la reconnexion")
+        await manager.broadcast({"type": "robot_reconnected", "success": False})
+    return {"success": success}
 
 
 @app.get("/robot/position")
@@ -1034,6 +1124,23 @@ async def calibrate_save():
             "board_size_mm": round(calib_data["board_size"] * 1000, 1),
             "rotation_deg": round(math.degrees(calib_data["rotation"]), 2)
         }
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@app.post("/robot/save-home-position")
+async def save_home_position():
+    """Enregistre la position TCP actuelle comme position d'attente de démarrage."""
+    if not manager.robot.connected or not manager.robot.rtde_r:
+        return {"success": False, "error": "Robot non connecte"}
+    try:
+        pose = manager.robot.rtde_r.getActualTCPPose()
+        data = {"position_depart": list(pose)}
+        with open(FICHIER_POSITION_DEPART, 'w') as f:
+            json.dump(data, f, indent=2)
+        manager.robot.position_depart = list(pose)
+        await manager.log("info", f"Position d'attente sauvegardee: X={pose[0]:.4f} Y={pose[1]:.4f} Z={pose[2]:.4f}")
+        return {"success": True, "position": {"x": pose[0], "y": pose[1], "z": pose[2]}}
     except Exception as e:
         return {"success": False, "error": str(e)}
 

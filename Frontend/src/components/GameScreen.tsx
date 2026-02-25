@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { Eye, EyeOff, Camera, CheckCircle, AlertTriangle, X } from 'lucide-react';
 import { ChessBoard } from './ChessBoard';
 import { ControlPanel } from './ControlPanel';
@@ -7,6 +7,8 @@ import { RobotStatus } from './RobotStatus';
 import { PlayerTurnStatus } from './PlayerTurnStatus';
 import { GameOverModal } from './GameOverModal';
 import { ScoreSavedNotification } from './ScoreSavedNotification';
+import { StopConfirmModal } from './StopConfirmModal';
+import { PromotionModal } from './PromotionModal';
 import { useChessRobot } from '../hooks/useChessRobot';
 import type { DifficultyLevel, GameState, LogEntry } from '../App';
 
@@ -33,6 +35,10 @@ export function GameScreen({ difficulty, gameState, setGameState, onReturnToMenu
   const [moves, setMoves] = useState<ChessMove[]>([]);
   const [showScoreSaved, setShowScoreSaved] = useState(false);
   const [showVision, setShowVision] = useState(true);
+  const [showStopModal, setShowStopModal] = useState(false);
+  const [pendingNavigate, setPendingNavigate] = useState(false);
+  const [isReconnecting, setIsReconnecting] = useState(false);
+  const wasReplacingRef = useRef(false);
 
   const addLog = (type: LogEntry['type'], message: string) => {
     const newLog: LogEntry = {
@@ -75,6 +81,11 @@ export function GameScreen({ difficulty, gameState, setGameState, onReturnToMenu
     dismissIllegalAlert,
     replaceBoard,
     isReplacingBoard,
+    isPromotionPending,
+    promotionSquare,
+    promotionColor,
+    confirmPromotion,
+    reconnectRobot,
   } = useChessRobot(addLog, addMove);
 
   // Initialiser la partie via l'API au montage
@@ -154,6 +165,16 @@ export function GameScreen({ difficulty, gameState, setGameState, onReturnToMenu
     }, 1500);
   }, []);
 
+  // Navigue vers le menu après remplacement (quand isReplacingBoard passe de true → false)
+  useEffect(() => {
+    const wasReplacing = wasReplacingRef.current;
+    wasReplacingRef.current = isReplacingBoard;
+    if (wasReplacing && !isReplacingBoard && pendingNavigate) {
+      setPendingNavigate(false);
+      onReturnToMenu();
+    }
+  }, [isReplacingBoard, pendingNavigate, onReturnToMenu]);
+
   const handlePause = async () => {
     try {
       const res = await fetch(`${API_BASE}/game/pause`, { method: 'POST' });
@@ -169,32 +190,44 @@ export function GameScreen({ difficulty, gameState, setGameState, onReturnToMenu
     }
   };
 
-  const handleStop = async () => {
-    // Compter uniquement les coups du joueur
-    const playerMoves = moves.filter(m => m.player === 'human');
+  // Affiche le modal de confirmation d'arrêt
+  const handleStopRequest = useCallback(() => setShowStopModal(true), []);
 
-    // Notifier l'API de l'arrêt
+  // Exécute l'arrêt après confirmation (replace = true si l'utilisateur veut replacer les pièces)
+  const executeStop = useCallback(async (replace: boolean) => {
+    setShowStopModal(false);
+
+    // Arrêter tous les processus de jeu via l'API
     try {
       await fetch(`${API_BASE}/game/stop`, { method: 'POST' });
-    } catch {
-      // Continue même si l'API est indisponible
+    } catch { /* Continue même si l'API est indisponible */ }
+
+    addLog('warning', replace ? 'Partie arrêtée — Replacement en cours...' : 'Partie arrêtée');
+
+    // Sauvegarder le score si le joueur a joué au moins un coup
+    const playerMoves = moves.filter(m => m.player === 'human');
+    if (playerMoves.length > 0 && !isGameOver) {
+      await saveScoreToLeaderboard('abandoned');
+      setShowScoreSaved(true);
+      setTimeout(() => setShowScoreSaved(false), 3000);
     }
 
-    // Sauvegarder le score avant de quitter si le joueur a joué au moins un coup
-    if (playerMoves.length > 0 && !isGameOver) {
-      saveScoreToLeaderboard('abandoned');
-      addLog('warning', 'Partie arrêtée - Score enregistré');
-      setShowScoreSaved(true);
-
-      // Fermer la notification après 3 secondes
-      setTimeout(() => {
-        setShowScoreSaved(false);
-        onReturnToMenu();
-      }, 3000);
+    if (replace) {
+      // La navigation vers le menu se fera automatiquement quand isReplacingBoard repasse à false
+      setPendingNavigate(true);
+      await replaceBoard();
     } else {
-      addLog('warning', 'Partie arrêtée par l\'utilisateur');
       onReturnToMenu();
     }
+  }, [moves, isGameOver, replaceBoard, addLog, onReturnToMenu]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Utilisé par GameOverModal — la partie est déjà terminée, score déjà sauvegardé
+  const handleStop = async () => {
+    try {
+      await fetch(`${API_BASE}/game/stop`, { method: 'POST' });
+    } catch { /* Continue */ }
+    addLog('info', 'Retour au menu');
+    onReturnToMenu();
   };
 
   const handleNewGame = async () => {
@@ -209,6 +242,12 @@ export function GameScreen({ difficulty, gameState, setGameState, onReturnToMenu
   const handleReplaceBoard = async () => {
     addLog('info', 'Replacement du plateau demandé…');
     await replaceBoard();
+  };
+
+  const handleReconnect = async () => {
+    setIsReconnecting(true);
+    await reconnectRobot();
+    setIsReconnecting(false);
   };
 
   const formatTime = (seconds: number) => {
@@ -249,10 +288,12 @@ export function GameScreen({ difficulty, gameState, setGameState, onReturnToMenu
             <ControlPanel
               gameState={gameState}
               onPause={handlePause}
-              onStop={handleStop}
+              onStop={handleStopRequest}
               onNewGame={handleNewGame}
               onReplaceBoard={handleReplaceBoard}
+              onReconnect={handleReconnect}
               isReplacingBoard={isReplacingBoard}
+              isReconnecting={isReconnecting}
             />
 
             {/* Player Turn Status + Vision Controls */}
@@ -354,6 +395,21 @@ export function GameScreen({ difficulty, gameState, setGameState, onReturnToMenu
         playerName={playerName}
         acplScore={acplScore}
         moves={moves.length}
+      />
+
+      {/* Stop Confirmation Modal */}
+      <StopConfirmModal
+        isVisible={showStopModal}
+        onCancel={() => setShowStopModal(false)}
+        onConfirm={executeStop}
+      />
+
+      {/* Promotion Modal */}
+      <PromotionModal
+        isVisible={isPromotionPending}
+        promotionSquare={promotionSquare || ''}
+        promotionColor={promotionColor || 'white'}
+        onConfirm={confirmPromotion}
       />
 
       {/* Illegal Move Alert */}

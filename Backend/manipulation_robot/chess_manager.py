@@ -12,7 +12,7 @@ from datetime import datetime
 import asyncio
 import time
 
-from config import DIFFICULTY_PRESETS, POSITION_INITIALE, PIECE_TYPE_MAP, STOCKFISH_PATHS
+from config import DIFFICULTY_PRESETS, POSITION_INITIALE, PIECE_TYPE_MAP, STOCKFISH_PATHS, DELTA_TRANSIT
 from robot_controller import RobotController
 
 
@@ -33,6 +33,10 @@ class ChessManager:
 
         # Reference au VisionService (injectee depuis api.py)
         self.vision_service = None
+
+        # Gestion de la promotion physique
+        self._promotion_event: Optional[asyncio.Event] = None
+        self._promotion_from_sq: Optional[str] = None
 
     def set_broadcast_callback(self, callback):
         """Définit le callback pour le broadcast"""
@@ -210,16 +214,19 @@ class ChessManager:
 
         # Récupérer la pièce capturée AVANT de jouer le coup
         captured_piece = None
+        capture_sq = to_sq  # Par défaut, la pièce capturée est sur to_sq
         if is_capture:
             to_square = chess.parse_square(to_sq)
             captured_piece = self.board.piece_at(to_square)
-            # En passant
+            # En passant : le pion capturé est sur une case DIFFÉRENTE de to_sq
             if captured_piece is None and piece and piece.piece_type == chess.PAWN:
                 ep_square = self.board.ep_square
                 if ep_square:
-                    captured_piece = self.board.piece_at(
-                        ep_square - 8 if piece.color == chess.WHITE else ep_square + 8
-                    )
+                    ep_pawn_sq = ep_square - 8 if piece.color == chess.WHITE else ep_square + 8
+                    captured_piece = self.board.piece_at(ep_pawn_sq)
+                    if captured_piece:
+                        capture_sq = chess.square_name(ep_pawn_sq)
+                        await self.log("info", f"En passant — pion capturé en {capture_sq} (et non {to_sq})")
 
         # Définir la pièce courante pour le robot
         if piece:
@@ -228,13 +235,32 @@ class ChessManager:
         # Coordonnees precises de la camera si disponibles
         precise_coords = self._get_precise_coords(from_sq)
 
+        # Détection du roque — calculer les positions de la tour
+        castling_rook = None
+        if self.board.is_castling(move):
+            rank = to_sq[1]  # '1' pour les blancs, '8' pour les noirs
+            if to_sq[0] == 'g':  # Petit roque (côté roi)
+                castling_rook = (f'h{rank}', f'f{rank}')
+            else:              # Grand roque (côté dame)
+                castling_rook = (f'a{rank}', f'd{rank}')
+            await self.log("info", f"Roque {'petit' if to_sq[0] == 'g' else 'grand'} — Tour: {castling_rook[0]} → {castling_rook[1]}")
+
         # Exécuter sur le robot
         self.set_status("moving", f"Déplacement {from_sq} → {to_sq}")
-        success = await self.robot.execute_move(from_sq, to_sq, is_capture, captured_piece, precise_pick_coords=precise_coords)
+        success = await self.robot.execute_move(
+            from_sq, to_sq, is_capture, captured_piece,
+            precise_pick_coords=precise_coords,
+            castling_rook=castling_rook,
+            capture_sq=capture_sq,
+        )
 
         if not success:
             await self.log("warning", "Mouvement interrompu par PAUSE")
             return {"success": False, "error": "Mouvement interrompu"}
+
+        # Promotion physique : retirer le pion, attendre que le joueur place la dame
+        if move.promotion is not None and piece:
+            await self._handle_promotion(to_sq, piece.color)
 
         # Jouer sur le plateau virtuel
         san = self.board.san(move)
@@ -335,17 +361,20 @@ class ChessManager:
 
             # Récupérer la pièce capturée AVANT de jouer le coup
             captured_piece = None
+            capture_sq = to_sq  # Par défaut, pièce capturée sur to_sq
             if is_capture:
                 captured_piece = self.board.piece_at(move.to_square)
-                # En passant
+                # En passant : le pion capturé est sur une case DIFFÉRENTE de to_sq
                 if captured_piece is None:
-                    piece = self.board.piece_at(move.from_square)
-                    if piece and piece.piece_type == chess.PAWN:
+                    moving_piece = self.board.piece_at(move.from_square)
+                    if moving_piece and moving_piece.piece_type == chess.PAWN:
                         ep_square = self.board.ep_square
                         if ep_square:
-                            captured_piece = self.board.piece_at(
-                                ep_square - 8 if piece.color == chess.WHITE else ep_square + 8
-                            )
+                            ep_pawn_sq = ep_square - 8 if moving_piece.color == chess.WHITE else ep_square + 8
+                            captured_piece = self.board.piece_at(ep_pawn_sq)
+                            if captured_piece:
+                                capture_sq = chess.square_name(ep_pawn_sq)
+                                await self.log("info", f"En passant — pion capturé en {capture_sq} (et non {to_sq})")
 
             # Définir la pièce courante pour le robot
             piece = self.board.piece_at(move.from_square)
@@ -370,14 +399,33 @@ class ChessManager:
             # Coordonnees precises de la camera si disponibles
             precise_coords = self._get_precise_coords(from_sq)
 
+            # Détection du roque — calculer les positions de la tour
+            castling_rook = None
+            if self.board.is_castling(move):
+                rank = to_sq[1]  # '1' pour les blancs, '8' pour les noirs
+                if to_sq[0] == 'g':  # Petit roque (côté roi)
+                    castling_rook = (f'h{rank}', f'f{rank}')
+                else:              # Grand roque (côté dame)
+                    castling_rook = (f'a{rank}', f'd{rank}')
+                await self.log("info", f"Roque {'petit' if to_sq[0] == 'g' else 'grand'} — Tour: {castling_rook[0]} → {castling_rook[1]}")
+
             # Exécuter sur le robot
             self.set_status("moving", f"Déplacement {from_sq} → {to_sq}")
-            success = await self.robot.execute_move(from_sq, to_sq, is_capture, captured_piece, precise_pick_coords=precise_coords)
-            
+            success = await self.robot.execute_move(
+                from_sq, to_sq, is_capture, captured_piece,
+                precise_pick_coords=precise_coords,
+                castling_rook=castling_rook,
+                capture_sq=capture_sq,
+            )
+
             if not success:
                 await self.log("warning", "Mouvement interrompu par PAUSE")
                 self.set_status("idle")
                 return {"success": False, "error": "Mouvement interrompu"}
+
+            # Promotion physique : retirer le pion, attendre que le joueur place la dame
+            if move.promotion is not None and piece:
+                await self._handle_promotion(to_sq, piece.color)
 
             # Jouer sur le plateau virtuel
             san = self.board.san(move)
@@ -436,6 +484,90 @@ class ChessManager:
         elif self.board.is_repetition():
             return "Répétition - Nulle"
         return "Partie en cours"
+
+    async def _handle_promotion(self, to_sq: str, pawn_color: chess.Color) -> bool:
+        """
+        Gère physiquement la promotion d'un pion :
+        1. Retire le pion de la case de promotion → cimetière
+        2. Demande au joueur de placer la pièce promue (dame) quelque part d'accessible
+        3. Attend la confirmation via confirm_promotion()
+        4. Robot récupère la dame et la pose sur la case de promotion
+        """
+        # 1. Retirer le pion vers le cimetière
+        self.robot.piece_courante = chess.PAWN
+        pawn_obj = chess.Piece(chess.PAWN, pawn_color)
+        cx, cy = self.robot.get_square_center(to_sq)
+        p_pawn_pos = self.robot.cam_to_robot(cx, cy, use_piece_height=True)
+
+        color_str = "blanche" if pawn_color == chess.WHITE else "noire"
+        await self.log("robot", f"Promotion — retrait du pion {color_str} de {to_sq} vers le cimetière")
+        self.set_status("moving", "Promotion — retrait du pion")
+
+        success = await self.robot._sequence_elimination(p_pawn_pos, pawn_obj, to_sq)
+        if not success:
+            self.set_status("idle")
+            return False
+
+        # 2. Demander au joueur de placer la dame
+        await self.log("info", f"PROMOTION — Placez une dame {color_str} sur une case accessible et confirmez sa position")
+        await self.broadcast({
+            "type": "promotion_required",
+            "square": to_sq,
+            "color": "white" if pawn_color == chess.WHITE else "black",
+        })
+
+        # 3. Attendre la confirmation (timeout 5 minutes)
+        self._promotion_event = asyncio.Event()
+        self._promotion_from_sq = None
+        self.set_status("moving", "En attente de la pièce de promotion")
+
+        try:
+            await asyncio.wait_for(self._promotion_event.wait(), timeout=300.0)
+        except asyncio.TimeoutError:
+            await self.log("error", "Timeout promotion — aucune confirmation reçue dans les 5 minutes")
+            self._promotion_event = None
+            self.set_status("idle")
+            return False
+
+        if not self._promotion_from_sq:
+            self._promotion_event = None
+            self.set_status("idle")
+            return False
+
+        # 4. Placer la dame sur la case de promotion
+        self.robot.piece_courante = chess.QUEEN
+        from_sq_promo = self._promotion_from_sq
+        await self.log("robot", f"Promotion — placement de la dame depuis {from_sq_promo} → {to_sq}")
+
+        cx_q, cy_q = self.robot.get_square_center(from_sq_promo)
+        p_queen_src = self.robot.cam_to_robot(cx_q, cy_q, use_piece_height=True)
+        cx_t, cy_t = self.robot.get_square_center(to_sq)
+        p_promo_dest = self.robot.cam_to_robot(cx_t, cy_t, use_piece_height=True)
+
+        success = await self.robot._sequence_pick_and_place(p_queen_src, p_promo_dest)
+
+        # Retour en position de sécurité puis home
+        if success:
+            p_safe = list(p_promo_dest)
+            p_safe[2] = self.robot.calib_origin[2] + DELTA_TRANSIT
+            await self.robot._move_tcp(p_safe)
+            if self.robot.position_depart and not self.robot.is_paused:
+                await self.robot._move_tcp(self.robot.position_depart)
+
+        self._promotion_event = None
+        self.set_status("idle")
+        return success
+
+    def confirm_promotion(self, from_sq: str) -> bool:
+        """
+        Appelée par l'API quand le joueur a placé la pièce promue.
+        from_sq : case où le joueur a déposé la dame (ex: 'a0', 'h9', '99').
+        """
+        if self._promotion_event and not self._promotion_event.is_set():
+            self._promotion_from_sq = from_sq
+            self._promotion_event.set()
+            return True
+        return False
 
     async def reset_plateau_with_board(self):
         """Remet le plateau en place et replace les pièces déplacées"""

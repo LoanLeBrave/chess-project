@@ -1,4 +1,4 @@
-import { Play, Pause, Square, RotateCcw, Home, LayoutGrid, Loader2 } from 'lucide-react';
+import { Play, Pause, Square, RotateCcw, Home, LayoutGrid, Loader2, Wifi } from 'lucide-react';
 import type { GameState } from '../App';
 
 interface ControlPanelProps {
@@ -7,7 +7,9 @@ interface ControlPanelProps {
   onStop: () => void;
   onNewGame: () => void;
   onReplaceBoard: () => void;
+  onReconnect: () => void;
   isReplacingBoard?: boolean;
+  isReconnecting?: boolean;
 }
 
 export function ControlPanel({
@@ -16,11 +18,13 @@ export function ControlPanel({
   onStop,
   onNewGame,
   onReplaceBoard,
+  onReconnect,
   isReplacingBoard = false,
+  isReconnecting = false,
 }: ControlPanelProps) {
   return (
     <div className="bg-slate-800/50 backdrop-blur-sm rounded-xl p-4 border border-slate-700">
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-2">
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2">
         <button
           onClick={onPause}
           className={`
@@ -104,6 +108,32 @@ export function ControlPanel({
             <>
               <LayoutGrid className="w-4 h-4" />
               Replacer
+            </>
+          )}
+        </button>
+
+        <button
+          onClick={onReconnect}
+          disabled={isReconnecting}
+          className={`
+            flex items-center justify-center gap-2 px-3 py-2 rounded-lg font-semibold text-sm
+            transition-all duration-200 shadow-lg
+            ${isReconnecting
+              ? 'bg-teal-700/50 text-teal-300 cursor-not-allowed'
+              : 'bg-teal-600 hover:bg-teal-500 text-white hover:scale-105'
+            }
+          `}
+          title="Reconnecte le robot après un blocage ou un timeout"
+        >
+          {isReconnecting ? (
+            <>
+              <Loader2 className="w-4 h-4 animate-spin" />
+              Connexion…
+            </>
+          ) : (
+            <>
+              <Wifi className="w-4 h-4" />
+              Reconnecter
             </>
           )}
         </button>
