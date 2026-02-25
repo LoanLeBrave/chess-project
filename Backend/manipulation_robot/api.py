@@ -8,7 +8,7 @@ import os
 import sys
 import json
 import math
-import timeAna
+import time
 import asyncio
 import base64
 import chess
