@@ -3,13 +3,14 @@ import { WelcomeScreen } from './components/WelcomeScreen';
 import { CalibrationScreen } from './components/CalibrationScreen';
 import { SafetyScreen } from './components/SafetyScreen';
 import { StartScreen } from './components/StartScreen';
+import { PlacementConfirmationScreen } from './components/PlacementConfirmationScreen';
 import { GameScreen } from './components/GameScreen';
 import { LeaderboardScreen } from './components/LeaderboardScreen';
-import { PlacementConfirmationScreen } from './components/PlacementConfirmationScreen';
+import { FeedbackScreen } from './components/FeedbackScreen';
 
 export type DifficultyLevel = 'beginner' | 'intermediate' | 'advanced';
 export type GameState = 'menu' | 'playing' | 'paused' | 'finished';
-export type AppScreen = 'welcome' | 'leaderboard' | 'calibration' | 'safety' | 'difficulty' | 'placement' | 'game';
+export type AppScreen = 'welcome' | 'leaderboard' | 'calibration' | 'safety' | 'difficulty' | 'placement' | 'game' | 'feedback';
 
 export interface LogEntry {
   id: string;
@@ -19,10 +20,10 @@ export interface LogEntry {
 }
 
 function App() {
-  const [currentScreen, setCurrentScreen] = useState<AppScreen>('welcome');
+  const [currentScreen, setCurrentScreen] = useState<AppScreen>('feedback'); // Changé pour tester
   const [gameState, setGameState] = useState<GameState>('menu');
   const [difficulty, setDifficulty] = useState<DifficultyLevel>('beginner');
-  const [playerName, setPlayerName] = useState('');
+  const [playerName, setPlayerName] = useState('Test Player');
 
   const handleWelcomeContinue = () => {
     setCurrentScreen('calibration');
@@ -43,7 +44,6 @@ function App() {
   const handleCalibrationBack = () => {
     setCurrentScreen('welcome');
   };
-
 
   const handleSafetyContinue = () => {
     setCurrentScreen('difficulty');
@@ -74,6 +74,15 @@ function App() {
 
   const handleReturnToMenu = () => {
     setGameState('menu');
+    setCurrentScreen('feedback');
+  };
+
+  const handleFeedbackSubmit = (ratings: any, comment: string) => {
+    console.log('Feedback submitted:', { ratings, comment, playerName });
+    setCurrentScreen('welcome');
+  };
+
+  const handleFeedbackBack = () => {
     setCurrentScreen('welcome');
   };
 
@@ -101,7 +110,7 @@ function App() {
         />
       )}
       {currentScreen === 'difficulty' && (
-        <StartScreen
+        <StartScreen 
           onStartGame={handleStartGame}
           onBack={handleStartBack}
         />
@@ -118,6 +127,13 @@ function App() {
           gameState={gameState}
           setGameState={setGameState}
           onReturnToMenu={handleReturnToMenu}
+          playerName={playerName}
+        />
+      )}
+      {currentScreen === 'feedback' && (
+        <FeedbackScreen
+          onSubmit={handleFeedbackSubmit}
+          onBack={handleFeedbackBack}
           playerName={playerName}
         />
       )}
