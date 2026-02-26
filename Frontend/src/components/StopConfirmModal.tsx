@@ -13,113 +13,67 @@ export function StopConfirmModal({ isVisible, onCancel, onConfirm }: StopConfirm
   if (!isVisible) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
-      
-      {/* BACKDROP */}
-      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
-
-      {/* MODAL */}
-      <div className="
-        relative z-10 w-full max-w-md mx-4
-        bg-gradient-to-br from-slate-900 to-slate-800
-        border border-slate-700
-        rounded-2xl shadow-2xl
-        p-6
-        animate-in fade-in zoom-in-95
-      ">
-
-        {/* HEADER */}
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70">
+      <div className="bg-slate-800 border border-slate-600 rounded-2xl p-6 shadow-2xl max-w-md w-full mx-4">
+        {/* Header */}
         <div className="flex items-start gap-3 mb-5">
-          <div className="w-10 h-10 flex items-center justify-center rounded-xl bg-amber-500/10">
-            <AlertTriangle className="w-5 h-5 text-amber-400" />
-          </div>
-
+          <AlertTriangle className="w-6 h-6 text-amber-400 flex-shrink-0 mt-0.5" />
           <div className="flex-1">
-            <h2 className="text-white font-semibold text-lg">
-              Arrêter la partie ?
-            </h2>
-            <p className="text-slate-400 text-sm mt-1">
-              La partie sera arrêtée immédiatement.
+            <h2 className="text-white font-bold text-lg">Arrêter la partie ?</h2>
+            <p className="text-slate-300 text-sm mt-1">
+              Le robot s'arrêtera immédiatement et la partie en cours sera terminée.
             </p>
           </div>
-
           <button
             onClick={onCancel}
-            className="text-slate-500 hover:text-white transition-colors"
+            className="text-slate-400 hover:text-white transition-colors flex-shrink-0"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
-        {/* TOGGLE CARD */}
-        <div className="
-          mb-6 p-4 rounded-xl
-          bg-slate-800/60
-          border border-slate-700
-          hover:border-slate-600
-          transition-colors
-        ">
-          <div className="flex items-center justify-between gap-4">
-            
-            <div>
-              <h3 className="text-white font-medium text-sm">
+        {/* Replacement Toggle */}
+        <div className="mb-6 bg-slate-700/30 rounded-xl p-4 border border-slate-600/50">
+          <div className="flex items-center justify-between">
+            <div className="flex-1">
+              <h3 className="text-white font-semibold text-sm mb-1">
                 Replacement automatique
               </h3>
-              <p className="text-slate-500 text-xs mt-1">
-                Replace les pièces sur le plateau
+              <p className="text-slate-400 text-xs">
+                Le robot replace automatiquement toutes les pièces en position initiale
               </p>
             </div>
-
-            {/* SWITCH */}
             <button
               onClick={() => setReplaceBoard(!replaceBoard)}
               className={`
-                relative inline-flex h-7 w-12 items-center rounded-full transition-all duration-300
-                ${replaceBoard 
-                  ? 'bg-cyan-500 shadow-md shadow-cyan-500/30' 
-                  : 'bg-slate-600'}
+                relative inline-flex h-8 w-14 items-center rounded-full transition-colors duration-300 ml-3 flex-shrink-0
+                ${replaceBoard ? 'bg-cyan-500' : 'bg-slate-600'}
               `}
             >
               <span
                 className={`
-                  inline-block h-5 w-5 transform rounded-full bg-white transition-transform duration-300
-                  ${replaceBoard ? 'translate-x-6' : 'translate-x-1'}
+                  inline-block h-6 w-6 transform rounded-full bg-white transition-transform duration-300
+                  ${replaceBoard ? 'translate-x-7' : 'translate-x-1'}
                 `}
               />
             </button>
           </div>
         </div>
 
-        {/* ACTIONS */}
+        {/* Actions */}
         <div className="flex gap-3">
-          
           <button
             onClick={onCancel}
-            className="
-              flex-1 py-2.5 rounded-xl
-              text-sm font-medium
-              bg-slate-700 hover:bg-slate-600
-              text-white
-              transition-all duration-200
-            "
+            className="flex-1 px-4 py-2.5 rounded-lg text-sm font-medium bg-slate-600 hover:bg-slate-500 text-white transition-colors"
           >
             Annuler
           </button>
-
           <button
             onClick={() => onConfirm(replaceBoard)}
-            className="
-              flex-1 py-2.5 rounded-xl
-              text-sm font-medium
-              bg-red-600 hover:bg-red-500
-              text-white
-              transition-all duration-200
-              shadow-lg hover:shadow-red-500/20
-            "
+            className="flex-1 px-4 py-2.5 rounded-lg text-sm font-medium bg-red-600 hover:bg-red-500 text-white transition-colors"
           >
             Arrêter
           </button>
-
         </div>
       </div>
     </div>
