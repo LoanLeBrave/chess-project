@@ -360,11 +360,28 @@ app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, 
 #                          BOUCLES & LOGIQUE MÉTIER
 # ============================================================================
 
+_vision_update_running = False  # Empêche les captures simultanées
+
 async def vision_loop():
+    global _vision_update_running
     manager.vision.running = True
+    loop = asyncio.get_running_loop()
     while manager.vision.running:
         try:
-            updated = manager.vision.update()
+            if not _vision_update_running:
+                _vision_update_running = True
+                try:
+                    updated = await asyncio.wait_for(
+                        loop.run_in_executor(None, manager.vision.update),
+                        timeout=10.0
+                    )
+                except asyncio.TimeoutError:
+                    updated = False
+                    print("Vision update timeout (>10s) — caméra peut-être bloquée")
+                finally:
+                    _vision_update_running = False
+            else:
+                updated = False
             if updated and manager.websocket_clients:
                 await manager.broadcast(manager.vision.get_state_message())
             if updated and manager.vision.vision_game_enabled and manager.vision.game_started:
@@ -817,10 +834,16 @@ async def toggle_pause():
 @app.post("/game/stop", tags=["Game"])
 async def stop_game():
     """Arrête immédiatement tous les processus de jeu (sans déplacer les pièces physiquement)."""
-    # 1. Arrêt matériel immédiat du robot
+    loop = asyncio.get_running_loop()
+
+    # 1. Arrêt matériel immédiat du robot (dans executor — stopScript peut bloquer si connexion instable)
     if manager.robot.connected and manager.robot.rtde_c:
+        rtde_c = manager.robot.rtde_c
         try:
-            manager.robot.rtde_c.stopScript()
+            await asyncio.wait_for(
+                loop.run_in_executor(None, rtde_c.stopScript),
+                timeout=3.0
+            )
         except Exception:
             pass
 
@@ -833,11 +856,15 @@ async def stop_game():
     manager.chess.is_paused = False
     manager.robot.is_paused = False
 
-    # 4. Relancer le script robot pour que la connexion reste opérationnelle
+    # 4. Relancer le script robot pour que la connexion reste opérationnelle (dans executor)
     if manager.robot.connected and manager.robot.rtde_c:
+        rtde_c = manager.robot.rtde_c
         try:
             await asyncio.sleep(0.15)
-            manager.robot.rtde_c.reuploadScript()
+            await asyncio.wait_for(
+                loop.run_in_executor(None, rtde_c.reuploadScript),
+                timeout=3.0
+            )
             await asyncio.sleep(0.15)
         except Exception:
             pass
