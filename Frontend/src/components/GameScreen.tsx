@@ -1,22 +1,24 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Eye, EyeOff, Camera, CheckCircle, AlertTriangle, X } from 'lucide-react';
+import { Eye, EyeOff, Camera, CheckCircle, AlertTriangle, X, ArrowLeft } from 'lucide-react';
 import { ChessBoard } from './ChessBoard';
 import { ControlPanel } from './ControlPanel';
 import { MoveHistory } from './MoveHistory';
 import { RobotStatus } from './RobotStatus';
 import { PlayerTurnStatus } from './PlayerTurnStatus';
 import { GameOverModal } from './GameOverModal';
+import { GameOverModalAbandoned } from './GameOverModalAbandoned';
 import { ScoreSavedNotification } from './ScoreSavedNotification';
 import { StopConfirmModal } from './StopConfirmModal';
 import { PromotionModal } from './PromotionModal';
 import { useChessRobot } from '../hooks/useChessRobot';
-import type { DifficultyLevel, GameState, LogEntry } from '../App';
+import type { DifficultyLevel, GameState, LogEntry, GameResults } from '../App';
 
 interface GameScreenProps {
   difficulty: DifficultyLevel;
   gameState: GameState;
   setGameState: (state: GameState) => void;
   onReturnToMenu: () => void;
+  onGoToFeedback: (results: GameResults) => void;
   playerName: string;
 }
 
@@ -29,13 +31,14 @@ export interface ChessMove {
   timestamp: Date;
 }
 
-export function GameScreen({ difficulty, gameState, setGameState, onReturnToMenu, playerName }: GameScreenProps) {
+export function GameScreen({ difficulty, gameState, setGameState, onReturnToMenu, onGoToFeedback, playerName }: GameScreenProps) {
   const [elapsedTime, setElapsedTime] = useState(0);
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [moves, setMoves] = useState<ChessMove[]>([]);
   const [showScoreSaved, setShowScoreSaved] = useState(false);
   const [showVision, setShowVision] = useState(true);
   const [showStopModal, setShowStopModal] = useState(false);
+  const [showScoreModal, setShowScoreModal] = useState(false);
   const [pendingNavigate, setPendingNavigate] = useState(false);
   const [isReconnecting, setIsReconnecting] = useState(false);
   const wasReplacingRef = useRef(false);
@@ -165,15 +168,17 @@ export function GameScreen({ difficulty, gameState, setGameState, onReturnToMenu
     }, 1500);
   }, []);
 
-  // Navigue vers le menu après remplacement (quand isReplacingBoard passe de true → false)
+  // Navigue vers le feedback après remplacement (quand isReplacingBoard passe de true → false)
   useEffect(() => {
     const wasReplacing = wasReplacingRef.current;
     wasReplacingRef.current = isReplacingBoard;
     if (wasReplacing && !isReplacingBoard && pendingNavigate) {
       setPendingNavigate(false);
-      onReturnToMenu();
+      
+      // Afficher la modal de score puis rediriger vers feedback
+      setShowScoreModal(true);
     }
-  }, [isReplacingBoard, pendingNavigate, onReturnToMenu]);
+  }, [isReplacingBoard, pendingNavigate]);
 
   const handlePause = async () => {
     try {
@@ -208,18 +213,17 @@ export function GameScreen({ difficulty, gameState, setGameState, onReturnToMenu
     const playerMoves = moves.filter(m => m.player === 'human');
     if (playerMoves.length > 0 && !isGameOver) {
       await saveScoreToLeaderboard('abandoned');
-      setShowScoreSaved(true);
-      setTimeout(() => setShowScoreSaved(false), 3000);
     }
 
     if (replace) {
-      // La navigation vers le menu se fera automatiquement quand isReplacingBoard repasse à false
+      // Après le replacement, on affichera la modal de score puis le feedback
       setPendingNavigate(true);
       await replaceBoard();
     } else {
-      onReturnToMenu();
+      // Sans replacement, afficher directement la modal de score
+      setShowScoreModal(true);
     }
-  }, [moves, isGameOver, replaceBoard, addLog, onReturnToMenu]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [moves, isGameOver, replaceBoard, addLog]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Utilisé par GameOverModal — la partie est déjà terminée, score déjà sauvegardé
   const handleStop = async () => {
@@ -259,6 +263,24 @@ export function GameScreen({ difficulty, gameState, setGameState, onReturnToMenu
   return (
     <div className="h-screen flex flex-col p-4 overflow-hidden">
       <div className="max-w-[1800px] mx-auto w-full flex-1 flex flex-col">
+        {/* Back Button - Top Left */}
+        <button
+          onClick={handleStopRequest}
+          className="
+            absolute top-4 left-4 z-10
+            w-10 h-10 rounded-lg
+            bg-slate-800/50 hover:bg-slate-700/70 backdrop-blur-sm
+            border border-slate-700 hover:border-slate-600
+            flex items-center justify-center
+            text-slate-400 hover:text-white
+            transition-all duration-200
+            shadow-lg hover:scale-105
+          "
+          title="Retour"
+        >
+          <ArrowLeft className="w-5 h-5" />
+        </button>
+
         {/* Header - Compact */}
         <div className="mb-3 flex items-center justify-between">
           <div>
@@ -301,28 +323,6 @@ export function GameScreen({ difficulty, gameState, setGameState, onReturnToMenu
               <div className="flex-1">
                 <PlayerTurnStatus isPlayerTurn={isWhiteTurn} />
               </div>
-
-              {/* Boutons de confirmation du placement */}
-              {!visionGameStarted && (
-                <>
-                  <button
-                    onClick={() => confirmPlacement(true)}
-                    className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium bg-green-600 hover:bg-green-500 text-white transition-colors"
-                    title="La camera voit les pieces — utiliser comme reference"
-                  >
-                    <Camera className="w-4 h-4" />
-                    Confirmer (camera)
-                  </button>
-                  <button
-                    onClick={() => confirmPlacement(false)}
-                    className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium bg-amber-600 hover:bg-amber-500 text-white transition-colors"
-                    title="La camera ne voit pas tous les pions — simuler la position initiale"
-                  >
-                    <CheckCircle className="w-4 h-4" />
-                    Confirmer (manuel)
-                  </button>
-                </>
-              )}
 
               {/* Indicateur partie vision active */}
               {visionGameStarted && (
@@ -386,6 +386,24 @@ export function GameScreen({ difficulty, gameState, setGameState, onReturnToMenu
         playerName={playerName}
         onReturnToMenu={handleStop}
         onViewLeaderboard={handleViewLeaderboard}
+      />
+
+      {/* Score Modal for Manual Stop */}
+      <GameOverModalAbandoned
+        isVisible={showScoreModal}
+        acplScore={acplScore}
+        totalMoves={moves.filter(m => m.player === 'human').length}
+        elapsedTime={elapsedTime}
+        playerName={playerName}
+        onContinue={() => {
+          setShowScoreModal(false);
+          onGoToFeedback({
+            result: 'abandoned',
+            acplScore,
+            totalMoves: moves.filter(m => m.player === 'human').length,
+            elapsedTime
+          });
+        }}
       />
 
       {/* Score Saved Notification */}

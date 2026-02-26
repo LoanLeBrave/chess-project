@@ -1,269 +1,267 @@
 import { useState } from 'react';
-import { Star, Send, ArrowLeft, CheckCircle } from 'lucide-react';
-import { Button } from './ui/button';
-import { Card } from './ui/card';
+import { motion } from 'motion/react';
+import { Star, Send, Home, MessageSquare } from 'lucide-react';
 
 interface FeedbackScreenProps {
-  onSubmit: (ratings: RatingData, comment: string) => void;
-  onBack: () => void;
+  onReturnToMenu: () => void;
   playerName: string;
+  difficulty: string;
+  result: 'win' | 'lose' | 'draw' | 'abandoned';
+  acplScore: number;
 }
 
-interface RatingData {
-  overall: number;
-  design: number;
-  gameplay: number;
-  robotLevel: number;
-}
-
-export function FeedbackScreen({ onSubmit, onBack, playerName }: FeedbackScreenProps) {
-  const [ratings, setRatings] = useState<RatingData>({
-    overall: 0,
-    design: 0,
-    gameplay: 0,
-    robotLevel: 0,
-  });
-  const [hoveredRatings, setHoveredRatings] = useState<RatingData>({
-    overall: 0,
-    design: 0,
-    gameplay: 0,
-    robotLevel: 0,
-  });
-  
+export function FeedbackScreen({ 
+  onReturnToMenu, 
+  playerName, 
+  difficulty,
+  result,
+  acplScore 
+}: FeedbackScreenProps) {
+  const [rating, setRating] = useState(0);
+  const [hoveredRating, setHoveredRating] = useState(0);
   const [comment, setComment] = useState('');
-  const [isSubmitted, setIsSubmitted] = useState(false);
+  const [submitted, setSubmitted] = useState(false);
 
   const handleSubmit = async () => {
-    if (ratings.overall > 0) {
-      const feedbackData = {
-        playerName,
-        ratings,
-        comment,
+    // Envoi du feedback à l'API
+    try {
+      await fetch(`http://${window.location.hostname}:8000/feedback/submit`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          player_name: playerName,
+          rating,
+          comment,
+          difficulty,
+          result,
+          acpl_score: acplScore,
+          timestamp: new Date().toISOString(),
+        }),
+      });
+    } catch {
+      // Fallback localStorage si API indisponible
+      const feedbackData = localStorage.getItem('chessFeedback');
+      const feedback = feedbackData ? JSON.parse(feedbackData) : [];
+      feedback.push({
+        playerName, rating, comment, difficulty, result, acplScore,
         timestamp: new Date().toISOString(),
-      };
-
-      try {
-        await fetch('http://10.33.14.216:3001/feedback', { 
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify(feedbackData),
-        });
-
-        setIsSubmitted(true);
-
-        setTimeout(() => {
-          onSubmit(ratings, comment);
-        }, 2000);
-
-      } catch (error) {
-        console.error('Erreur envoi feedback:', error);
-      }
-
-    } else {
-      onSubmit(ratings, '');
+      });
+      localStorage.setItem('chessFeedback', JSON.stringify(feedback));
     }
-  };
-
-  const handleRatingChange = (category: keyof RatingData, value: number) => {
-    setRatings(prev => ({ ...prev, [category]: value }));
-  };
-
-  const handleHoverChange = (category: keyof RatingData, value: number) => {
-    setHoveredRatings(prev => ({ ...prev, [category]: value }));
-  };
-
-  const renderStars = (category: keyof RatingData, size: 'large' | 'small' = 'small') => {
-    const starSize = size === 'large' ? 'w-14 h-14' : 'w-8 h-8';
     
-    return [1, 2, 3, 4, 5].map((star) => {
-      const isFilled = star <= (hoveredRatings[category] || ratings[category]);
-      return (
-        <button
-          key={star}
-          onClick={() => handleRatingChange(category, star)}
-          onMouseEnter={() => handleHoverChange(category, star)}
-          onMouseLeave={() => handleHoverChange(category, 0)}
-          className="transition-all duration-200 hover:scale-110"
-        >
-          <Star
-            className={`${starSize} transition-all duration-200 ${
-              isFilled
-                ? 'fill-yellow-400 text-yellow-400 drop-shadow-[0_0_8px_rgba(250,204,21,0.5)]'
-                : 'text-slate-600 hover:text-slate-500'
-            }`}
-            strokeWidth={2}
-          />
-        </button>
-      );
-    });
+    setSubmitted(true);
   };
 
-  const getRatingText = (rating: number) => {
-    if (rating === 0) return '';
-    if (rating === 1) return 'Très insatisfait';
-    if (rating === 2) return 'Insatisfait';
-    if (rating === 3) return 'Neutre';
-    if (rating === 4) return 'Satisfait';
-    return 'Très satisfait';
+  const resultLabels = {
+    win: 'Victoire',
+    lose: 'Défaite',
+    draw: 'Match nul',
+    abandoned: 'Partie arrêtée'
   };
 
-  const getCommentPlaceholder = () => {
-    if (ratings.overall <= 2) return 'Dites-nous ce qui pourrait être amélioré...';
-    if (ratings.overall === 3) return 'Partagez votre expérience...';
-    return 'Qu\'avez-vous particulièrement apprécié ?';
-  };
-
-  const categories = [
-    { key: 'design' as keyof RatingData, label: 'Design de l\'interface', icon: '🎨' },
-    { key: 'gameplay' as keyof RatingData, label: 'Expérience de jeu', icon: '♟️' },
-    { key: 'robotLevel' as keyof RatingData, label: 'Niveau du robot', icon: '🤖' },
-  ];
-
-  if (isSubmitted) {
+  if (submitted) {
     return (
-      <div className="h-screen flex items-center justify-center p-4">
-        <Card className="p-8 bg-slate-800/50 border-slate-700 text-center max-w-md">
-          <div className="mb-4 flex justify-center">
-            <div className="w-20 h-20 rounded-full bg-green-500/20 flex items-center justify-center">
-              <CheckCircle className="w-12 h-12 text-green-500" />
+      <div className="min-h-screen flex items-center justify-center p-8">
+        <motion.div
+          initial={{ scale: 0.8, opacity: 0 }}
+          animate={{ scale: 1, opacity: 1 }}
+          className="max-w-md w-full bg-slate-800/50 backdrop-blur-xl rounded-3xl border border-slate-700 shadow-2xl p-8 text-center"
+        >
+          <motion.div
+            initial={{ scale: 0 }}
+            animate={{ scale: 1 }}
+            transition={{ delay: 0.2, type: 'spring', damping: 10 }}
+            className="mb-6"
+          >
+            <div className="w-20 h-20 mx-auto bg-green-500/20 rounded-full flex items-center justify-center border-2 border-green-500/50">
+              <Send className="w-10 h-10 text-green-400" />
             </div>
-          </div>
-          <h2 className="text-2xl font-bold text-white mb-2">
-            Merci pour votre avis !
-          </h2>
-          <p className="text-slate-400">
-            Votre retour nous aide à améliorer l'expérience
-          </p>
-          <div className="mt-6 flex justify-center gap-1">
-            {[...Array(ratings.overall)].map((_, i) => (
-              <Star
-                key={i}
-                className="w-8 h-8 fill-yellow-400 text-yellow-400"
-              />
-            ))}
-          </div>
-          {comment && (
-            <div className="mt-4 p-4 bg-slate-900/50 rounded-lg">
-              <p className="text-sm text-slate-300 italic">"{comment}"</p>
-            </div>
-          )}
-        </Card>
+          </motion.div>
+
+          <motion.h2
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.3 }}
+            className="text-3xl font-bold text-white mb-3"
+          >
+            Merci pour votre feedback !
+          </motion.h2>
+
+          <motion.p
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ delay: 0.4 }}
+            className="text-slate-300 mb-8"
+          >
+            Vos retours nous aident à améliorer l'expérience de jeu avec le robot UR7e.
+          </motion.p>
+
+          <motion.button
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.5 }}
+            onClick={onReturnToMenu}
+            className="
+              w-full px-6 py-4 rounded-xl font-bold text-lg
+              bg-gradient-to-r from-cyan-500 to-blue-600
+              hover:from-cyan-400 hover:to-blue-500
+              text-white shadow-lg shadow-cyan-500/30
+              hover:shadow-cyan-400/50 hover:scale-105
+              transition-all duration-300
+              flex items-center justify-center gap-2
+            "
+          >
+            <Home className="w-5 h-5" />
+            Retour au menu
+          </motion.button>
+        </motion.div>
       </div>
     );
   }
 
   return (
-    <div className="h-screen flex items-center justify-center p-6 overflow-auto">
-      {/* Back Button */}
-      <button
-        onClick={onBack}
-        className="fixed top-4 left-4 flex items-center gap-2 text-slate-400 hover:text-white transition-colors group z-10"
+    <div className="min-h-screen flex items-center justify-center p-8">
+      <motion.div
+        initial={{ opacity: 0, y: 50 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="max-w-2xl w-full bg-slate-800/50 backdrop-blur-xl rounded-3xl border border-slate-700 shadow-2xl p-8"
       >
-        <div className="w-9 h-9 rounded-full bg-slate-800/50 border border-slate-700 flex items-center justify-center group-hover:border-cyan-400 transition-all">
-          <ArrowLeft className="w-4 h-4" />
-        </div>
-        <span className="font-medium text-sm">Retour</span>
-      </button>
+        {/* Header */}
+        <div className="text-center mb-8">
+          <motion.div
+            initial={{ scale: 0 }}
+            animate={{ scale: 1 }}
+            transition={{ type: 'spring', damping: 10 }}
+            className="inline-block mb-4"
+          >
+            <div className="w-16 h-16 mx-auto bg-cyan-500/20 rounded-full flex items-center justify-center border-2 border-cyan-500/50">
+              <MessageSquare className="w-8 h-8 text-cyan-400" />
+            </div>
+          </motion.div>
 
-      {/* Skip Button */}
-      <button
-        onClick={() => onSubmit(ratings, '')}
-        className="fixed top-4 right-4 text-slate-400 hover:text-white transition-colors group z-10"
-      >
-        <span className="font-medium text-sm underline">Passer</span>
-      </button>
-
-      <div className="max-w-3xl w-full py-6">
-        {/* Titre */}
-        <div className="text-center mb-5">
-          <h1 className="text-3xl font-bold text-white mb-2">
-            Votre Avis Nous Intéresse
+          <h1 className="text-4xl font-bold text-white mb-2">
+            Votre avis compte !
           </h1>
-          <p className="text-slate-400">
+          <p className="text-slate-300 text-lg">
             Comment s'est passée votre partie contre le robot UR7e ?
           </p>
         </div>
 
-        <Card className="p-5 bg-slate-800/50 border-slate-700">
-          {/* Note générale */}
-          <div className="mb-6">
-            <h2 className="text-xl font-bold text-white mb-3 text-center">
-              ⭐ Note générale
-            </h2>
-            <div className="flex justify-center gap-2 mb-2">
-              {renderStars('overall', 'large')}
+        {/* Game Summary */}
+        <div className="bg-slate-700/30 rounded-xl p-4 mb-8 border border-slate-600/50">
+          <div className="grid grid-cols-2 gap-4 text-sm">
+            <div>
+              <span className="text-slate-400">Joueur:</span>
+              <span className="text-white font-semibold ml-2">{playerName}</span>
             </div>
-            {ratings.overall > 0 && (
-              <p className="text-center text-base font-medium text-cyan-400 transition-all duration-300">
-                {getRatingText(ratings.overall)}
-              </p>
-            )}
+            <div>
+              <span className="text-slate-400">Difficulté:</span>
+              <span className="text-cyan-400 font-semibold ml-2">
+                {difficulty === 'beginner' ? 'Débutant' : difficulty === 'intermediate' ? 'Intermédiaire' : 'Difficile'}
+              </span>
+            </div>
+            <div>
+              <span className="text-slate-400">Résultat:</span>
+              <span className="text-white font-semibold ml-2">{resultLabels[result]}</span>
+            </div>
+            <div>
+              <span className="text-slate-400">Score ACPL:</span>
+              <span className="text-cyan-400 font-semibold ml-2">{acplScore}</span>
+            </div>
           </div>
+        </div>
 
-          {/* Notes détaillées */}
-          <div className="space-y-3 mb-5">
-            <h3 className="text-base font-semibold text-white mb-2">
-              Notez en détail
-            </h3>
-            
-            {categories.map((category) => (
-              <div key={category.key} className="flex items-center gap-3">
-                <div className="flex items-center gap-2 min-w-[160px]">
-                  <span className="text-xl">{category.icon}</span>
-                  <span className="text-sm font-medium text-slate-300">
-                    {category.label}
-                  </span>
-                </div>
-                <div className="flex gap-1 flex-1 justify-center">
-                  {renderStars(category.key, 'small')}
-                </div>
-              </div>
+        {/* Rating */}
+        <div className="mb-8">
+          <label className="block text-white font-semibold mb-4 text-lg">
+            Notez votre expérience
+          </label>
+          <div className="flex items-center justify-center gap-3">
+            {[1, 2, 3, 4, 5].map((star) => (
+              <button
+                key={star}
+                onClick={() => setRating(star)}
+                onMouseEnter={() => setHoveredRating(star)}
+                onMouseLeave={() => setHoveredRating(0)}
+                className="transition-all duration-200 hover:scale-125"
+              >
+                <Star
+                  className={`w-12 h-12 transition-colors ${
+                    star <= (hoveredRating || rating)
+                      ? 'text-yellow-400 fill-yellow-400'
+                      : 'text-slate-600'
+                  }`}
+                />
+              </button>
             ))}
           </div>
-
-          {/* Zone de commentaire */}
-          <div className="space-y-3">
-            <div>
-              <label className="block text-sm font-medium text-slate-300 mb-2">
-                Votre commentaire (optionnel)
-              </label>
-              <textarea
-                value={comment}
-                onChange={(e) => setComment(e.target.value)}
-                placeholder={getCommentPlaceholder()}
-                rows={3}
-                maxLength={500}
-                className="w-full px-4 py-3 bg-slate-900/50 border border-slate-700 rounded-lg text-white placeholder-slate-500 focus:border-cyan-500 focus:outline-none focus:ring-2 focus:ring-cyan-500/20 transition-all resize-none"
-              />
-              <p className="text-xs text-slate-500 mt-1">
-                {comment.length} / 500 caractères
-              </p>
-            </div>
-
-            {/* Bouton d'envoi */}
-            <div className="flex justify-center pt-1">
-              <Button
-                onClick={handleSubmit}
-                size="lg"
-                disabled={ratings.overall === 0}
-                className="px-8 py-5 rounded-xl text-base font-bold bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white shadow-2xl shadow-cyan-500/50 hover:shadow-cyan-400/60 hover:scale-105 transition-all duration-300 border-0 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
-              >
-                <Send className="w-4 h-4 mr-2" />
-                Envoyer mon avis
-              </Button>
-            </div>
-          </div>
-        </Card>
-
-        {/* Info sur qui reçoit l'avis */}
-        <div className="mt-4 text-center">
-          <p className="text-xs text-slate-500">
-            Votre avis sera transmis à l'équipe de développement pour améliorer l'expérience
-          </p>
+          {rating > 0 && (
+            <p className="text-center text-slate-400 mt-3">
+              {rating === 1 && 'Très décevant'}
+              {rating === 2 && 'Décevant'}
+              {rating === 3 && 'Correct'}
+              {rating === 4 && 'Très bien'}
+              {rating === 5 && 'Excellent !'}
+            </p>
+          )}
         </div>
-      </div>
+
+        {/* Comment */}
+        <div className="mb-8">
+          <label className="block text-white font-semibold mb-3 text-lg">
+            Commentaire (optionnel)
+          </label>
+          <textarea
+            value={comment}
+            onChange={(e) => setComment(e.target.value)}
+            placeholder="Partagez votre expérience, suggestions d'amélioration..."
+            className="
+              w-full bg-slate-700/50 border border-slate-600 rounded-xl
+              text-white placeholder-slate-500
+              px-4 py-3 min-h-[120px] resize-none
+              focus:outline-none focus:ring-2 focus:ring-cyan-500/50
+              transition-all
+            "
+            maxLength={500}
+          />
+          <div className="text-right text-slate-500 text-sm mt-2">
+            {comment.length}/500
+          </div>
+        </div>
+
+        {/* Action Buttons */}
+        <div className="flex gap-4">
+          <button
+            onClick={onReturnToMenu}
+            className="
+              flex-1 px-6 py-4 rounded-xl font-bold text-lg
+              bg-slate-700 hover:bg-slate-600
+              text-white
+              transition-all duration-300
+              hover:scale-105
+            "
+          >
+            Passer
+          </button>
+          <button
+            onClick={handleSubmit}
+            disabled={rating === 0}
+            className={`
+              flex-1 px-6 py-4 rounded-xl font-bold text-lg
+              ${rating === 0
+                ? 'bg-slate-700/50 text-slate-500 cursor-not-allowed'
+                : 'bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 shadow-lg shadow-cyan-500/30 hover:shadow-cyan-400/50 hover:scale-105'
+              }
+              text-white
+              transition-all duration-300
+              flex items-center justify-center gap-2
+            `}
+          >
+            <Send className="w-5 h-5" />
+            Envoyer
+          </button>
+        </div>
+      </motion.div>
     </div>
   );
 }
