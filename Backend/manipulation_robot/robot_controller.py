@@ -344,7 +344,11 @@ class RobotController:
         time.sleep(0.2)
 
     async def reconnect(self) -> bool:
-        """Reconnexion complète RTDE + gripper. Appelé manuellement ou après un timeout."""
+        """Reconnexion complète RTDE + gripper avec retries. Appelé manuellement ou après un timeout."""
+        MAX_RETRIES = 8          # Nombre maximum de tentatives
+        RETRY_DELAY = 3.0        # Secondes entre chaque tentative
+        CONNECT_TIMEOUT = 12.0   # Timeout par tentative (la lib ur_rtde a 5s en interne)
+
         await self.log("info", "Reconnexion au robot en cours...")
 
         # Fermer les connexions existantes dans un executor pour ne pas bloquer l'event loop
@@ -363,24 +367,35 @@ class RobotController:
         self.gripper = None
         self.connected = False
 
-        await asyncio.sleep(0.5)  # Laisser le robot se stabiliser
+        await asyncio.sleep(1.0)  # Laisser le robot se stabiliser
 
-        try:
-            await asyncio.wait_for(
-                loop.run_in_executor(None, self._do_connect),
-                timeout=30.0
-            )
-            self.connected = True
-            await self.log("info", "Robot reconnecté avec succès")
-            return True
-        except asyncio.TimeoutError:
-            self.connected = False
-            await self.log("error", "Timeout lors de la reconnexion (30s)")
-            return False
-        except Exception as e:
-            self.connected = False
-            await self.log("error", f"Échec de la reconnexion : {e}")
-            return False
+        for attempt in range(1, MAX_RETRIES + 1):
+            await self.log("info", f"Tentative {attempt}/{MAX_RETRIES}...")
+            try:
+                await asyncio.wait_for(
+                    loop.run_in_executor(None, self._do_connect),
+                    timeout=CONNECT_TIMEOUT
+                )
+                self.connected = True
+                await self.log("info", f"Robot reconnecté avec succès (tentative {attempt})")
+                return True
+            except asyncio.TimeoutError:
+                await self.log("warning", f"Tentative {attempt}/{MAX_RETRIES} : timeout ({CONNECT_TIMEOUT}s)")
+            except Exception as e:
+                await self.log("warning", f"Tentative {attempt}/{MAX_RETRIES} : {e}")
+
+            # Nettoyer les objets partiellement créés avant de réessayer
+            self.rtde_c = None
+            self.rtde_r = None
+            self.gripper = None
+
+            if attempt < MAX_RETRIES:
+                await self.log("info", f"Nouvelle tentative dans {RETRY_DELAY:.0f}s...")
+                await asyncio.sleep(RETRY_DELAY)
+
+        self.connected = False
+        await self.log("error", f"Échec de la reconnexion après {MAX_RETRIES} tentatives")
+        return False
 
     async def execute_move(self, from_sq: str, to_sq: str, is_capture: bool, captured_piece=None,
                            precise_pick_coords=None, castling_rook: Optional[Tuple[str, str]] = None,
