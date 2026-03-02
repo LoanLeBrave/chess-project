@@ -44,7 +44,7 @@ export function GameScreen({ difficulty, gameState, setGameState, onReturnToMenu
   const [isReconnecting, setIsReconnecting] = useState(false);
   const wasReplacingRef = useRef(false);
 
-  const addLog = (type: LogEntry['type'], message: string) => {
+  const addLog = useCallback((type: LogEntry['type'], message: string) => {
     const newLog: LogEntry = {
       id: Math.random().toString(36).substr(2, 9),
       timestamp: new Date(),
@@ -52,16 +52,16 @@ export function GameScreen({ difficulty, gameState, setGameState, onReturnToMenu
       message
     };
     setLogs(prev => [newLog, ...prev].slice(0, 100));
-  };
+  }, []);
 
-  const addMove = (move: Omit<ChessMove, 'id' | 'timestamp'>) => {
+  const addMove = useCallback((move: Omit<ChessMove, 'id' | 'timestamp'>) => {
     const newMove: ChessMove = {
       ...move,
       id: Math.random().toString(36).substr(2, 9),
       timestamp: new Date()
     };
     setMoves(prev => [...prev, newMove]);
-  };
+  }, []);
 
   const API_BASE = `http://${window.location.hostname}:8000`;
 
