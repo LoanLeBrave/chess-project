@@ -41,7 +41,7 @@ export function ControlPanel({
           onClick={onPause}
           className="
             flex items-center justify-center gap-2 px-3 py-2 rounded-lg font-semibold text-sm
-            bg-slate-600 hover:bg-slate-500 text-white
+            bg-yellow-500 hover:bg-yellow-400 text-slate-900
             transition-all duration-200 shadow-lg hover:scale-105
           "
         >

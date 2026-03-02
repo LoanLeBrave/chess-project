@@ -1,6 +1,9 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { Lock, Unlock, CheckCircle, Hand, ArrowLeft, SkipForward, AlignVerticalSpaceAround, Camera, Home, RotateCcw, Loader2, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import etape1Image from './images/etape1.jpg';
+import etape2Image from './images/etape2.jpg';
+import etape3Image from './images/etape3.jpg';
 
 interface CalibrationScreenProps {
   onCalibrationComplete: () => void;
@@ -471,19 +474,19 @@ export function CalibrationScreen({ onCalibrationComplete, onBack }: Calibration
                 <div className={`bg-slate-800/50 backdrop-blur-sm rounded-xl overflow-hidden border-2 transition-all
                   ${calibrationStep === 'a1' ? 'border-cyan-500 shadow-lg shadow-cyan-500/20' : a1Calibrated ? 'border-green-500' : 'border-slate-700 opacity-60'}`}>
                   {/* Image - Format carré fixe comme SafetyScreen */}
-                  <div className="w-40 h-40 mx-auto bg-slate-900/80 rounded-lg overflow-hidden relative">
+                  <div className="relative w-40 h-40 mx-auto bg-slate-900/80 rounded-lg overflow-hidden">
                     <img 
-                      src="https://images.unsplash.com/photo-1763788427927-87bc7c1fbcf7?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxyb2JvdGljJTIwYXJtJTIwY2hlc3MlMjBib2FyZCUyMHBvc2l0aW9uJTIwY29ybmVyfGVufDF8fHx8MTc3MjA5NTgyNXww&ixlib=rb-4.1.0&q=80&w=1080&utm_source=figma&utm_medium=referral"
+                      src={etape1Image}
                       alt="Robot positioning A1"
                       className="w-full h-full object-cover"
                     />
-                    <div className="absolute top-3 left-3">
-                      <div className={`w-12 h-12 rounded-xl flex items-center justify-center backdrop-blur-md border-2
+                    <div className="absolute top-2 left-2">
+                      <div className={`w-10 h-10 rounded-lg flex items-center justify-center backdrop-blur-md border-2
                         ${a1Calibrated ? 'bg-green-500/90 border-green-400' : 'bg-cyan-500/90 border-cyan-400'}`}>
                         {a1Calibrated ? (
-                          <CheckCircle className="w-6 h-6 text-white" strokeWidth={2.5} />
+                          <CheckCircle className="w-5 h-5 text-white" strokeWidth={2.5} />
                         ) : (
-                          <span className="text-white font-bold text-xl">1</span>
+                          <span className="text-white font-bold text-lg">1</span>
                         )}
                       </div>
                     </div>
@@ -526,19 +529,19 @@ export function CalibrationScreen({ onCalibrationComplete, onBack }: Calibration
                 <div className={`bg-slate-800/50 backdrop-blur-sm rounded-xl overflow-hidden border-2 transition-all
                   ${calibrationStep === 'h8' ? 'border-cyan-500 shadow-lg shadow-cyan-500/20' : h8Calibrated ? 'border-green-500' : 'border-slate-700 opacity-60'}`}>
                   {/* Image - Format carré fixe comme SafetyScreen */}
-                  <div className="w-40 h-40 mx-auto bg-slate-900/80 rounded-lg overflow-hidden relative">
+                  <div className="relative w-40 h-40 mx-auto bg-slate-900/80 rounded-lg overflow-hidden">
                     <img 
-                      src="https://images.unsplash.com/photo-1712238107648-4e94c158ab3d?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxpbmR1c3RyaWFsJTIwcm9ib3QlMjBhcm0lMjBjYWxpYnJhdGlvbiUyMHBvc2l0aW9uaW5nfGVufDF8fHx8MTc3MjA5NTgyNnww&ixlib=rb-4.1.0&q=80&w=1080&utm_source=figma&utm_medium=referral"
+                      src={etape2Image}
                       alt="Robot positioning H8"
                       className="w-full h-full object-cover"
                     />
-                    <div className="absolute top-3 left-3">
-                      <div className={`w-12 h-12 rounded-xl flex items-center justify-center backdrop-blur-md border-2
+                    <div className="absolute top-2 left-2">
+                      <div className={`w-12 h-12 rounded-lg flex items-center justify-center backdrop-blur-md border-2
                         ${h8Calibrated ? 'bg-green-500/90 border-green-400' : 'bg-cyan-500/90 border-cyan-400'}`}>
                         {h8Calibrated ? (
-                          <CheckCircle className="w-6 h-6 text-white" strokeWidth={2.5} />
+                          <CheckCircle className="w-5 h-5 text-white" strokeWidth={2.5} />
                         ) : (
-                          <span className="text-white font-bold text-xl">2</span>
+                          <span className="text-white font-bold text-lg">2</span>
                         )}
                       </div>
                     </div>
@@ -581,19 +584,19 @@ export function CalibrationScreen({ onCalibrationComplete, onBack }: Calibration
                 <div className={`bg-slate-800/50 backdrop-blur-sm rounded-xl overflow-hidden border-2 transition-all
                   ${calibrationStep === 'z' ? 'border-cyan-500 shadow-lg shadow-cyan-500/20' : zCalibrated ? 'border-green-500' : 'border-slate-700 opacity-60'}`}>
                   {/* Image - Format carré fixe comme SafetyScreen */}
-                  <div className="w-40 h-40 mx-auto bg-slate-900/80 rounded-lg overflow-hidden relative">
+                  <div className="relative w-40 h-40 mx-auto bg-slate-900/80 rounded-lg overflow-hidden">
                     <img 
-                      src="https://images.unsplash.com/photo-1744659883786-af50c0e72588?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxyb2JvdCUyMGdyaXBwZXIlMjBoZWlnaHQlMjBhZGp1c3RtZW50JTIwdmVydGljYWx8ZW58MXx8fHwxNzcyMDk1ODI2fDA&ixlib=rb-4.1.0&q=80&w=1080&utm_source=figma&utm_medium=referral"
+                      src={etape3Image}
                       alt="Robot height adjustment"
                       className="w-full h-full object-cover"
                     />
-                    <div className="absolute top-3 left-3">
-                      <div className={`w-12 h-12 rounded-xl flex items-center justify-center backdrop-blur-md border-2
+                    <div className="absolute top-2 left-2">
+                      <div className={`w-10 h-10 rounded-lg flex items-center justify-center backdrop-blur-md border-2
                         ${zCalibrated ? 'bg-green-500/90 border-green-400' : 'bg-cyan-500/90 border-cyan-400'}`}>
                         {zCalibrated ? (
-                          <CheckCircle className="w-6 h-6 text-white" strokeWidth={2.5} />
+                          <CheckCircle className="w-5 h-5 text-white" strokeWidth={2.5} />
                         ) : (
-                          <span className="text-white font-bold text-xl">3</span>
+                          <span className="text-white font-bold text-lg">3</span>
                         )}
                       </div>
                     </div>
