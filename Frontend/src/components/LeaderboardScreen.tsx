@@ -126,7 +126,7 @@ export function LeaderboardScreen({ onBack }: LeaderboardScreenProps) {
           <div className="flex items-center justify-center gap-3 mb-4">
             <Trophy className="w-14 h-14 text-yellow-400" />
             <h1 className="text-5xl font-bold bg-gradient-to-r from-yellow-400 via-amber-400 to-orange-400 bg-clip-text text-transparent">
-              Top 10 Mondiaux
+              Top 10 Junia
             </h1>
           </div>
           <p className="text-xl text-slate-400 mb-4">Les meilleurs cerveaux face au robot UR7e</p>
