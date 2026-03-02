@@ -1,12 +1,13 @@
-import { Bot, Trophy } from 'lucide-react';
+import { Bot, Trophy, MessageSquare } from 'lucide-react';
 import { Button } from './ui/button';
 
 interface WelcomeScreenProps {
   onContinue: () => void;
   onViewLeaderboard: () => void;
+  onViewFeedbackLogs: () => void;
 }
 
-export function WelcomeScreen({ onContinue, onViewLeaderboard }: WelcomeScreenProps) {
+export function WelcomeScreen({ onContinue, onViewLeaderboard, onViewFeedbackLogs }: WelcomeScreenProps) {
   return (
     <div className="min-h-screen flex items-center justify-center p-8">
       <div className="max-w-2xl w-full text-center">
@@ -51,6 +52,15 @@ export function WelcomeScreen({ onContinue, onViewLeaderboard }: WelcomeScreenPr
           >
             <Trophy className="w-5 h-5 group-hover:scale-110 transition-transform" />
             <span className="font-medium">Voir le classement</span>
+          </button>
+
+          {/* Bouton Feedback */}
+          <button
+            onClick={onViewFeedbackLogs}
+            className="flex items-center gap-2 text-slate-400 hover:text-yellow-400 transition-colors group px-6 py-3 rounded-lg hover:bg-slate-800/50"
+          >
+            <MessageSquare className="w-5 h-5 group-hover:scale-110 transition-transform" />
+            <span className="font-medium">Voir les feedbacks</span>
           </button>
         </div>
 

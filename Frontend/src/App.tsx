@@ -7,10 +7,11 @@ import { GameScreen } from './components/GameScreen';
 import { LeaderboardScreen } from './components/LeaderboardScreen';
 import { PlacementConfirmationScreen } from './components/PlacementConfirmationScreen';
 import { FeedbackScreen } from './components/FeedbackScreen';
+import { FeedbackLogsScreen } from './components/FeedbackLogsScreen';
 
 export type DifficultyLevel = 'beginner' | 'intermediate' | 'advanced';
 export type GameState = 'menu' | 'playing' | 'paused' | 'finished';
-export type AppScreen = 'welcome' | 'leaderboard' | 'calibration' | 'safety' | 'difficulty' | 'placement' | 'game' | 'feedback';
+export type AppScreen = 'welcome' | 'leaderboard' | 'calibration' | 'safety' | 'difficulty' | 'placement' | 'game' | 'feedback' | 'feedbackLogs';
 
 export interface LogEntry {
   id: string;
@@ -96,12 +97,21 @@ function App() {
     setCurrentScreen('welcome');
   };
 
+  const handleViewFeedbackLogs = () => {
+    setCurrentScreen('feedbackLogs');
+  };
+
+  const handleFeedbackLogsBack = () => {
+    setCurrentScreen('welcome');
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900">
       {currentScreen === 'welcome' && (
         <WelcomeScreen 
           onContinue={handleWelcomeContinue}
           onViewLeaderboard={handleViewLeaderboard}
+          onViewFeedbackLogs={handleViewFeedbackLogs}
         />
       )}
       {currentScreen === 'leaderboard' && (
@@ -149,6 +159,9 @@ function App() {
           result={gameResults.result}
           acplScore={gameResults.acplScore}
         />
+      )}
+      {currentScreen === 'feedbackLogs' && (
+        <FeedbackLogsScreen onBack={handleFeedbackLogsBack} />
       )}
     </div>
   );
