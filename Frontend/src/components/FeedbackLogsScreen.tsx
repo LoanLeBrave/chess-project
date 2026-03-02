@@ -48,13 +48,15 @@ export function FeedbackLogsScreen({ onBack }: FeedbackLogsScreenProps) {
       if (data.feedbacks) {
         setFeedbacks(data.feedbacks);
         calculateStats(data.feedbacks);
+      } else {
+        setFeedbacks([]);
+        calculateStats([]);
       }
     } catch (err) {
-      console.error('Error loading feedbacks:', err);
-      // Fallback to mock data for testing
-      const mockData = generateMockFeedbacks();
-      setFeedbacks(mockData);
-      calculateStats(mockData);
+      console.log('API non disponible - Mode local');
+      // Initialize with empty data when API is not available
+      setFeedbacks([]);
+      calculateStats([]);
     }
     setLoading(false);
   };
@@ -81,48 +83,7 @@ export function FeedbackLogsScreen({ onBack }: FeedbackLogsScreenProps) {
   };
 
   const generateMockFeedbacks = (): FeedbackEntry[] => {
-    return [
-      {
-        id: '1',
-        rating: 5,
-        comment: 'Expérience incroyable ! Le robot joue très bien.',
-        timestamp: new Date(Date.now() - 3600000).toISOString(),
-        playerName: 'Alexandre',
-        difficulty: 'Intermédiaire'
-      },
-      {
-        id: '2',
-        rating: 4,
-        comment: 'Très bon système, quelques lenteurs parfois.',
-        timestamp: new Date(Date.now() - 7200000).toISOString(),
-        playerName: 'Sophie',
-        difficulty: 'Facile'
-      },
-      {
-        id: '3',
-        rating: 5,
-        comment: 'Parfait pour apprendre les échecs !',
-        timestamp: new Date(Date.now() - 10800000).toISOString(),
-        playerName: 'Marc',
-        difficulty: 'Débutant'
-      },
-      {
-        id: '4',
-        rating: 3,
-        comment: 'Bien mais le robot a fait quelques erreurs.',
-        timestamp: new Date(Date.now() - 14400000).toISOString(),
-        playerName: 'Julie',
-        difficulty: 'Difficile'
-      },
-      {
-        id: '5',
-        rating: 5,
-        comment: 'Interface magnifique et robot impressionnant !',
-        timestamp: new Date(Date.now() - 18000000).toISOString(),
-        playerName: 'Thomas',
-        difficulty: 'Expert'
-      }
-    ];
+    return [];
   };
 
   const handlePinChange = (index: number, value: string) => {
