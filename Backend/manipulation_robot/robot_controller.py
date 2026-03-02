@@ -266,6 +266,32 @@ class RobotController:
             await asyncio.sleep(0.01)  # Vérifier toutes les 10ms
         return True
 
+    async def _gripper_open(self):
+        """Ouvre le gripper via executor — ne bloque pas l'event loop."""
+        if not self.connected or not self.gripper:
+            return
+        loop = asyncio.get_running_loop()
+        try:
+            await asyncio.wait_for(
+                loop.run_in_executor(None, lambda: self.gripper.move(GRIPPER_OUVERTURE)),
+                timeout=5.0
+            )
+        except Exception:
+            pass
+
+    async def _gripper_close(self):
+        """Ferme le gripper via executor — ne bloque pas l'event loop."""
+        if not self.connected or not self.gripper:
+            return
+        loop = asyncio.get_running_loop()
+        try:
+            await asyncio.wait_for(
+                loop.run_in_executor(None, self.gripper.close),
+                timeout=5.0
+            )
+        except Exception:
+            pass
+
     async def _move_tcp(self, target_pose, speed=VITESSE, acc=ACCELERATION):
         """Déplace le TCP — non-bloquant via run_in_executor. Timeout après MOVE_TIMEOUT secondes."""
         if self.is_paused:
@@ -511,8 +537,7 @@ class RobotController:
             p_app[2] += DELTA_APPROCHE
 
             # Ouvrir le gripper
-            if self.connected:
-                self.gripper.move(GRIPPER_OUVERTURE)
+            await self._gripper_open()
             if not await self._wait_with_pause_check(0.05):
                 return False
 
@@ -529,8 +554,7 @@ class RobotController:
                 return False
 
             # Fermer le gripper
-            if self.connected:
-                self.gripper.close()
+            await self._gripper_close()
             if not await self._wait_with_pause_check(0.2):
                 return False
 
@@ -580,8 +604,7 @@ class RobotController:
                 return False
 
             # Ouvrir le gripper
-            if self.connected:
-                self.gripper.move(GRIPPER_OUVERTURE)
+            await self._gripper_open()
             if not await self._wait_with_pause_check(0.1):
                 return False
 
@@ -609,8 +632,7 @@ class RobotController:
         p_app_pick[2] += DELTA_APPROCHE
 
         # ===== PICK =====
-        if self.connected:
-            self.gripper.move(GRIPPER_OUVERTURE)
+        await self._gripper_open()
         if not await self._wait_with_pause_check(0.05):
             return False
 
@@ -627,8 +649,7 @@ class RobotController:
             return False
 
         # Fermeture gripper
-        if self.connected:
-            self.gripper.close()
+        await self._gripper_close()
         if not await self._wait_with_pause_check(0.2):
             return False
 
@@ -661,8 +682,7 @@ class RobotController:
             return False
 
         # Ouverture gripper
-        if self.connected:
-            self.gripper.move(GRIPPER_OUVERTURE)
+        await self._gripper_open()
         if not await self._wait_with_pause_check(0.1):
             return False
 
