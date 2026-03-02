@@ -225,6 +225,17 @@ export function PlacementConfirmationScreen({ onConfirm, onBack }: Readonly<Plac
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 flex items-center justify-center p-6">
+      {/* Back Button */}
+      <button
+        onClick={onBack}
+        className="absolute top-4 left-4 flex items-center gap-2 text-slate-400 hover:text-white transition-colors group z-10"
+      >
+        <div className="w-9 h-9 rounded-full bg-slate-800/50 backdrop-blur-sm border border-slate-700 flex items-center justify-center group-hover:border-cyan-400 transition-all shadow-lg">
+          <ArrowLeft className="w-4 h-4" />
+        </div>
+        <span className="font-medium text-sm">Retour</span>
+      </button>
+
       <motion.div
         initial={{ opacity: 0, scale: 0.95 }}
         animate={{ opacity: 1, scale: 1 }}
@@ -342,6 +353,16 @@ export function PlacementConfirmationScreen({ onConfirm, onBack }: Readonly<Plac
             >
               <ArrowLeft className="w-5 h-5" />
               Retour
+            </button>
+
+            {/* Bouton debug pour passer la vérification */}
+            <button
+              onClick={onConfirm}
+              className="flex items-center gap-2 px-4 py-2.5 bg-purple-600/50 hover:bg-purple-600 text-purple-200 text-sm rounded-lg transition-all duration-300 border border-purple-500/50"
+              title="Mode debug - passer directement"
+            >
+              <Play className="w-4 h-4" />
+              Debug: Passer
             </button>
 
             <button

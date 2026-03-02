@@ -1,22 +1,26 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Eye, EyeOff, Camera, CheckCircle, AlertTriangle, X, RotateCcw, Pencil } from 'lucide-react';
+import { Eye, EyeOff, Camera, CheckCircle, AlertTriangle, X, RotateCcw, Pencil, ArrowLeft } from 'lucide-react';
 import { ChessBoard } from './ChessBoard';
 import { ControlPanel } from './ControlPanel';
 import { MoveHistory } from './MoveHistory';
 import { RobotStatus } from './RobotStatus';
 import { PlayerTurnStatus } from './PlayerTurnStatus';
 import { GameOverModal } from './GameOverModal';
+import { GameOverModalAbandoned } from './GameOverModalAbandoned';
 import { ScoreSavedNotification } from './ScoreSavedNotification';
 import { StopConfirmModal } from './StopConfirmModal';
 import { PromotionModal } from './PromotionModal';
+import { CheckmateWarning } from './CheckmateWarning';
 import { useChessRobot } from '../hooks/useChessRobot';
-import type { DifficultyLevel, GameState, LogEntry } from '../App';
+import type { DifficultyLevel, GameState, LogEntry, GameResults } from '../App';
+import { motion } from 'framer-motion';
 
 interface GameScreenProps {
   difficulty: DifficultyLevel;
   gameState: GameState;
   setGameState: (state: GameState) => void;
   onReturnToMenu: () => void;
+  onGoToFeedback: (results: GameResults) => void;
   playerName: string;
 }
 
@@ -29,16 +33,21 @@ export interface ChessMove {
   timestamp: Date;
 }
 
-export function GameScreen({ difficulty, gameState, setGameState, onReturnToMenu, playerName }: GameScreenProps) {
+export function GameScreen({ difficulty, gameState, setGameState, onReturnToMenu, onGoToFeedback, playerName }: GameScreenProps) {
   const [elapsedTime, setElapsedTime] = useState(0);
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [moves, setMoves] = useState<ChessMove[]>([]);
   const [showScoreSaved, setShowScoreSaved] = useState(false);
   const [showVision, setShowVision] = useState(true);
   const [showStopModal, setShowStopModal] = useState(false);
+  const [showScoreModal, setShowScoreModal] = useState(false);
   const [pendingNavigate, setPendingNavigate] = useState(false);
   const [isReconnecting, setIsReconnecting] = useState(false);
   const wasReplacingRef = useRef(false);
+  
+  // Checkmate warning states
+  const [showCheckmateWarning, setShowCheckmateWarning] = useState(false);
+  const [checkmateWarningType, setCheckmateWarningType] = useState<'danger' | 'opportunity'>('danger');
 
   const addLog = (type: LogEntry['type'], message: string) => {
     const newLog: LogEntry = {
@@ -107,6 +116,48 @@ export function GameScreen({ difficulty, gameState, setGameState, onReturnToMenu
     return () => clearTimeout(timer);
   }, [illegalMoveAlert, dismissIllegalAlert]);
 
+  // Check for forced checkmate (call API with FEN to get Stockfish analysis)
+  useEffect(() => {
+    if (isGameOver || moves.length === 0) return;
+
+    const checkForForcedCheckmate = async () => {
+      try {
+        const res = await fetch(`${API_BASE}/game/analyze-position`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ fen })
+        });
+        const data = await res.json();
+
+        // data.forced_mate could be: null, positive number (white wins in N moves), negative number (black wins in N moves)
+        if (data.forced_mate !== null && data.forced_mate !== undefined) {
+          const movesUntilMate = Math.abs(data.forced_mate);
+          
+          // Only show warning if mate is within 5 moves
+          if (movesUntilMate <= 5 && movesUntilMate > 0) {
+            if (data.forced_mate > 0) {
+              // White (player) has forced mate
+              setCheckmateWarningType('opportunity');
+              setShowCheckmateWarning(true);
+              addLog('info', `Mat forcé en ${movesUntilMate} coup(s) !`);
+            } else {
+              // Black (robot) has forced mate
+              setCheckmateWarningType('danger');
+              setShowCheckmateWarning(true);
+              addLog('warning', `Attention ! Mat imminent en ${movesUntilMate} coup(s)`);
+            }
+          }
+        }
+      } catch {
+        // API not available or error - silently ignore
+      }
+    };
+
+    // Check after each move with a small delay
+    const timer = setTimeout(checkForForcedCheckmate, 1000);
+    return () => clearTimeout(timer);
+  }, [fen, moves.length, isGameOver, addLog]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Sauvegarder le score via l'API quand la partie se termine
   const saveScoreToLeaderboard = async (result: 'win' | 'lose' | 'draw' | 'abandoned') => {
     const playerMoves = moves.filter(m => m.player === 'human');
@@ -172,15 +223,17 @@ export function GameScreen({ difficulty, gameState, setGameState, onReturnToMenu
     }, 1500);
   }, []);
 
-  // Navigue vers le menu après remplacement (quand isReplacingBoard passe de true → false)
+  // Navigue vers le feedback après remplacement (quand isReplacingBoard passe de true → false)
   useEffect(() => {
     const wasReplacing = wasReplacingRef.current;
     wasReplacingRef.current = isReplacingBoard;
     if (wasReplacing && !isReplacingBoard && pendingNavigate) {
       setPendingNavigate(false);
-      onReturnToMenu();
+      
+      // Afficher la modal de score puis rediriger vers feedback
+      setShowScoreModal(true);
     }
-  }, [isReplacingBoard, pendingNavigate, onReturnToMenu]);
+  }, [isReplacingBoard, pendingNavigate]);
 
   const handlePause = async () => {
     try {
@@ -215,18 +268,17 @@ export function GameScreen({ difficulty, gameState, setGameState, onReturnToMenu
     const playerMoves = moves.filter(m => m.player === 'human');
     if (playerMoves.length > 0 && !isGameOver) {
       await saveScoreToLeaderboard('abandoned');
-      setShowScoreSaved(true);
-      setTimeout(() => setShowScoreSaved(false), 3000);
     }
 
     if (replace) {
-      // La navigation vers le menu se fera automatiquement quand isReplacingBoard repasse à false
+      // Après le replacement, on affichera la modal de score puis le feedback
       setPendingNavigate(true);
       await replaceBoard();
     } else {
-      onReturnToMenu();
+      // Sans replacement, afficher directement la modal de score
+      setShowScoreModal(true);
     }
-  }, [moves, isGameOver, replaceBoard, addLog, onReturnToMenu]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [moves, isGameOver, replaceBoard, addLog]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Utilisé par GameOverModal — la partie est déjà terminée, score déjà sauvegardé
   const handleStop = async () => {
@@ -285,6 +337,24 @@ export function GameScreen({ difficulty, gameState, setGameState, onReturnToMenu
   return (
     <div className="h-screen flex flex-col p-4 overflow-hidden">
       <div className="max-w-[1800px] mx-auto w-full flex-1 flex flex-col">
+        {/* Back Button - Top Left */}
+        <button
+          onClick={handleStopRequest}
+          className="
+            absolute top-4 left-4 z-10
+            w-10 h-10 rounded-lg
+            bg-slate-800/50 hover:bg-slate-700/70 backdrop-blur-sm
+            border border-slate-700 hover:border-slate-600
+            flex items-center justify-center
+            text-slate-400 hover:text-white
+            transition-all duration-200
+            shadow-lg hover:scale-105
+          "
+          title="Retour"
+        >
+          <ArrowLeft className="w-5 h-5" />
+        </button>
+
         {/* Header - Compact */}
         <div className="mb-3 flex items-center justify-between">
           <div>
@@ -327,28 +397,6 @@ export function GameScreen({ difficulty, gameState, setGameState, onReturnToMenu
               <div className="flex-1">
                 <PlayerTurnStatus isPlayerTurn={isWhiteTurn} />
               </div>
-
-              {/* Boutons de confirmation du placement */}
-              {!visionGameStarted && (
-                <>
-                  <button
-                    onClick={() => confirmPlacement(true)}
-                    className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium bg-green-600 hover:bg-green-500 text-white transition-colors"
-                    title="La camera voit les pieces — utiliser comme reference"
-                  >
-                    <Camera className="w-4 h-4" />
-                    Confirmer (camera)
-                  </button>
-                  <button
-                    onClick={() => confirmPlacement(false)}
-                    className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium bg-amber-600 hover:bg-amber-500 text-white transition-colors"
-                    title="La camera ne voit pas tous les pions — simuler la position initiale"
-                  >
-                    <CheckCircle className="w-4 h-4" />
-                    Confirmer (manuel)
-                  </button>
-                </>
-              )}
 
               {/* Indicateur partie vision active */}
               {visionGameStarted && (
@@ -443,6 +491,24 @@ export function GameScreen({ difficulty, gameState, setGameState, onReturnToMenu
         onViewLeaderboard={handleViewLeaderboard}
       />
 
+      {/* Score Modal for Manual Stop */}
+      <GameOverModalAbandoned
+        isVisible={showScoreModal}
+        acplScore={acplScore}
+        totalMoves={moves.filter(m => m.player === 'human').length}
+        elapsedTime={elapsedTime}
+        playerName={playerName}
+        onContinue={() => {
+          setShowScoreModal(false);
+          onGoToFeedback({
+            result: 'abandoned',
+            acplScore,
+            totalMoves: moves.filter(m => m.player === 'human').length,
+            elapsedTime
+          });
+        }}
+      />
+
       {/* Score Saved Notification */}
       <ScoreSavedNotification
         isVisible={showScoreSaved}
@@ -494,31 +560,43 @@ export function GameScreen({ difficulty, gameState, setGameState, onReturnToMenu
 
       {/* Illegal Move Alert */}
       {illegalMoveAlert && (
-        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 animate-in slide-in-from-bottom-4">
-          <div className="bg-red-900 border border-red-500 rounded-xl px-5 py-4 shadow-2xl max-w-md">
-            <div className="flex items-start gap-3">
-              <AlertTriangle className="w-6 h-6 text-red-400 flex-shrink-0 mt-0.5" />
+        <motion.div
+          initial={{ opacity: 0, y: 20, scale: 0.95 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          exit={{ opacity: 0, y: 10, scale: 0.95 }}
+          className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50"
+        >
+          <div className="bg-red-900/95 backdrop-blur-md border-2 border-red-500 rounded-xl px-4 py-3 shadow-2xl shadow-red-500/30 max-w-sm">
+            <div className="flex items-start gap-2.5">
+              <AlertTriangle className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" />
               <div className="flex-1">
-                <p className="text-red-100 font-semibold text-sm">{illegalMoveAlert.message}</p>
+                <p className="text-red-100 font-semibold text-sm leading-snug">{illegalMoveAlert.message}</p>
                 {illegalMoveAlert.suggestions.length > 0 && (
-                  <ul className="mt-1.5 space-y-0.5">
+                  <ul className="mt-1 space-y-0.5">
                     {illegalMoveAlert.suggestions.map((s, i) => (
-                      <li key={i} className="text-red-300 text-xs">{s}</li>
+                      <li key={i} className="text-red-300 text-xs leading-tight">{s}</li>
                     ))}
                   </ul>
                 )}
-                <p className="text-red-400/70 text-xs mt-2">Replacez la piece et rejouez un coup legal</p>
+                <p className="text-red-400/70 text-xs mt-1.5">Replacez la pièce et rejouez</p>
               </div>
               <button
                 onClick={dismissIllegalAlert}
                 className="text-red-400 hover:text-red-200 transition-colors flex-shrink-0"
               >
-                <X className="w-5 h-5" />
+                <X className="w-4 h-4" />
               </button>
             </div>
           </div>
-        </div>
+        </motion.div>
       )}
+
+      {/* Checkmate Warning */}
+      <CheckmateWarning
+        isVisible={showCheckmateWarning}
+        type={checkmateWarningType}
+        onClose={() => setShowCheckmateWarning(false)}
+      />
     </div>
   );
 }
