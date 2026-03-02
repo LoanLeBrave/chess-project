@@ -10,6 +10,7 @@ import { GameOverModalAbandoned } from './GameOverModalAbandoned';
 import { ScoreSavedNotification } from './ScoreSavedNotification';
 import { StopConfirmModal } from './StopConfirmModal';
 import { PromotionModal } from './PromotionModal';
+import { CheckmateWarning } from './CheckmateWarning';
 import { useChessRobot } from '../hooks/useChessRobot';
 import type { DifficultyLevel, GameState, LogEntry, GameResults } from '../App';
 import { motion } from 'framer-motion';
@@ -43,8 +44,12 @@ export function GameScreen({ difficulty, gameState, setGameState, onReturnToMenu
   const [pendingNavigate, setPendingNavigate] = useState(false);
   const [isReconnecting, setIsReconnecting] = useState(false);
   const wasReplacingRef = useRef(false);
+  
+  // Checkmate warning states
+  const [showCheckmateWarning, setShowCheckmateWarning] = useState(false);
+  const [checkmateWarningType, setCheckmateWarningType] = useState<'danger' | 'opportunity'>('danger');
 
-  const addLog = useCallback((type: LogEntry['type'], message: string) => {
+  const addLog = (type: LogEntry['type'], message: string) => {
     const newLog: LogEntry = {
       id: Math.random().toString(36).substr(2, 9),
       timestamp: new Date(),
@@ -52,16 +57,16 @@ export function GameScreen({ difficulty, gameState, setGameState, onReturnToMenu
       message
     };
     setLogs(prev => [newLog, ...prev].slice(0, 100));
-  }, []);
+  };
 
-  const addMove = useCallback((move: Omit<ChessMove, 'id' | 'timestamp'>) => {
+  const addMove = (move: Omit<ChessMove, 'id' | 'timestamp'>) => {
     const newMove: ChessMove = {
       ...move,
       id: Math.random().toString(36).substr(2, 9),
       timestamp: new Date()
     };
     setMoves(prev => [...prev, newMove]);
-  }, []);
+  };
 
   const API_BASE = `http://${window.location.hostname}:8000`;
 
@@ -103,6 +108,48 @@ export function GameScreen({ difficulty, gameState, setGameState, onReturnToMenu
     const timer = setTimeout(dismissIllegalAlert, 8000);
     return () => clearTimeout(timer);
   }, [illegalMoveAlert, dismissIllegalAlert]);
+
+  // Check for forced checkmate (call API with FEN to get Stockfish analysis)
+  useEffect(() => {
+    if (isGameOver || moves.length === 0) return;
+
+    const checkForForcedCheckmate = async () => {
+      try {
+        const res = await fetch(`${API_BASE}/game/analyze-position`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ fen })
+        });
+        const data = await res.json();
+
+        // data.forced_mate could be: null, positive number (white wins in N moves), negative number (black wins in N moves)
+        if (data.forced_mate !== null && data.forced_mate !== undefined) {
+          const movesUntilMate = Math.abs(data.forced_mate);
+          
+          // Only show warning if mate is within 5 moves
+          if (movesUntilMate <= 5 && movesUntilMate > 0) {
+            if (data.forced_mate > 0) {
+              // White (player) has forced mate
+              setCheckmateWarningType('opportunity');
+              setShowCheckmateWarning(true);
+              addLog('info', `Mat forcé en ${movesUntilMate} coup(s) !`);
+            } else {
+              // Black (robot) has forced mate
+              setCheckmateWarningType('danger');
+              setShowCheckmateWarning(true);
+              addLog('warning', `Attention ! Mat imminent en ${movesUntilMate} coup(s)`);
+            }
+          }
+        }
+      } catch {
+        // API not available or error - silently ignore
+      }
+    };
+
+    // Check after each move with a small delay
+    const timer = setTimeout(checkForForcedCheckmate, 1000);
+    return () => clearTimeout(timer);
+  }, [fen, moves.length, isGameOver, addLog]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Sauvegarder le score via l'API quand la partie se termine
   const saveScoreToLeaderboard = async (result: 'win' | 'lose' | 'draw' | 'abandoned') => {
@@ -385,18 +432,7 @@ export function GameScreen({ difficulty, gameState, setGameState, onReturnToMenu
         totalMoves={moves.length}
         elapsedTime={elapsedTime}
         playerName={playerName}
-        onReturnToMenu={async () => {
-          try {
-            await fetch(`${API_BASE}/game/stop`, { method: 'POST' });
-          } catch { /* Continue */ }
-          
-          onGoToFeedback({
-            result: gameResult || 'draw',
-            acplScore,
-            totalMoves: moves.length,
-            elapsedTime
-          });
-        }}
+        onReturnToMenu={handleStop}
         onViewLeaderboard={handleViewLeaderboard}
       />
 
@@ -474,6 +510,13 @@ export function GameScreen({ difficulty, gameState, setGameState, onReturnToMenu
           </div>
         </motion.div>
       )}
+
+      {/* Checkmate Warning */}
+      <CheckmateWarning
+        isVisible={showCheckmateWarning}
+        type={checkmateWarningType}
+        onClose={() => setShowCheckmateWarning(false)}
+      />
     </div>
   );
 }
