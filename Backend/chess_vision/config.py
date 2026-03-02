@@ -194,14 +194,14 @@ CAMERA_CONFIG = {
     'height': None,                   # None = max résolution
     'shutter': None,                  # Temps exposition µs (None = auto)
     'gain': None,                     # Gain (1.0 = minimum)
-    'awb': 'indoor',                  # Balance blancs: 'auto', 'tungsten', 'indoor', etc.
+    'awb': None,                      # Balance blancs: 'auto', 'tungsten', etc.
     'brightness': None,               # -1.0 à 1.0
-    'contrast': 0,                    # 0 = neutre/désactivé
-    'saturation': 0,                  # 0 = neutre/désactivé
-    'sharpness': 8,                   # Netteté augmentée
+    'contrast': None,                 # 1.0 = normal
+    'saturation': None,               # 1.0 = normal
+    'sharpness': None,                # 1.0 = normal
     'denoise': None,                  # 'auto', 'off', etc.
     'timeout': 50,                    # Temps stabilisation (ms) - ULTRA-RAPIDE (focus manuel)
-    'stabilization_delay': 0,         # Délai stabilisation Picamera2 (s)
+    'stabilization_delay': 0.3,       # Délai stabilisation Picamera2 (s) - Réduit: 2.0→0.3
     'autofocus_mode': 'manual',       # 'auto', 'manual', 'continuous'
     'lens_position': 12.0,            # Position focus manuel (0.0-10.0) - Optimisé pour ArUco
     'autofocus_on_capture': False,    # Force autofocus avant capture
@@ -220,10 +220,10 @@ USE_DEFAULT_ARUCO_PARAMS = False
 #   - cornerRefinementMethod → CORNER_REFINE_NONE : on n'a besoin que du centre,
 #     pas des coins sub-pixel (élimine ~50 itérations par marqueur)
 ARUCO_PARAMS = {
-    'adaptiveThreshWinSizeMin': 24,           # Taille min fenêtre seuillage adaptatif
-    'adaptiveThreshWinSizeMax': 10,           # Taille max fenêtre seuillage adaptatif
-    'adaptiveThreshWinSizeStep': 2,           # Pas entre les tailles de fenêtre
-    'adaptiveThreshConstant': 30,             # Constante C du seuillage adaptatif
+    'adaptiveThreshWinSizeMin': 5,            # Augmenté: 3→5 (fenêtre plus large = lisse variations lumière)
+    'adaptiveThreshWinSizeMax': 51,           # Réduit: 100→51 (moins d'itérations, gain vitesse ~2×)
+    'adaptiveThreshWinSizeStep': 6,           # Augmenté: 3→6 (saute plus de tailles, 3,5× moins d'itérations)
+    'adaptiveThreshConstant': 15,             # Augmenté: 10→15 (très tolérant aux variations)
     'minMarkerPerimeterRate': 0.015,          # Réduit: 0.02→0.015 (lumière change périmètre apparent)
     'maxMarkerPerimeterRate': 5.0,            # Augmenté: 4.0→5.0 (accepte marqueurs paraissant plus grands)
     'polygonalApproxAccuracyRate': 0.12,      # Augmenté: 0.08→0.12 (lumière déforme contours)
@@ -234,9 +234,6 @@ ARUCO_PARAMS = {
     'cornerRefinementWinSize': 5,
     'cornerRefinementMaxIterations': 10,
     'cornerRefinementMinAccuracy': 0.1,
-    'perspectiveRemovePixelPerCell': 20,      # Pixels lus par bit (robustesse lecture marqueur)
-    'perspectiveRemoveIgnoredMarginPerCell': 0.00,  # Marge ignorée par cellule (0 = aucune)
-    'errorCorrectionRate': 1.00,              # Taux max bits erronés tolérés (Hamming)
 }
 
 # ============================================================
