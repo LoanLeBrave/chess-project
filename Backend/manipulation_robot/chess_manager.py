@@ -19,6 +19,15 @@ from robot_controller import RobotController
 class ChessManager:
     """Gestionnaire de la logique d'échecs et de l'IA"""
 
+    _PIECE_NAMES_FR = {
+        chess.PAWN: "Pion",
+        chess.KNIGHT: "Cavalier",
+        chess.BISHOP: "Fou",
+        chess.ROOK: "Tour",
+        chess.QUEEN: "Dame",
+        chess.KING: "Roi",
+    }
+
     def __init__(self, robot_controller: RobotController):
         self.board = chess.Board()
         self.engine = None
@@ -37,6 +46,13 @@ class ChessManager:
         # Gestion de la promotion physique
         self._promotion_event: Optional[asyncio.Event] = None
         self._promotion_from_sq: Optional[str] = None
+
+        # Gestion de la reprise après pause
+        self._interrupted_move: Optional[dict] = None
+        self._resume_event: Optional[asyncio.Event] = None
+
+        # Calcul ACPL : évaluation de la position avant le coup humain (centipawns, perspective blancs)
+        self._pre_human_eval: Optional[float] = None
 
     def set_broadcast_callback(self, callback):
         """Définit le callback pour le broadcast"""
@@ -163,17 +179,166 @@ class ChessManager:
         self.is_paused = not self.is_paused
 
         if self.is_paused:
-            # PAUSE D'URGENCE
-            self.robot.pause_urgence()
-            await self.log("warning", " PAUSE D'URGENCE - Robot arrêté immédiatement!")
+            # PAUSE D'URGENCE — stopper le script robot (non-bloquant)
+            loop = asyncio.get_running_loop()
+            if self.robot.connected and self.robot.rtde_c:
+                try:
+                    await asyncio.wait_for(
+                        loop.run_in_executor(None, self.robot.rtde_c.stopScript),
+                        timeout=3.0
+                    )
+                except Exception as e:
+                    print(f"Erreur stopScript pause: {e}")
+            self.robot.is_paused = True
+            await self.log("warning", "PAUSE D'URGENCE - Robot arrêté immédiatement!")
             self.set_status("paused", "PAUSE D'URGENCE")
             return {"success": True, "paused": True, "message": "PAUSE D'URGENCE - Robot arrêté!"}
         else:
-            # Reprise
-            self.robot.reprendre_script()
-            await self.log("info", " Partie reprise - Robot réactivé")
+            # Reprise — lancer le processus de reprise en tâche de fond
+            asyncio.create_task(self._resume_process())
+            await self.log("info", "Reprise en cours...")
+            return {"success": True, "paused": False, "message": "Reprise en cours..."}
+
+    async def _resume_process(self):
+        """Réactive le robot, relâche la pince et demande confirmation si un coup était en cours."""
+        loop = asyncio.get_running_loop()
+
+        # 1. Réactiver le script robot
+        if self.robot.connected and self.robot.rtde_c:
+            try:
+                await asyncio.wait_for(
+                    loop.run_in_executor(None, self.robot.rtde_c.reuploadScript),
+                    timeout=3.0
+                )
+                await asyncio.sleep(0.2)
+            except Exception as e:
+                await self.log("error", f"Erreur réactivation robot: {e}")
+        self.robot.is_paused = False
+
+        # 2. Ouvrir le gripper (relâcher toute pièce tenue)
+        await self.robot._gripper_open()
+        await self.log("info", "Pince relâchée")
+
+        # 3. Si aucun coup interrompu, reprendre directement
+        if not self._interrupted_move:
             self.set_status("idle", "Partie reprise")
-            return {"success": True, "paused": False, "message": "Partie reprise"}
+            await self.log("info", "Partie reprise")
+            return
+
+        # 4. Informer le joueur du coup interrompu
+        move_info = self._interrupted_move
+        piece_name = self._PIECE_NAMES_FR.get(move_info.get("piece_type"), "Pièce")
+        from_sq = move_info.get("from_sq", "?")
+        to_sq = move_info.get("to_sq", "?")
+
+        await self.log("info", f"Coup interrompu : {piece_name} {from_sq} → {to_sq}")
+        await self.broadcast({
+            "type": "resume_confirmation_needed",
+            "piece_name": piece_name,
+            "from_sq": from_sq,
+            "to_sq": to_sq,
+            "player": move_info.get("player", "unknown"),
+        })
+
+        # 5. Attendre la confirmation du joueur (10 min max)
+        self._resume_event = asyncio.Event()
+        self.set_status("moving", f"En attente — Replacez le {piece_name} en {to_sq}")
+
+        try:
+            await asyncio.wait_for(self._resume_event.wait(), timeout=600.0)
+        except asyncio.TimeoutError:
+            await self.log("error", "Timeout reprise — aucune confirmation reçue dans les 10 minutes")
+            self._interrupted_move = None
+            self._resume_event = None
+            self.set_status("idle")
+            return
+
+        self._resume_event = None
+
+        # 6. Confirmation reçue → pousser le coup sur le plateau virtuel
+        move = move_info.get("move")
+        player = move_info.get("player", "robot")
+
+        if move and move in self.board.legal_moves:
+            san = move_info.get("san") or self.board.san(move)
+            self.board.push(move)
+
+            await self.broadcast({
+                "type": "move",
+                "player": player,
+                "from": from_sq,
+                "to": to_sq,
+                "san": san,
+                "evaluation": move_info.get("evaluation"),
+                "fen": self.board.fen(),
+            })
+            await self.log("info", f"Coup validé manuellement : {san}")
+
+            # Libérer _interrupted_move avant de déclencher un éventuel coup robot
+            self._interrupted_move = None
+
+            if self.board.is_game_over():
+                result = self.get_game_result()
+                await self.broadcast({"type": "game_over", "result": result})
+            elif player == "human":
+                self.set_status("thinking", "Tour du robot...")
+                await self.play_robot_move()
+        else:
+            await self.log("error", "Coup non applicable après reprise — position modifiée ?")
+            self._interrupted_move = None
+
+        self.set_status("idle")
+        await self.log("info", "Partie reprise")
+
+    def confirm_resume(self) -> bool:
+        """Appelée par l'API quand le joueur confirme que la pièce est replacée."""
+        if self._resume_event and not self._resume_event.is_set():
+            self._resume_event.set()
+            return True
+        return False
+
+    async def undo_last_move(self) -> dict:
+        """
+        Annule le(s) dernier(s) coup(s) :
+        - Si c'est le tour des blancs (humain), le robot a joué en dernier → annule robot + humain.
+        - Si c'est le tour des noirs (robot), seul le coup humain est annulé.
+        Met à jour la vision si disponible.
+        """
+        if not self.board.move_stack:
+            return {"success": False, "error": "Aucun coup à annuler"}
+
+        moves_undone = []
+
+        # Si c'est le tour des blancs, le robot a joué en dernier → annuler son coup d'abord
+        if self.board.turn == chess.WHITE:
+            last = self.board.peek()
+            moves_undone.append(
+                (chess.square_name(last.from_square), chess.square_name(last.to_square))
+            )
+            self.board.pop()
+
+        # Annuler le coup humain si la pile n'est pas vide
+        if self.board.move_stack:
+            last = self.board.peek()
+            moves_undone.append(
+                (chess.square_name(last.from_square), chess.square_name(last.to_square))
+            )
+            self.board.pop()
+
+        # Inverser la mise à jour vision pour chaque coup annulé
+        if self.vision_service:
+            for from_sq, to_sq in moves_undone:
+                self.vision_service.reverse_last_move(from_sq, to_sq)
+
+        # Réinitialiser les états en cours
+        self._interrupted_move = None
+        self._pre_human_eval = None
+        self.set_status("idle")
+
+        n = len(moves_undone)
+        await self.log("info", f"{n} coup(s) annulé(s) — retour à la position précédente")
+        await self.broadcast({"type": "move_undone", "fen": self.board.fen(), "moves_undone": n})
+        return {"success": True, "fen": self.board.fen(), "moves_undone": n}
 
     def _get_precise_coords(self, square: str):
         """
@@ -245,6 +410,27 @@ class ChessManager:
                 castling_rook = (f'a{rank}', f'd{rank}')
             await self.log("info", f"Roque {'petit' if to_sq[0] == 'g' else 'grand'} — Tour: {castling_rook[0]} → {castling_rook[1]}")
 
+        # Evaluation de la position AVANT le coup humain (pour calcul ACPL)
+        if self.engine:
+            try:
+                pre_info = self.engine.analyse(self.board, chess.engine.Limit(time=0.1))
+                pre_score = pre_info.get("score")
+                self._pre_human_eval = pre_score.white().score() if pre_score else None
+            except Exception:
+                self._pre_human_eval = None
+
+        # Enregistrer le coup en cours (pour reprise après pause éventuelle)
+        san_preview = self.board.san(move)
+        self._interrupted_move = {
+            "move": move,
+            "from_sq": from_sq,
+            "to_sq": to_sq,
+            "piece_type": piece.piece_type if piece else None,
+            "player": "human",
+            "san": san_preview,
+            "evaluation": None,
+        }
+
         # Exécuter sur le robot
         self.set_status("moving", f"Déplacement {from_sq} → {to_sq}")
         success = await self.robot.execute_move(
@@ -257,6 +443,8 @@ class ChessManager:
         if not success:
             await self.log("warning", "Mouvement interrompu par PAUSE")
             return {"success": False, "error": "Mouvement interrompu"}
+
+        self._interrupted_move = None
 
         # Promotion physique : retirer le pion, attendre que le joueur place la dame
         if move.promotion is not None and piece:
@@ -308,6 +496,15 @@ class ChessManager:
                     return {"success": False, "error": "Coup illegal"}
         except Exception:
             return {"success": False, "error": "Format de coup invalide"}
+
+        # Evaluation de la position AVANT le coup humain (pour calcul ACPL)
+        if self.engine:
+            try:
+                pre_info = self.engine.analyse(self.board, chess.engine.Limit(time=0.1))
+                pre_score = pre_info.get("score")
+                self._pre_human_eval = pre_score.white().score() if pre_score else None
+            except Exception:
+                self._pre_human_eval = None
 
         # Enregistrer le coup dans Stockfish (PAS de mouvement robot)
         san = self.board.san(move)
@@ -394,6 +591,17 @@ class ChessManager:
             else:
                 evaluation = 0.0
 
+            # Calculer le CPL (Centipawn Loss) du coup humain précédent
+            # _pre_human_eval = meilleur score blanc AVANT le coup humain (centipawns)
+            # score.white().score() = score blanc APRÈS le coup humain (centipawns)
+            # CPL = max(0, pre - post) : positif si l'humain a perdu des centipawns
+            cpl = None
+            if self._pre_human_eval is not None and score and not score.is_mate():
+                post_eval_white = score.white().score()
+                if post_eval_white is not None:
+                    cpl = max(0, self._pre_human_eval - post_eval_white)
+            self._pre_human_eval = None
+
             await self.log("robot", f"Coup choisi: {from_sq} → {to_sq} (eval: {evaluation})")
 
             # Coordonnees precises de la camera si disponibles
@@ -409,6 +617,18 @@ class ChessManager:
                     castling_rook = (f'a{rank}', f'd{rank}')
                 await self.log("info", f"Roque {'petit' if to_sq[0] == 'g' else 'grand'} — Tour: {castling_rook[0]} → {castling_rook[1]}")
 
+            # Enregistrer le coup en cours (pour reprise après pause éventuelle)
+            san_preview = self.board.san(move)
+            self._interrupted_move = {
+                "move": move,
+                "from_sq": from_sq,
+                "to_sq": to_sq,
+                "piece_type": piece.piece_type if piece else None,
+                "player": "robot",
+                "san": san_preview,
+                "evaluation": evaluation,
+            }
+
             # Exécuter sur le robot
             self.set_status("moving", f"Déplacement {from_sq} → {to_sq}")
             success = await self.robot.execute_move(
@@ -422,6 +642,8 @@ class ChessManager:
                 await self.log("warning", "Mouvement interrompu par PAUSE")
                 self.set_status("idle")
                 return {"success": False, "error": "Mouvement interrompu"}
+
+            self._interrupted_move = None
 
             # Promotion physique : retirer le pion, attendre que le joueur place la dame
             if move.promotion is not None and piece:
@@ -438,6 +660,7 @@ class ChessManager:
                 "to": to_sq,
                 "san": san,
                 "evaluation": evaluation,
+                "cpl": cpl,
                 "fen": self.board.fen()
             })
 
@@ -453,6 +676,7 @@ class ChessManager:
                     "to": to_sq,
                     "san": san,
                     "evaluation": evaluation,
+                    "cpl": cpl,
                     "game_over": True,
                     "result": result
                 }
@@ -462,7 +686,8 @@ class ChessManager:
                 "from": from_sq,
                 "to": to_sq,
                 "san": san,
-                "evaluation": evaluation
+                "evaluation": evaluation,
+                "cpl": cpl,
             }
 
         except Exception as e:

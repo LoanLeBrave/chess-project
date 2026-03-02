@@ -13,6 +13,7 @@ interface ChessBoardProps {
   showVision?: boolean;
   visionBoard?: { [square: string]: string };
   visionConfidence?: { [square: string]: number };
+  isCorrectionMode?: boolean;
 }
 
 type PieceType = 'K' | 'Q' | 'R' | 'B' | 'N' | 'P' | 'k' | 'q' | 'r' | 'b' | 'n' | 'p' | null;
@@ -67,7 +68,7 @@ function fenToBoard(fen: string): BoardState {
 
 export function ChessBoard({
   fen, isWhiteTurn, robotStatus, isGameOver, onMove, getLegalMoves, getBestMove,
-  showVision, visionBoard, visionConfidence,
+  showVision, visionBoard, visionConfidence, isCorrectionMode,
 }: ChessBoardProps) {
   const [board, setBoard] = useState<BoardState>({});
   const [selectedSquare, setSelectedSquare] = useState<string | null>(null);
@@ -136,7 +137,8 @@ export function ChessBoard({
   };
 
   const handleSquareClick = async (square: string) => {
-    if (isGameOver || robotStatus !== 'idle' || !isWhiteTurn) return;
+    if (isGameOver) return;
+    if (!isCorrectionMode && (robotStatus !== 'idle' || !isWhiteTurn)) return;
 
     const piece = board[square];
 
@@ -185,7 +187,9 @@ export function ChessBoard({
 
   const isBestFrom = (square: string) => bestMove?.from === square;
   const isBestTo = (square: string) => bestMove?.to === square;
-  const canInteract = isWhiteTurn && robotStatus === 'idle' && !isGameOver;
+  const canInteract = isCorrectionMode
+    ? !isGameOver
+    : (isWhiteTurn && robotStatus === 'idle' && !isGameOver);
 
   return (
     <div className="bg-slate-800/50 backdrop-blur-sm rounded-xl p-4 border border-slate-700">
@@ -347,6 +351,10 @@ export function ChessBoard({
                   <div className="text-lg">Connexion au serveur...</div>
                 </div>
               </div>
+            )}
+
+            {isCorrectionMode && (
+              <div className="absolute inset-0 border-4 border-amber-400 pointer-events-none rounded" />
             )}
           </div>
 
