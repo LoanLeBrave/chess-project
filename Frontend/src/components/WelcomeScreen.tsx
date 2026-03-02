@@ -1,4 +1,4 @@
-import { Bot, Trophy, MessageSquare } from 'lucide-react';
+import { Bot, Trophy, UserCircle } from 'lucide-react';
 import { Button } from './ui/button';
 
 interface WelcomeScreenProps {
@@ -9,7 +9,16 @@ interface WelcomeScreenProps {
 
 export function WelcomeScreen({ onContinue, onViewLeaderboard, onViewFeedbackLogs }: WelcomeScreenProps) {
   return (
-    <div className="min-h-screen flex items-center justify-center p-8">
+    <div className="min-h-screen flex items-center justify-center p-8 relative">
+      {/* Avatar Icon - Bottom Left (Discrete) */}
+      <button
+        onClick={onViewFeedbackLogs}
+        className="absolute bottom-8 left-8 p-3 rounded-full bg-slate-800/50 border border-slate-700 hover:bg-slate-700/70 hover:border-cyan-500/50 transition-all duration-300 group"
+        title="Voir les feedbacks"
+      >
+        <UserCircle className="w-6 h-6 text-slate-400 group-hover:text-cyan-400 transition-colors" />
+      </button>
+
       <div className="max-w-2xl w-full text-center">
         {/* Logo et Titre */}
         <div className="flex items-center justify-center gap-4 mb-6">
@@ -52,15 +61,6 @@ export function WelcomeScreen({ onContinue, onViewLeaderboard, onViewFeedbackLog
           >
             <Trophy className="w-5 h-5 group-hover:scale-110 transition-transform" />
             <span className="font-medium">Voir le classement</span>
-          </button>
-
-          {/* Bouton Feedback */}
-          <button
-            onClick={onViewFeedbackLogs}
-            className="flex items-center gap-2 text-slate-400 hover:text-yellow-400 transition-colors group px-6 py-3 rounded-lg hover:bg-slate-800/50"
-          >
-            <MessageSquare className="w-5 h-5 group-hover:scale-110 transition-transform" />
-            <span className="font-medium">Voir les feedbacks</span>
           </button>
         </div>
 
