@@ -417,10 +417,18 @@ async def _check_vision_move():
             is_capture = delta["type"] == "capture"
             await manager.log("info", f"Coup detecte: {from_sq} -> {to_sq}" + (" (capture)" if is_capture else ""))
             result = await manager.chess.play_vision_move(from_sq, to_sq)
+            
             if result.get("success"):
                 # Mettre a jour la reference apres le coup humain
                 manager.vision.update_reference_after_move(from_sq, to_sq, is_capture)
                 hybrid_manager.on_move_played(from_sq, to_sq, is_capture)
+                
+                # Verifier si le coup humain a termine la partie
+                if result.get("game_over"):
+                    manager.vision.game_started = False
+                    await asyncio.sleep(0.3) # Petit delai pour laisser le broadcast game_over partir
+                    return
+
                 # Aussi mettre a jour apres le coup robot si il a joue
                 robot_resp = result.get("robot_response", {})
                 if robot_resp.get("success"):
@@ -430,6 +438,12 @@ async def _check_vision_move():
                         r_capture = manager.vision.reference_board and r_to in manager.vision.reference_board
                         manager.vision.update_reference_after_move(r_from, r_to, r_capture)
                         hybrid_manager.on_move_played(r_from, r_to, bool(r_capture))
+                    
+                    # Verifier si le coup robot a termine la partie
+                    if robot_resp.get("game_over"):
+                        manager.vision.game_started = False
+                        await asyncio.sleep(0.3)
+                        return
 
                 # Vider les buffers et réinitialiser la stabilité pour repartir clean
                 manager.vision._buffers.clear()

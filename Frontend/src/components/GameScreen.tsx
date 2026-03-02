@@ -385,7 +385,18 @@ export function GameScreen({ difficulty, gameState, setGameState, onReturnToMenu
         totalMoves={moves.length}
         elapsedTime={elapsedTime}
         playerName={playerName}
-        onReturnToMenu={handleStop}
+        onReturnToMenu={async () => {
+          try {
+            await fetch(`${API_BASE}/game/stop`, { method: 'POST' });
+          } catch { /* Continue */ }
+          
+          onGoToFeedback({
+            result: gameResult || 'draw',
+            acplScore,
+            totalMoves: moves.length,
+            elapsedTime
+          });
+        }}
         onViewLeaderboard={handleViewLeaderboard}
       />
 

@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 
-export type RobotStatus = 'idle' | 'thinking' | 'moving' | 'error' | 'disconnected';
+export type RobotStatus = 'idle' | 'thinking' | 'moving' | 'error' | 'disconnected' | 'replacing';
 
 export interface MoveEvaluation {
   move: string;
@@ -32,6 +32,10 @@ export interface UseChessRobotReturn {
   visionState: VisionState | null;
   visionGameStarted: boolean;
   illegalMoveAlert: IllegalMoveAlert | null;
+  isReplacingBoard: boolean;
+  isPromotionPending: boolean;
+  promotionSquare: string | null;
+  promotionColor: 'white' | 'black' | null;
   setRobotStatus: (status: RobotStatus) => void;
   onMove: (from: string, to: string) => Promise<boolean>;
   getLegalMoves: (square: string) => Promise<string[]>;
@@ -40,6 +44,9 @@ export interface UseChessRobotReturn {
   initGame: (difficulty: string) => Promise<void>;
   confirmPlacement: (useCamera: boolean) => Promise<boolean>;
   dismissIllegalAlert: () => void;
+  replaceBoard: () => Promise<boolean>;
+  confirmPromotion: (from_sq: string) => Promise<boolean>;
+  reconnectRobot: () => Promise<boolean>;
 }
 
 const API_BASE = `${window.location.protocol}//${window.location.hostname}:8000`;
@@ -93,6 +100,13 @@ export function useChessRobot(
   const [visionState, setVisionState] = useState<VisionState | null>(null);
   const [visionGameStarted, setVisionGameStarted] = useState(false);
   const [illegalMoveAlert, setIllegalMoveAlert] = useState<IllegalMoveAlert | null>(null);
+  const [isReplacingBoard, setIsReplacingBoard] = useState(false);
+  
+  // Promotion states
+  const [isPromotionPending, setIsPromotionPending] = useState(false);
+  const [promotionSquare, setPromotionSquare] = useState<string | null>(null);
+  const [promotionColor, setPromotionColor] = useState<'white' | 'black' | null>(null);
+
   const wsRef = useRef<WebSocket | null>(null);
 
   // --- WebSocket ---
@@ -112,9 +126,15 @@ export function useChessRobot(
           if (msg.type === 'status') {
             const statusMap: { [key: string]: RobotStatus } = {
               'idle': 'idle', 'thinking': 'thinking', 'moving': 'moving',
-              'error': 'error', 'paused': 'idle',
+              'error': 'error', 'paused': 'idle', 'replacing': 'replacing'
             };
             setRobotStatus(statusMap[msg.status] || 'idle');
+            
+            if (msg.status === 'replacing') {
+              setIsReplacingBoard(true);
+            } else if (isReplacingBoard) {
+              setIsReplacingBoard(false);
+            }
           }
 
           if (msg.type === 'move') {
@@ -196,6 +216,19 @@ export function useChessRobot(
               timestamp: Date.now(),
             });
           }
+
+          if (msg.type === 'promotion_required') {
+            setIsPromotionPending(true);
+            setPromotionSquare(msg.square);
+            setPromotionColor(msg.color);
+            addLog('info', `Promotion requise en ${msg.square}. Placez une Dame.`);
+          }
+
+          if (msg.type === 'board_replaced') {
+            setIsReplacingBoard(false);
+            setFen(msg.fen);
+            addLog('info', 'Plateau replace avec succes');
+          }
         } catch { /* ignore parse errors */ }
       };
 
@@ -217,7 +250,7 @@ export function useChessRobot(
     return () => {
       wsRef.current?.close();
     };
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [addLog, onMoveComplete, isReplacingBoard]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // --- Init game via API ---
   const initGame = useCallback(async (difficulty: string) => {
@@ -378,6 +411,68 @@ export function useChessRobot(
     }
   }, [addLog]);
 
+  // --- Replace board via API ---
+  const replaceBoard = useCallback(async (): Promise<boolean> => {
+    try {
+      setIsReplacingBoard(true);
+      setRobotStatus('replacing');
+      const res = await fetch(`${API_BASE}/game/replace-board`, { method: 'POST' });
+      const data = await res.json();
+      if (data.success) {
+        addLog('info', 'Replacement du plateau demarre');
+        return true;
+      } else {
+        addLog('error', data.error || 'Erreur lors du replacement');
+        setIsReplacingBoard(false);
+        setRobotStatus('idle');
+        return false;
+      }
+    } catch {
+      addLog('error', 'Erreur connexion API pour replacement');
+      setIsReplacingBoard(false);
+      setRobotStatus('error');
+      return false;
+    }
+  }, [addLog]);
+
+  // --- Confirm promotion ---
+  const confirmPromotion = useCallback(async (from_sq: string): Promise<boolean> => {
+    try {
+      const res = await fetch(`${API_BASE}/game/confirm-promotion`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ from_sq }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setIsPromotionPending(false);
+        setPromotionSquare(null);
+        setPromotionColor(null);
+        return true;
+      }
+      return false;
+    } catch {
+      return false;
+    }
+  }, []);
+
+  // --- Reconnect Robot ---
+  const reconnectRobot = useCallback(async (): Promise<boolean> => {
+    try {
+      const res = await fetch(`${API_BASE}/robot/reconnect`, { method: 'POST' });
+      const data = await res.json();
+      if (data.success) {
+        setRobotStatus('idle');
+        addLog('info', 'Robot reconnecte avec succes');
+        return true;
+      }
+      return false;
+    } catch {
+      addLog('error', 'Erreur lors de la reconnexion du robot');
+      return false;
+    }
+  }, [addLog]);
+
   // --- Reset game ---
   const resetGame = useCallback(() => {
     setFen(INITIAL_FEN);
@@ -389,6 +484,10 @@ export function useChessRobot(
     setAcplScore(0);
     setVisionGameStarted(false);
     setIllegalMoveAlert(null);
+    setIsReplacingBoard(false);
+    setIsPromotionPending(false);
+    setPromotionSquare(null);
+    setPromotionColor(null);
     addLog('info', 'Partie reinitialisee');
   }, [addLog]);
 
@@ -407,6 +506,10 @@ export function useChessRobot(
     visionState,
     visionGameStarted,
     illegalMoveAlert,
+    isReplacingBoard,
+    isPromotionPending,
+    promotionSquare,
+    promotionColor,
     setRobotStatus,
     onMove,
     getLegalMoves,
@@ -415,5 +518,8 @@ export function useChessRobot(
     initGame,
     confirmPlacement,
     dismissIllegalAlert,
+    replaceBoard,
+    confirmPromotion,
+    reconnectRobot,
   };
 }

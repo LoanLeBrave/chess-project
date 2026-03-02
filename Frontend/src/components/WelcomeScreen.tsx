@@ -9,11 +9,11 @@ interface WelcomeScreenProps {
 
 export function WelcomeScreen({ onContinue, onViewLeaderboard, onViewFeedbackLogs }: WelcomeScreenProps) {
   return (
-    <div className="min-h-screen flex items-center justify-center p-8 relative">
-      {/* Avatar Icon - Bottom Left (Discrete) */}
+    <div className="min-h-screen flex items-center justify-center p-8">
+      {/* Avatar Icon - Bottom Left (Discrete) - Fixed positioning */}
       <button
         onClick={onViewFeedbackLogs}
-        className="absolute bottom-8 left-8 p-3 rounded-full bg-slate-800/50 border border-slate-700 hover:bg-slate-700/70 hover:border-cyan-500/50 transition-all duration-300 group"
+        className="fixed bottom-6 left-6 p-3 rounded-full bg-slate-800/50 border border-slate-700 hover:bg-slate-700/70 hover:border-cyan-500/50 transition-all duration-300 group z-10"
         title="Voir les feedbacks"
       >
         <UserCircle className="w-6 h-6 text-slate-400 group-hover:text-cyan-400 transition-colors" />
