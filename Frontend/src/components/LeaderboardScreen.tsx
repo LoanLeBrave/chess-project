@@ -112,18 +112,13 @@ export function LeaderboardScreen({ onBack }: LeaderboardScreenProps) {
       {/* Back Button */}
       <button
         onClick={onBack}
-        className="absolute top-6 left-6 flex items-center gap-2 text-slate-400 hover:text-white transition-colors group"
+        className="absolute top-6 left-6 flex items-center gap-2 text-slate-400 hover:text-white transition-colors group z-10"
       >
         <div className="w-10 h-10 rounded-full bg-slate-800/50 border border-slate-700 flex items-center justify-center group-hover:border-cyan-400 transition-all">
           <ArrowLeft className="w-5 h-5" />
         </div>
         <span className="font-medium">Retour</span>
       </button>
-
-      {/* Bouton de rafraîchissement manuel discret */}
-      <div className="absolute top-6 right-6">
-        <RefreshCw className={`w-5 h-5 text-slate-500 ${isRefreshing ? 'animate-spin' : ''}`} />
-      </div>
 
       <div className="max-w-4xl w-full">
         {/* Header */}
@@ -134,11 +129,16 @@ export function LeaderboardScreen({ onBack }: LeaderboardScreenProps) {
               Top 10 Mondiaux
             </h1>
           </div>
-          <p className="text-xl text-slate-400 mb-4">Les meilleurs cerveaux face au robot UR</p>
+          <p className="text-xl text-slate-400 mb-4">Les meilleurs cerveaux face au robot UR7e</p>
           <div className="inline-flex items-center gap-2 bg-cyan-500/10 border border-cyan-500/30 rounded-lg px-4 py-2 text-cyan-400 text-sm">
             <TrendingDown className="w-4 h-4" />
             <span>Score ACPL : Plus bas = Meilleur</span>
           </div>
+        </div>
+
+        {/* Bouton de rafraîchissement manuel discret */}
+        <div className="absolute top-6 right-6">
+          <RefreshCw className={`w-5 h-5 text-slate-500 ${isRefreshing ? 'animate-spin' : ''}`} />
         </div>
 
         {/* Tableau */}

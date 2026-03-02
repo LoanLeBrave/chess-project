@@ -26,6 +26,7 @@ from models import MoveRequest, GameConfig
 from robot_controller import RobotController
 from chess_manager import ChessManager
 from leaderboard_manager import LeaderboardManager
+from feedback_manager import FeedbackManager
 from board_reset_manager import BoardResetManager
 from config import FICHIER_CALIBRATION, FICHIER_POSITION_DEPART
 from calibration import TwoPointCalibration
@@ -69,6 +70,15 @@ class LeaderboardAddRequest(BaseModel):
     difficulty: str = Field(..., examples=["intermediate"])
     moves_played: int = Field(..., gt=0)
     game_duration: Optional[float] = Field(None, description="Durée en secondes")
+
+class FeedbackSubmitRequest(BaseModel):
+    player_name: str = Field(..., examples=["Alice"])
+    rating: int = Field(..., ge=1, le=5)
+    comment: str = Field("", description="Commentaire optionnel")
+    difficulty: str = Field(...)
+    result: ResultEnum = Field(...)
+    acpl_score: float = Field(...)
+    timestamp: Optional[str] = Field(None)
 
 # ============================================================================
 #                          VISION SERVICE
@@ -308,6 +318,7 @@ class ApplicationManager:
         self.robot = RobotController()
         self.chess = ChessManager(self.robot)
         self.leaderboard = LeaderboardManager()
+        self.feedback = FeedbackManager()
         self.board_reset = BoardResetManager(self.robot)
         self.vision = VisionService()
         self.chess.vision_service = self.vision
@@ -351,6 +362,7 @@ tags_metadata = [
     {"name": "Robot", "description": "Contrôle direct du bras UR et du gripper."},
     {"name": "Calibration", "description": "Procédures de calibration Robot et Caméra."},
     {"name": "Leaderboard", "description": "Statistiques, scores et classements."},
+    {"name": "Feedback", "description": "Avis et commentaires utilisateurs."},
 ]
 
 app = FastAPI(title="Chess Robot API", version="2.0.0", openapi_tags=tags_metadata)
@@ -405,10 +417,18 @@ async def _check_vision_move():
             is_capture = delta["type"] == "capture"
             await manager.log("info", f"Coup detecte: {from_sq} -> {to_sq}" + (" (capture)" if is_capture else ""))
             result = await manager.chess.play_vision_move(from_sq, to_sq)
+            
             if result.get("success"):
                 # Mettre a jour la reference apres le coup humain
                 manager.vision.update_reference_after_move(from_sq, to_sq, is_capture)
                 hybrid_manager.on_move_played(from_sq, to_sq, is_capture)
+                
+                # Verifier si le coup humain a termine la partie
+                if result.get("game_over"):
+                    manager.vision.game_started = False
+                    await asyncio.sleep(0.3) # Petit delai pour laisser le broadcast game_over partir
+                    return
+
                 # Aussi mettre a jour apres le coup robot si il a joue
                 robot_resp = result.get("robot_response", {})
                 if robot_resp.get("success"):
@@ -418,6 +438,12 @@ async def _check_vision_move():
                         r_capture = manager.vision.reference_board and r_to in manager.vision.reference_board
                         manager.vision.update_reference_after_move(r_from, r_to, r_capture)
                         hybrid_manager.on_move_played(r_from, r_to, bool(r_capture))
+                    
+                    # Verifier si le coup robot a termine la partie
+                    if robot_resp.get("game_over"):
+                        manager.vision.game_started = False
+                        await asyncio.sleep(0.3)
+                        return
 
                 # Vider les buffers et réinitialiser la stabilité pour repartir clean
                 manager.vision._buffers.clear()
@@ -1251,6 +1277,35 @@ async def get_leaderboard(limit: Optional[int] = None): return manager.leaderboa
 @app.post("/leaderboard/add-game", tags=["Leaderboard"])
 async def add_game_to_leaderboard(data: LeaderboardAddRequest):
     return {"success": manager.leaderboard.add_game(**data.model_dump())}
+
+# --- FEEDBACK ---
+@app.post("/feedback/submit", tags=["Feedback"])
+async def submit_feedback(data: FeedbackSubmitRequest):
+    """Soumet un nouveau feedback"""
+    success = manager.feedback.add_feedback(
+        player_name=data.player_name,
+        rating=data.rating,
+        comment=data.comment,
+        difficulty=data.difficulty,
+        result=data.result,
+        acpl_score=data.acpl_score
+    )
+    if success:
+        await manager.log("info", f"Nouveau feedback de {data.player_name} ({data.rating}/5)")
+    return {"success": success}
+
+@app.get("/feedback/logs", tags=["Feedback"])
+async def get_feedback_logs():
+    """Récupère tous les feedbacks"""
+    return {"feedbacks": manager.feedback.get_feedbacks()}
+
+@app.post("/feedback/reset", tags=["Feedback"])
+async def reset_feedbacks():
+    """Efface tous les feedbacks"""
+    success = manager.feedback.reset_feedbacks()
+    if success:
+        await manager.log("warning", "Tous les feedbacks ont été effacés")
+    return {"success": success}
 
 # --- WEBSOCKET ---
 @app.websocket("/ws")

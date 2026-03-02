@@ -44,19 +44,19 @@ export function SafetyScreen({ onContinue, onBack }: SafetyScreenProps) {
   ];
 
   return (
-    <div className="h-screen flex items-center justify-center p-4 overflow-hidden">
+    <div className="h-screen flex items-center justify-center p-4 overflow-auto">
       {/* Back Button */}
       <button
         onClick={onBack}
-        className="absolute top-4 left-4 flex items-center gap-2 text-slate-400 hover:text-white transition-colors group"
+        className="absolute top-4 left-4 flex items-center gap-2 text-slate-400 hover:text-white transition-colors group z-10"
       >
-        <div className="w-9 h-9 rounded-full bg-slate-800/50 border border-slate-700 flex items-center justify-center group-hover:border-cyan-400 transition-all">
+        <div className="w-9 h-9 rounded-full bg-slate-800/50 backdrop-blur-sm border border-slate-700 flex items-center justify-center group-hover:border-cyan-400 transition-all shadow-lg">
           <ArrowLeft className="w-4 h-4" />
         </div>
         <span className="font-medium text-sm">Retour</span>
       </button>
 
-      <div className="max-w-5xl w-full">
+      <div className="max-w-5xl w-full my-8">
         {/* Titre */}
         <div className="text-center mb-6">
           <div className="flex items-center justify-center gap-2 mb-2">
@@ -71,7 +71,7 @@ export function SafetyScreen({ onContinue, onBack }: SafetyScreenProps) {
         </div>
 
         {/* Cartes d'avertissement */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+        <div className="grid grid-cols-3 gap-4 mb-6">
           {safetyRules.map((rule, index) => {
             const Icon = rule.icon;
             const images = [robotImage1, robotImage2, robotImage3];
@@ -80,12 +80,12 @@ export function SafetyScreen({ onContinue, onBack }: SafetyScreenProps) {
                 key={index}
                 className="p-4 bg-slate-800/50 border-slate-700 hover:border-slate-600 transition-all duration-300"
               >
-                {/* Image pour chaque carte */}
-                <div className="w-56 h-56 mx-auto bg-slate-900/80 rounded-lg mb-3 flex items-center justify-center overflow-hidden">
+                {/* Image pour chaque carte - Taille fixe et carrée */}
+                <div className="w-40 h-40 mx-auto bg-slate-900/80 rounded-lg mb-3 flex items-center justify-center overflow-hidden">
                   <img 
                     src={images[index]} 
                     alt={`${rule.title} - Robot UR7e`}
-                    className="w-full h-full object-contain"
+                    className="w-full h-full object-cover"
                   />
                 </div>
                 <div className="flex items-center justify-center gap-2 mb-2">
@@ -102,7 +102,7 @@ export function SafetyScreen({ onContinue, onBack }: SafetyScreenProps) {
 
         {/* Engagement */}
         <Alert className="mb-5 bg-slate-800/50 border-slate-600 py-3">
-          <AlertTriangle className="h-4 w-4 text-yellow-500" />
+          <AlertTriangle className="h-4 w-4 text-yellow-500 flex-shrink-0" />
           <AlertTitle className="text-white text-sm">Important</AlertTitle>
           <AlertDescription className="text-slate-300 text-xs">
             Votre sécurité est notre priorité. En cochant la case ci-dessous, vous reconnaissez avoir pris connaissance des consignes et vous engagez à les respecter pendant toute la durée de votre partie.
@@ -116,7 +116,7 @@ export function SafetyScreen({ onContinue, onBack }: SafetyScreenProps) {
               id="safety-agreement"
               checked={hasAccepted}
               onCheckedChange={(checked) => setHasAccepted(checked === true)}
-              className="mt-0.5 data-[state=checked]:bg-cyan-500 data-[state=checked]:border-cyan-500"
+              className="mt-0.5 data-[state=checked]:bg-cyan-500 data-[state=checked]:border-cyan-500 flex-shrink-0"
             />
             <label 
               htmlFor="safety-agreement" 

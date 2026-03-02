@@ -46,7 +46,7 @@ export function StartScreen({ onStartGame, onBack }: StartScreenProps) {
       {/* Back Button */}
       <button
         onClick={onBack}
-        className="absolute top-6 left-6 flex items-center gap-2 text-slate-400 hover:text-white transition-colors group"
+        className="absolute top-6 left-6 flex items-center gap-2 text-slate-400 hover:text-white transition-colors group z-10"
       >
         <div className="w-10 h-10 rounded-full bg-slate-800/50 border border-slate-700 flex items-center justify-center group-hover:border-cyan-400 transition-all">
           <ArrowLeft className="w-5 h-5" />
@@ -76,7 +76,7 @@ export function StartScreen({ onStartGame, onBack }: StartScreenProps) {
           <h2 className="text-2xl font-semibold text-white mb-6 text-center">
             Choisissez votre niveau
           </h2>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div className="grid grid-cols-3 gap-6">
             {difficulties.map((diff) => {
               const Icon = diff.icon;
               const isSelected = selectedDifficulty === diff.id;

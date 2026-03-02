@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 
-export type RobotStatus = 'idle' | 'thinking' | 'moving' | 'error' | 'disconnected';
+export type RobotStatus = 'idle' | 'thinking' | 'moving' | 'error' | 'disconnected' | 'replacing';
 
 export interface MoveEvaluation {
   move: string;
@@ -32,6 +32,7 @@ export interface UseChessRobotReturn {
   visionState: VisionState | null;
   visionGameStarted: boolean;
   illegalMoveAlert: IllegalMoveAlert | null;
+  isReplacingBoard: boolean;
   isPromotionPending: boolean;
   promotionSquare: string | null;
   promotionColor: 'white' | 'black' | null;
@@ -44,13 +45,12 @@ export interface UseChessRobotReturn {
   confirmPlacement: (useCamera: boolean) => Promise<boolean>;
   dismissIllegalAlert: () => void;
   replaceBoard: () => Promise<boolean>;
-  isReplacingBoard: boolean;
-  confirmPromotion: (fromSq: string) => Promise<boolean>;
+  confirmPromotion: (from_sq: string) => Promise<boolean>;
   reconnectRobot: () => Promise<boolean>;
 }
 
-const API_BASE = `http://${window.location.hostname}:8000`;
-const WS_URL = `ws://${window.location.hostname}:8000/ws`;
+const API_BASE = `${window.location.protocol}//${window.location.hostname}:8000`;
+const WS_URL = `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.hostname}:8000/ws`;
 
 const INITIAL_FEN = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
 
@@ -101,19 +101,36 @@ export function useChessRobot(
   const [visionGameStarted, setVisionGameStarted] = useState(false);
   const [illegalMoveAlert, setIllegalMoveAlert] = useState<IllegalMoveAlert | null>(null);
   const [isReplacingBoard, setIsReplacingBoard] = useState(false);
+  
+  // Promotion states
   const [isPromotionPending, setIsPromotionPending] = useState(false);
   const [promotionSquare, setPromotionSquare] = useState<string | null>(null);
   const [promotionColor, setPromotionColor] = useState<'white' | 'black' | null>(null);
+
   const wsRef = useRef<WebSocket | null>(null);
+  const addLogRef = useRef(addLog);
+  const onMoveCompleteRef = useRef(onMoveComplete);
+
+  // Mettre à jour les refs quand les callbacks changent
+  useEffect(() => {
+    addLogRef.current = addLog;
+  }, [addLog]);
+
+  useEffect(() => {
+    onMoveCompleteRef.current = onMoveComplete;
+  }, [onMoveComplete]);
 
   // --- WebSocket ---
   useEffect(() => {
+    let reconnectTimer: NodeJS.Timeout;
+
     const connect = () => {
+      console.log('Tentative de connexion WebSocket...');
       const ws = new WebSocket(WS_URL);
 
       ws.onopen = () => {
         setRobotStatus('idle');
-        addLog('info', 'Connexion WebSocket etablie');
+        addLogRef.current('info', 'Connexion WebSocket etablie');
       };
 
       ws.onmessage = (event) => {
@@ -123,9 +140,15 @@ export function useChessRobot(
           if (msg.type === 'status') {
             const statusMap: { [key: string]: RobotStatus } = {
               'idle': 'idle', 'thinking': 'thinking', 'moving': 'moving',
-              'error': 'error', 'paused': 'idle',
+              'error': 'error', 'paused': 'idle', 'replacing': 'replacing'
             };
             setRobotStatus(statusMap[msg.status] || 'idle');
+            
+            if (msg.status === 'replacing') {
+              setIsReplacingBoard(true);
+            } else {
+              setIsReplacingBoard(false);
+            }
           }
 
           if (msg.type === 'move') {
@@ -133,23 +156,23 @@ export function useChessRobot(
             setIsWhiteTurn(msg.fen.split(' ')[1] === 'w');
 
             if (msg.player === 'robot') {
-              onMoveComplete({
+              onMoveCompleteRef.current({
                 from: msg.from,
                 to: msg.to,
                 piece: msg.san ? msg.san[0] : 'Piece',
                 player: 'robot'
               });
-              addLog('robot', `Robot joue: ${msg.san || msg.from + ' -> ' + msg.to}`);
+              addLogRef.current('robot', `Robot joue: ${msg.san || msg.from + ' -> ' + msg.to}`);
               setRobotStatus('idle');
             } else if (msg.player === 'human') {
               // Coup humain detecte par la vision camera
-              onMoveComplete({
+              onMoveCompleteRef.current({
                 from: msg.from,
                 to: msg.to,
                 piece: msg.san ? msg.san[0] : 'Piece',
                 player: 'human'
               });
-              addLog('player', `Coup detecte: ${msg.san || msg.from + ' -> ' + msg.to}`);
+              addLogRef.current('player', `Coup detecte: ${msg.san || msg.from + ' -> ' + msg.to}`);
               setRobotStatus('thinking');
             }
           }
@@ -164,11 +187,11 @@ export function useChessRobot(
             } else {
               setGameResult('draw');
             }
-            addLog('info', result);
+            addLogRef.current('info', result);
           }
 
           if (msg.type === 'log') {
-            addLog(msg.logType || 'info', msg.message);
+            addLogRef.current(msg.logType || 'info', msg.message);
           }
 
           if (msg.type === 'connected') {
@@ -189,56 +212,15 @@ export function useChessRobot(
 
           if (msg.type === 'vision_game_started') {
             setVisionGameStarted(true);
-            addLog('info', `Placement confirme (${msg.source}, ${msg.pieces_count} pieces)`);
-          }
-
-          if (msg.type === 'board_reset_started') {
-            setIsReplacingBoard(true);
-            addLog('info', `Replacement demarre (${msg.total_moves ?? '?'} mouvements)`);
-          }
-
-          if (msg.type === 'board_reset_progress') {
-            addLog('robot',
-              `[${msg.current}/${msg.total}] ${msg.piece_color ?? ''} ${msg.piece_type ?? ''}: ${msg.from ?? '?'} → ${msg.to ?? '?'}`
-            );
-          }
-
-          if (msg.type === 'board_replaced') {
-            setIsReplacingBoard(false);
-            setFen(msg.fen ?? INITIAL_FEN);
-            setIsWhiteTurn(true);
-            addLog('info', `Plateau replace (${msg.moves_executed ?? '?'} mouvements)`);
-          }
-
-          if (msg.type === 'board_reset_interrupted') {
-            setIsReplacingBoard(false);
-            addLog('warning', 'Replacement interrompu');
-          }
-
-          if (msg.type === 'promotion_required') {
-            setIsPromotionPending(true);
-            setPromotionSquare(msg.square || null);
-            setPromotionColor(msg.color === 'white' ? 'white' : 'black');
-            const colorStr = msg.color === 'white' ? 'blanche' : 'noire';
-            addLog('info', `Promotion ! Dame ${colorStr} à placer pour la case ${msg.square}`);
-          }
-
-          if (msg.type === 'robot_reconnected') {
-            if (msg.success) {
-              setRobotStatus('idle');
-              addLog('info', 'Robot reconnecté avec succès');
-            } else {
-              setRobotStatus('error');
-              addLog('error', 'Échec de la reconnexion robot');
-            }
+            addLogRef.current('info', `Placement confirme (${msg.source}, ${msg.pieces_count} pieces)`);
           }
 
           if (msg.type === 'vision_anomaly') {
-            addLog('warning', msg.message || 'Anomalie vision detectee');
+            addLogRef.current('warning', msg.message || 'Anomalie vision detectee');
             const suggestions: string[] = [];
             if (msg.suggestions) {
               for (const s of msg.suggestions) {
-                addLog('warning', s);
+                addLogRef.current('warning', s);
                 suggestions.push(s);
               }
             }
@@ -248,13 +230,26 @@ export function useChessRobot(
               timestamp: Date.now(),
             });
           }
+
+          if (msg.type === 'promotion_required') {
+            setIsPromotionPending(true);
+            setPromotionSquare(msg.square);
+            setPromotionColor(msg.color);
+            addLogRef.current('info', `Promotion requise en ${msg.square}. Placez une Dame.`);
+          }
+
+          if (msg.type === 'board_replaced') {
+            setIsReplacingBoard(false);
+            setFen(msg.fen);
+            addLogRef.current('info', 'Plateau replace avec succes');
+          }
         } catch { /* ignore parse errors */ }
       };
 
       ws.onclose = () => {
         setRobotStatus('disconnected');
         // Reconnexion automatique apres 3s
-        setTimeout(connect, 3000);
+        reconnectTimer = setTimeout(connect, 3000);
       };
 
       ws.onerror = () => {
@@ -267,9 +262,13 @@ export function useChessRobot(
     connect();
 
     return () => {
-      wsRef.current?.close();
+      clearTimeout(reconnectTimer);
+      if (wsRef.current) {
+        wsRef.current.onclose = null; // Éviter le trigger de reconnexion lors du démontage
+        wsRef.current.close();
+      }
     };
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, []); // Dépendances vides pour ne connecter qu'une seule fois
 
   // --- Init game via API ---
   const initGame = useCallback(async (difficulty: string) => {
@@ -288,12 +287,12 @@ export function useChessRobot(
         setMoveEvaluations([]);
         setAcplScore(0);
         setRobotStatus('idle');
-        addLog('info', `Nouvelle partie - Difficulte: ${difficulty}`);
+        addLogRef.current('info', `Nouvelle partie - Difficulte: ${difficulty}`);
       }
     } catch (e) {
-      addLog('error', 'Erreur connexion API pour nouvelle partie');
+      addLogRef.current('error', 'Erreur connexion API pour nouvelle partie');
     }
-  }, [addLog]);
+  }, []);
 
   // --- Human move via API ---
   const onMove = useCallback(async (from: string, to: string): Promise<boolean> => {
@@ -302,7 +301,7 @@ export function useChessRobot(
       const board = fenToBoard(fen);
       const piece = board[from];
       if (!piece) {
-        addLog('error', 'Aucune piece a deplacer');
+        addLogRef.current('error', 'Aucune piece a deplacer');
         return false;
       }
 
@@ -316,15 +315,15 @@ export function useChessRobot(
       const data = await res.json();
 
       if (!data.success) {
-        addLog('error', data.error || 'Coup illegal');
+        addLogRef.current('error', data.error || 'Coup illegal');
         setRobotStatus('idle');
         return false;
       }
 
       // Le WebSocket va mettre a jour le FEN, mais on le fait aussi ici pour la reactivite
       const pieceName = getPieceName(piece);
-      addLog('player', `Vous jouez: ${data.san || from + ' -> ' + to}`);
-      onMoveComplete({ from, to, piece: pieceName, player: 'human' });
+      addLogRef.current('player', `Vous jouez: ${data.san || from + ' -> ' + to}`);
+      onMoveCompleteRef.current({ from, to, piece: pieceName, player: 'human' });
 
       // Verifier fin de partie
       if (data.game_over) {
@@ -342,11 +341,11 @@ export function useChessRobot(
 
       return true;
     } catch (e) {
-      addLog('error', 'Erreur connexion API');
+      addLogRef.current('error', 'Erreur connexion API');
       setRobotStatus('error');
       return false;
     }
-  }, [fen, addLog, onMoveComplete]);
+  }, [fen]);
 
   // --- Robot move via API ---
   const triggerRobotMove = useCallback(async () => {
@@ -355,7 +354,7 @@ export function useChessRobot(
       const data = await res.json();
 
       if (!data.success) {
-        addLog('error', data.error || 'Erreur coup robot');
+        addLogRef.current('error', data.error || 'Erreur coup robot');
         setRobotStatus('idle');
         return;
       }
@@ -380,10 +379,10 @@ export function useChessRobot(
         });
       }
     } catch (e) {
-      addLog('error', 'Erreur connexion API pour coup robot');
+      addLogRef.current('error', 'Erreur connexion API pour coup robot');
       setRobotStatus('error');
     }
-  }, [addLog]);
+  }, []);
 
   // --- Legal moves via API ---
   const getLegalMoves = useCallback(async (square: string): Promise<string[]> => {
@@ -425,10 +424,72 @@ export function useChessRobot(
       }
       return false;
     } catch {
-      addLog('error', 'Erreur confirmation placement');
+      addLogRef.current('error', 'Erreur confirmation placement');
       return false;
     }
-  }, [addLog]);
+  }, []);
+
+  // --- Replace board via API ---
+  const replaceBoard = useCallback(async (): Promise<boolean> => {
+    try {
+      setIsReplacingBoard(true);
+      setRobotStatus('replacing');
+      const res = await fetch(`${API_BASE}/game/replace-board`, { method: 'POST' });
+      const data = await res.json();
+      if (data.success) {
+        addLogRef.current('info', 'Replacement du plateau demarre');
+        return true;
+      } else {
+        addLogRef.current('error', data.error || 'Erreur lors du replacement');
+        setIsReplacingBoard(false);
+        setRobotStatus('idle');
+        return false;
+      }
+    } catch {
+      addLogRef.current('error', 'Erreur connexion API pour replacement');
+      setIsReplacingBoard(false);
+      setRobotStatus('error');
+      return false;
+    }
+  }, []);
+
+  // --- Confirm promotion ---
+  const confirmPromotion = useCallback(async (from_sq: string): Promise<boolean> => {
+    try {
+      const res = await fetch(`${API_BASE}/game/confirm-promotion`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ from_sq }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setIsPromotionPending(false);
+        setPromotionSquare(null);
+        setPromotionColor(null);
+        return true;
+      }
+      return false;
+    } catch {
+      return false;
+    }
+  }, []);
+
+  // --- Reconnect Robot ---
+  const reconnectRobot = useCallback(async (): Promise<boolean> => {
+    try {
+      const res = await fetch(`${API_BASE}/robot/reconnect`, { method: 'POST' });
+      const data = await res.json();
+      if (data.success) {
+        setRobotStatus('idle');
+        addLogRef.current('info', 'Robot reconnecte avec succes');
+        return true;
+      }
+      return false;
+    } catch {
+      addLogRef.current('error', 'Erreur lors de la reconnexion du robot');
+      return false;
+    }
+  }, []);
 
   // --- Reset game ---
   const resetGame = useCallback(() => {
@@ -441,75 +502,16 @@ export function useChessRobot(
     setAcplScore(0);
     setVisionGameStarted(false);
     setIllegalMoveAlert(null);
-    addLog('info', 'Partie reinitialisee');
-  }, [addLog]);
+    setIsReplacingBoard(false);
+    setIsPromotionPending(false);
+    setPromotionSquare(null);
+    setPromotionColor(null);
+    addLogRef.current('info', 'Partie reinitialisee');
+  }, []);
 
   const dismissIllegalAlert = useCallback(() => {
     setIllegalMoveAlert(null);
   }, []);
-
-  // --- Confirm promotion via API ---
-  const confirmPromotion = useCallback(async (fromSq: string): Promise<boolean> => {
-    try {
-      const res = await fetch(`${API_BASE}/game/confirm-promotion`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ from_sq: fromSq }),
-      });
-      const data = await res.json();
-      if (data.success) {
-        setIsPromotionPending(false);
-        setPromotionSquare(null);
-        setPromotionColor(null);
-      }
-      return data.success;
-    } catch {
-      addLog('error', 'Erreur confirmation promotion');
-      return false;
-    }
-  }, [addLog]);
-
-  // --- Reconnect robot via API ---
-  const reconnectRobot = useCallback(async (): Promise<boolean> => {
-    try {
-      setRobotStatus('disconnected');
-      addLog('info', 'Reconnexion au robot en cours...');
-      const res = await fetch(`${API_BASE}/robot/reconnect`, { method: 'POST' });
-      const data = await res.json();
-      if (data.success) {
-        setRobotStatus('idle');
-      } else {
-        setRobotStatus('error');
-        addLog('error', 'Échec de la reconnexion robot');
-      }
-      return data.success;
-    } catch {
-      addLog('error', 'Erreur connexion API pour reconnexion robot');
-      setRobotStatus('error');
-      return false;
-    }
-  }, [addLog]);
-
-  // --- Replace board via API ---
-  const replaceBoard = useCallback(async (): Promise<boolean> => {
-    if (isReplacingBoard) return false;
-    setIsReplacingBoard(true);
-    try {
-      const res = await fetch(`${API_BASE}/game/replace-board`, { method: 'POST' });
-      const data = await res.json();
-      if (!data.success) {
-        addLog('error', data.error || 'Echec du replacement du plateau');
-        setIsReplacingBoard(false);
-        return false;
-      }
-      // Le WS board_replaced / board_reset_interrupted gere setIsReplacingBoard
-      return true;
-    } catch {
-      addLog('error', 'Erreur connexion API pour replace-board');
-      setIsReplacingBoard(false);
-      return false;
-    }
-  }, [isReplacingBoard, addLog]);
 
   return {
     fen,
@@ -522,6 +524,7 @@ export function useChessRobot(
     visionState,
     visionGameStarted,
     illegalMoveAlert,
+    isReplacingBoard,
     isPromotionPending,
     promotionSquare,
     promotionColor,
@@ -534,7 +537,6 @@ export function useChessRobot(
     confirmPlacement,
     dismissIllegalAlert,
     replaceBoard,
-    isReplacingBoard,
     confirmPromotion,
     reconnectRobot,
   };

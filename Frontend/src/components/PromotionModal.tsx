@@ -1,70 +1,92 @@
-import { useState } from 'react';
-import { Crown } from 'lucide-react';
+import { Crown, X } from 'lucide-react';
+import { motion, AnimatePresence } from 'motion/react';
 
 interface PromotionModalProps {
   isVisible: boolean;
   promotionSquare: string;
   promotionColor: 'white' | 'black';
-  onConfirm: (fromSq: string) => void;
+  onConfirm: (piece: 'q' | 'r' | 'b' | 'n') => void;
 }
 
 export function PromotionModal({ isVisible, promotionSquare, promotionColor, onConfirm }: PromotionModalProps) {
-  const [fromSq, setFromSq] = useState('');
-
-  if (!isVisible) return null;
-
-  const colorStr = promotionColor === 'white' ? 'blanche' : 'noire';
+  const pieces = [
+    { code: 'q', name: 'Dame', symbol: '♕' },
+    { code: 'r', name: 'Tour', symbol: '♖' },
+    { code: 'b', name: 'Fou', symbol: '♗' },
+    { code: 'n', name: 'Cavalier', symbol: '♘' },
+  ] as const;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm">
-      <div className="bg-slate-800 border border-amber-500/50 rounded-2xl p-6 shadow-2xl max-w-sm w-full mx-4">
-        {/* Header */}
-        <div className="flex items-center gap-3 mb-4">
-          <Crown className="w-7 h-7 text-amber-400 flex-shrink-0" />
-          <div>
-            <h2 className="text-white font-bold text-lg">Promotion !</h2>
-            <p className="text-slate-400 text-sm">
-              Pion {colorStr} arrivé en <span className="text-amber-400 font-mono font-semibold">{promotionSquare}</span>
-            </p>
-          </div>
-        </div>
-
-        {/* Instructions */}
-        <div className="bg-amber-900/20 border border-amber-500/30 rounded-lg p-3 mb-4 text-sm text-amber-200 space-y-1">
-          <p className="font-medium">Étapes :</p>
-          <ol className="list-decimal list-inside space-y-1 text-amber-300/90">
-            <li>Placez une dame {colorStr} sur une case libre accessible (ex&nbsp;: bord du plateau)</li>
-            <li>Notez la case où vous l'avez déposée</li>
-            <li>Entrez cette case ci-dessous et confirmez</li>
-          </ol>
-        </div>
-
-        {/* Input */}
-        <div className="mb-4">
-          <label className="text-slate-400 text-xs mb-1.5 block">
-            Case où la dame est placée <span className="text-slate-500">(ex : a0, h9, 99…)</span>
-          </label>
-          <input
-            type="text"
-            value={fromSq}
-            onChange={e => setFromSq(e.target.value.toLowerCase().trim())}
-            placeholder="ex: a0"
-            className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white font-mono text-sm focus:outline-none focus:border-amber-500 transition-colors"
-            maxLength={2}
-            autoFocus
-            onKeyDown={e => { if (e.key === 'Enter' && fromSq.length >= 2) onConfirm(fromSq); }}
+    <AnimatePresence>
+      {isVisible && (
+        <>
+          {/* Backdrop */}
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50"
           />
-        </div>
 
-        {/* Confirm button */}
-        <button
-          onClick={() => onConfirm(fromSq)}
-          disabled={fromSq.length < 2}
-          className="w-full px-4 py-2.5 rounded-lg text-sm font-medium bg-amber-600 hover:bg-amber-500 disabled:opacity-40 disabled:cursor-not-allowed text-white transition-colors"
-        >
-          Le robot place la dame
-        </button>
-      </div>
-    </div>
+          {/* Modal */}
+          <motion.div
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.9 }}
+            className="fixed inset-0 flex items-center justify-center z-50 p-4"
+          >
+            <div className="bg-gradient-to-br from-slate-800 to-slate-900 border-2 border-cyan-500/50 rounded-2xl shadow-2xl max-w-md w-full p-6">
+              {/* Header */}
+              <div className="flex items-center justify-between mb-6">
+                <div className="flex items-center gap-3">
+                  <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-yellow-500 to-amber-600 flex items-center justify-center shadow-lg">
+                    <Crown className="w-7 h-7 text-white" />
+                  </div>
+                  <div>
+                    <h2 className="text-2xl font-bold text-white">Promotion du Pion</h2>
+                    <p className="text-sm text-slate-400">Case {promotionSquare.toUpperCase()}</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Description */}
+              <p className="text-slate-300 mb-6">
+                Choisissez la pièce en laquelle vous souhaitez promouvoir votre pion :
+              </p>
+
+              {/* Piece Selection Grid */}
+              <div className="grid grid-cols-2 gap-3">
+                {pieces.map(piece => (
+                  <button
+                    key={piece.code}
+                    onClick={() => onConfirm(piece.code)}
+                    className="group relative bg-slate-700/50 hover:bg-slate-700 border-2 border-slate-600 hover:border-cyan-500 rounded-xl p-6 transition-all duration-300 transform hover:scale-105"
+                  >
+                    <div className="flex flex-col items-center gap-3">
+                      <div className={`text-6xl ${promotionColor === 'white' ? 'text-slate-100' : 'text-slate-800'} drop-shadow-lg`}>
+                        {piece.symbol}
+                      </div>
+                      <span className="text-white font-semibold group-hover:text-cyan-400 transition-colors">
+                        {piece.name}
+                      </span>
+                    </div>
+                    
+                    {/* Hover effect */}
+                    <div className="absolute inset-0 bg-gradient-to-br from-cyan-500/0 to-blue-500/0 group-hover:from-cyan-500/10 group-hover:to-blue-500/10 rounded-xl transition-all duration-300" />
+                  </button>
+                ))}
+              </div>
+
+              {/* Info */}
+              <div className="mt-6 bg-cyan-500/10 border border-cyan-500/30 rounded-xl p-3">
+                <p className="text-cyan-300 text-sm text-center">
+                  La dame est généralement le meilleur choix
+                </p>
+              </div>
+            </div>
+          </motion.div>
+        </>
+      )}
+    </AnimatePresence>
   );
 }

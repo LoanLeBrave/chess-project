@@ -6,10 +6,12 @@ import { StartScreen } from './components/StartScreen';
 import { GameScreen } from './components/GameScreen';
 import { LeaderboardScreen } from './components/LeaderboardScreen';
 import { PlacementConfirmationScreen } from './components/PlacementConfirmationScreen';
+import { FeedbackScreen } from './components/FeedbackScreen';
+import { FeedbackLogsScreen } from './components/FeedbackLogsScreen';
 
 export type DifficultyLevel = 'beginner' | 'intermediate' | 'advanced';
 export type GameState = 'menu' | 'playing' | 'paused' | 'finished';
-export type AppScreen = 'welcome' | 'leaderboard' | 'calibration' | 'safety' | 'difficulty' | 'placement' | 'game';
+export type AppScreen = 'welcome' | 'leaderboard' | 'calibration' | 'safety' | 'difficulty' | 'placement' | 'game' | 'feedback' | 'feedbackLogs';
 
 export interface LogEntry {
   id: string;
@@ -18,11 +20,19 @@ export interface LogEntry {
   message: string;
 }
 
+export interface GameResults {
+  result: 'win' | 'lose' | 'draw' | 'abandoned';
+  acplScore: number;
+  totalMoves: number;
+  elapsedTime: number;
+}
+
 function App() {
   const [currentScreen, setCurrentScreen] = useState<AppScreen>('welcome');
   const [gameState, setGameState] = useState<GameState>('menu');
   const [difficulty, setDifficulty] = useState<DifficultyLevel>('beginner');
   const [playerName, setPlayerName] = useState('');
+  const [gameResults, setGameResults] = useState<GameResults | null>(null);
 
   const handleWelcomeContinue = () => {
     setCurrentScreen('calibration');
@@ -77,12 +87,31 @@ function App() {
     setCurrentScreen('welcome');
   };
 
+  const handleGoToFeedback = (results: GameResults) => {
+    setGameResults(results);
+    setCurrentScreen('feedback');
+  };
+
+  const handleFeedbackComplete = () => {
+    setGameState('menu');
+    setCurrentScreen('welcome');
+  };
+
+  const handleViewFeedbackLogs = () => {
+    setCurrentScreen('feedbackLogs');
+  };
+
+  const handleFeedbackLogsBack = () => {
+    setCurrentScreen('welcome');
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900">
       {currentScreen === 'welcome' && (
         <WelcomeScreen 
           onContinue={handleWelcomeContinue}
           onViewLeaderboard={handleViewLeaderboard}
+          onViewFeedbackLogs={handleViewFeedbackLogs}
         />
       )}
       {currentScreen === 'leaderboard' && (
@@ -118,8 +147,21 @@ function App() {
           gameState={gameState}
           setGameState={setGameState}
           onReturnToMenu={handleReturnToMenu}
+          onGoToFeedback={handleGoToFeedback}
           playerName={playerName}
         />
+      )}
+      {currentScreen === 'feedback' && gameResults && (
+        <FeedbackScreen
+          onReturnToMenu={handleFeedbackComplete}
+          playerName={playerName}
+          difficulty={difficulty}
+          result={gameResults.result}
+          acplScore={gameResults.acplScore}
+        />
+      )}
+      {currentScreen === 'feedbackLogs' && (
+        <FeedbackLogsScreen onBack={handleFeedbackLogsBack} />
       )}
     </div>
   );
