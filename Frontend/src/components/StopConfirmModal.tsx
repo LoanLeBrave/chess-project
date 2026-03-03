@@ -16,7 +16,7 @@ export function StopConfirmModal({ isVisible, onCancel, onConfirm }: StopConfirm
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70">
       <div className="bg-slate-800 border border-slate-600 rounded-2xl p-6 shadow-2xl max-w-md w-full mx-4">
         {/* Header */}
-        <div className="flex items-start gap-3 mb-5">
+        <div className="flex items-start gap-3 mb-4">
           <AlertTriangle className="w-6 h-6 text-amber-400 flex-shrink-0 mt-0.5" />
           <div className="flex-1">
             <h2 className="text-white font-bold text-lg">Arrêter la partie ?</h2>
