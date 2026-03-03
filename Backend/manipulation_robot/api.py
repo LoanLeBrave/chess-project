@@ -1254,7 +1254,17 @@ async def camera_calibrate_save(data: dict):
         with open(CALIBRATION_FILE, 'w', encoding='utf-8') as f:
             json.dump(calibration_data, f, indent=2, ensure_ascii=False)
 
-        await manager.log("info", f"Calibration camera sauvegardee: {CALIBRATION_FILE}")
+        # Recharger les coins en mémoire — FIXED_BOARD_CORNERS est chargé une seule fois
+        # à l'import du module, il faut le mettre à jour manuellement après écriture du fichier.
+        import chess_vision.config as _cv_config
+        new_corners = _cv_config.load_board_corners()
+        _cv_config.FIXED_BOARD_CORNERS = new_corners
+
+        # Forcer la réinitialisation du pipeline vision si déjà instancié
+        if hasattr(manager, '_pipeline'):
+            manager._pipeline = None
+
+        await manager.log("info", f"Calibration camera sauvegardee et rechargee: {CALIBRATION_FILE}")
         return {"success": True, "file": CALIBRATION_FILE}
     except Exception as e:
         return {"success": False, "error": str(e)}
