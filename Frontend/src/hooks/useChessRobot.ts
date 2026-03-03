@@ -307,6 +307,8 @@ export function useChessRobot(
 
       ws.onclose = () => {
         setRobotStatus('disconnected');
+        // Si une opération de replacement était en cours, réinitialiser l'état
+        setIsReplacingBoard(false);
         // Reconnexion automatique apres 3s
         reconnectTimer = setTimeout(connect, 3000);
       };
@@ -486,7 +488,10 @@ export function useChessRobot(
       const res = await fetch(`${API_BASE}/game/replace-board`, { method: 'POST' });
       const data = await res.json();
       if (data.success) {
-        addLogRef.current('info', 'Replacement du plateau demarre');
+        addLogRef.current('info', 'Plateau replacé avec succès');
+        // Réinitialiser l'état même si l'événement WebSocket board_replaced est manqué
+        setIsReplacingBoard(false);
+        setRobotStatus('idle');
         return true;
       } else {
         addLogRef.current('error', data.error || 'Erreur lors du replacement');

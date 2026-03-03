@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Eye, EyeOff, Camera, CheckCircle, AlertTriangle, X, RotateCcw, Pencil, ArrowLeft } from 'lucide-react';
+import { Eye, EyeOff, Camera, CheckCircle, AlertTriangle, X, RotateCcw, Pencil, ArrowLeft, Loader2 } from 'lucide-react';
 import { ChessBoard } from './ChessBoard';
 import { ControlPanel } from './ControlPanel';
 import { MoveHistory } from './MoveHistory';
@@ -628,6 +628,39 @@ export function GameScreen({ difficulty, gameState, setGameState, onReturnToMenu
         type={checkmateWarningType}
         onClose={() => setShowCheckmateWarning(false)}
       />
+
+      {/* Replacement in progress overlay */}
+      <AnimatePresence>
+        {isReplacingBoard && (
+          <motion.div
+            key="replacing-overlay"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-40 flex items-center justify-center bg-black/65 backdrop-blur-sm"
+          >
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0, y: 20 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              transition={{ type: 'spring', damping: 18, stiffness: 280 }}
+              className="bg-slate-800/95 border border-cyan-500/50 rounded-2xl p-8 max-w-sm w-full mx-4 text-center shadow-2xl shadow-cyan-500/20"
+            >
+              <div className="flex items-center justify-center mb-5">
+                <div className="relative">
+                  <div className="absolute inset-0 rounded-full bg-cyan-400/20 blur-xl" />
+                  <Loader2 className="w-14 h-14 text-cyan-400 animate-spin relative" />
+                </div>
+              </div>
+              <h3 className="text-xl font-bold text-white mb-2">Replacement en cours…</h3>
+              <p className="text-slate-400 text-sm leading-relaxed">
+                Le robot replace toutes les pièces à leur position initiale.<br />
+                <span className="text-slate-500">Ne pas déplacer les pièces pendant l’opération.</span>
+              </p>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Resume Game Confirmation - Must validate pieces placement */}
       {showResumeAlert && (
