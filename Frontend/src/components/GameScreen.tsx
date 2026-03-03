@@ -13,7 +13,7 @@ import { PromotionModal } from './PromotionModal';
 import { CheckmateWarning } from './CheckmateWarning';
 import { useChessRobot } from '../hooks/useChessRobot';
 import type { DifficultyLevel, GameState, LogEntry, GameResults } from '../App';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'motion/react';
 
 interface GameScreenProps {
   difficulty: DifficultyLevel;
@@ -264,9 +264,8 @@ export function GameScreen({ difficulty, gameState, setGameState, onReturnToMenu
   };
 
   // Confirmer la reprise après vérification des pièces
-  const confirmResume = async () => {
+  const handleManualResume = async () => {
     setShowResumeAlert(false);
-    
     try {
       const res = await fetch(`${API_BASE}/game/pause`, { method: 'POST' });
       const data = await res.json();
@@ -275,9 +274,11 @@ export function GameScreen({ difficulty, gameState, setGameState, onReturnToMenu
         addLog('info', 'Partie reprise');
       }
     } catch {
-      // Fallback local si API indisponible
       setGameState('playing');
       addLog('info', 'Partie reprise');
+    }
+  };
+
     }
   };
 
@@ -677,7 +678,7 @@ export function GameScreen({ difficulty, gameState, setGameState, onReturnToMenu
                 Annuler
               </button>
               <button
-                onClick={confirmResume}
+                onClick={handleManualResume}
                 className="flex-1 px-5 py-3 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-400 hover:to-blue-400 text-white font-bold text-base transition-all duration-200 shadow-lg shadow-cyan-500/30 hover:shadow-cyan-500/50 hover:scale-[1.02]"
               >
                 ✓ Tout est OK, reprendre
