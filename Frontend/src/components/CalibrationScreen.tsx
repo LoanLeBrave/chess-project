@@ -326,12 +326,16 @@ export function CalibrationScreen({ onCalibrationComplete, onBack }: Calibration
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ point: 'z' }),
       });
+      // calibrate/save coupe le freedrive, fait la remontée +10cm,
+      // puis va en position de démarrage - tout ça avant de retourner la réponse
       await fetch(`${API_BASE}/robot/calibrate/save`, { method: 'POST' });
     } catch { /* continue */ }
+    setFreedriveActive(false); // le backend a coupé le freedrive
     setZCalibrated(true);
+    // Petit délai visuel, puis navigation
     setTimeout(() => {
       onCalibrationComplete();
-    }, 500);
+    }, 800);
   };
 
   const handleToggleFreedrive = async () => {

@@ -1148,6 +1148,15 @@ async def calibrate_save():
         return {"success": False, "error": f"Points manquants: {missing}"}
 
     try:
+        # Desactiver le freedrive s'il est encore actif (sinon moveL echoue silencieusement)
+        try:
+            manager.robot.rtde_c.endFreedriveMode()
+            time.sleep(0.1)
+            manager.robot.rtde_c.reuploadScript()
+            time.sleep(0.2)
+        except Exception:
+            pass
+
         p1 = manager.calib_points['a1']   # Trou A8/A1
         p2 = manager.calib_points['h8']   # Trou H1/H8
         p_z = manager.calib_points['z']   # Surface Z
