@@ -79,12 +79,8 @@ export function CalibrationScreen({ onCalibrationComplete, onBack }: Calibration
     if (newPin.every(digit => digit !== '')) {
       const enteredPin = newPin.join('');
       if (enteredPin === CORRECT_PIN) {
-        // Remettre la pince droite, puis fermer le gripper
-        fetch(`${API_BASE}/robot/calibrate/auto-level`, { method: 'POST' })
-          .catch(() => {})
-          .finally(() => {
-            fetch(`${API_BASE}/robot/calibrate/close-gripper`, { method: 'POST' }).catch(() => {});
-          });
+        // Remettre la pince droite et fermer le gripper (auto-level fait les deux)
+        fetch(`${API_BASE}/robot/calibrate/auto-level`, { method: 'POST' }).catch(() => {});
         setTimeout(() => {
           setIsUnlocked(true);
         }, 300);
@@ -302,11 +298,12 @@ export function CalibrationScreen({ onCalibrationComplete, onBack }: Calibration
       await fetch(`${API_BASE}/robot/calibrate/point`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ point: 'a1' }),
+        body: JSON.stringify({ point: 'a1', freedrive_active: freedriveActive }),
       });
     } catch { /* continue */ }
     setA1Calibrated(true);
     setCalibrationStep('h8');
+    // freedrive reste dans son état actuel - le backend gère la remontée de sécurité
   };
 
   const handleValidateH8 = async () => {
@@ -314,15 +311,10 @@ export function CalibrationScreen({ onCalibrationComplete, onBack }: Calibration
       await fetch(`${API_BASE}/robot/calibrate/point`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ point: 'h8' }),
+        body: JSON.stringify({ point: 'h8', freedrive_active: freedriveActive }),
       });
-      await fetch(`${API_BASE}/robot/calibrate/freedrive`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ enable: false }),
-      });
+      // Ne PAS désactiver le FreeDrive ici - il reste actif pour l'étape Z
     } catch { /* continue */ }
-    setFreedriveActive(false);
     setH8Calibrated(true);
     setCalibrationStep('z');
   };
@@ -334,12 +326,16 @@ export function CalibrationScreen({ onCalibrationComplete, onBack }: Calibration
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ point: 'z' }),
       });
+      // calibrate/save coupe le freedrive, fait la remontée +10cm,
+      // puis va en position de démarrage - tout ça avant de retourner la réponse
       await fetch(`${API_BASE}/robot/calibrate/save`, { method: 'POST' });
     } catch { /* continue */ }
+    setFreedriveActive(false); // le backend a coupé le freedrive
     setZCalibrated(true);
+    // Petit délai visuel, puis navigation
     setTimeout(() => {
       onCalibrationComplete();
-    }, 500);
+    }, 800);
   };
 
   const handleToggleFreedrive = async () => {

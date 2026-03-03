@@ -1024,7 +1024,7 @@ async def calibrate_close_gripper():
 
 @app.post("/robot/calibrate/auto-level")
 async def calibrate_auto_level():
-    """Remet la pince parfaitement verticale [pi, 0, 0]"""
+    """Remet la pince parfaitement verticale [pi, 0, 0] et ferme le gripper"""
     if not manager.robot.connected or not manager.robot.rtde_c:
         return {"success": False, "error": "Robot non connecte"}
 
@@ -1041,6 +1041,15 @@ async def calibrate_auto_level():
         current = manager.robot.rtde_r.getActualTCPPose()
         vertical_pose = [current[0], current[1], current[2], 3.1415, 0.0, 0.0]
         manager.robot.rtde_c.moveL(vertical_pose, 0.2, 0.2)
+
+        # Fermer le gripper pour la calibration (pointe fine dans le trou)
+        if manager.robot.gripper:
+            try:
+                manager.robot.gripper.close()
+                await manager.log("info", "Gripper ferme pour calibration")
+            except Exception:
+                pass
+
         await manager.log("info", "Pince remise droite (auto-level)")
         return {"success": True}
     except Exception as e:
@@ -1089,6 +1098,8 @@ async def calibrate_point(data: dict):
     if point not in ('a1', 'h8', 'z'):
         return {"success": False, "error": f"Point invalide: {point}"}
 
+    was_freedrive = data.get("freedrive_active", False)
+
     try:
         pose = manager.robot.rtde_r.getActualTCPPose()
         manager.calib_points[point] = list(pose)
@@ -1096,10 +1107,28 @@ async def calibrate_point(data: dict):
 
         # Remontee de securite apres A1 ou H8
         if point in ('a1', 'h8'):
+            # Desactiver freedrive avant le moveL
+            if was_freedrive:
+                try:
+                    manager.robot.rtde_c.endFreedriveMode()
+                    time.sleep(0.1)
+                    manager.robot.rtde_c.reuploadScript()
+                    time.sleep(0.1)
+                except:
+                    pass
+
             safe_pose = list(pose)
             safe_pose[2] += 0.1  # +10cm en Z
             manager.robot.rtde_c.moveL(safe_pose, 0.5, 0.3)
             await manager.log("info", "Remontee de securite effectuee")
+
+            # Reactiver freedrive si il etait actif
+            if was_freedrive:
+                try:
+                    manager.robot.rtde_c.freedriveMode([1, 1, 1, 0, 0, 0])
+                    await manager.log("info", "FreeDrive reactive apres remontee")
+                except:
+                    pass
 
         return {
             "success": True,
@@ -1119,6 +1148,15 @@ async def calibrate_save():
         return {"success": False, "error": f"Points manquants: {missing}"}
 
     try:
+        # Desactiver le freedrive s'il est encore actif (sinon moveL echoue silencieusement)
+        try:
+            manager.robot.rtde_c.endFreedriveMode()
+            time.sleep(0.1)
+            manager.robot.rtde_c.reuploadScript()
+            time.sleep(0.2)
+        except Exception:
+            pass
+
         p1 = manager.calib_points['a1']   # Trou A8/A1
         p2 = manager.calib_points['h8']   # Trou H1/H8
         p_z = manager.calib_points['z']   # Surface Z
@@ -1134,11 +1172,17 @@ async def calibrate_save():
         manager.robot.calib_scale = calib_data["camera_scale"]
         manager.robot.is_calibrated = True
 
-        # Remontee finale de securite
+        # Remontee finale de securite (+10cm)
         pose = manager.robot.rtde_r.getActualTCPPose()
         safe_pose = list(pose)
         safe_pose[2] += 0.1
         manager.robot.rtde_c.moveL(safe_pose, 0.5, 0.3)
+        await manager.log("info", "Remontee de securite effectuee apres Z")
+
+        # Retour a la position de demarrage si elle est definie
+        if manager.robot.position_depart:
+            await manager.robot._move_tcp(manager.robot.position_depart)
+            await manager.log("info", "Retour position de demarrage effectue")
 
         await manager.log("info", f"Calibration sauvegardee (rotation={math.degrees(calib_data['rotation']):.2f}deg)")
 
@@ -1254,7 +1298,17 @@ async def camera_calibrate_save(data: dict):
         with open(CALIBRATION_FILE, 'w', encoding='utf-8') as f:
             json.dump(calibration_data, f, indent=2, ensure_ascii=False)
 
-        await manager.log("info", f"Calibration camera sauvegardee: {CALIBRATION_FILE}")
+        # Recharger les coins en mémoire — FIXED_BOARD_CORNERS est chargé une seule fois
+        # à l'import du module, il faut le mettre à jour manuellement après écriture du fichier.
+        import chess_vision.config as _cv_config
+        new_corners = _cv_config.load_board_corners()
+        _cv_config.FIXED_BOARD_CORNERS = new_corners
+
+        # Forcer la réinitialisation du pipeline vision (manager.vision._pipeline)
+        # pour que le prochain cycle recrée un BoardExtractor avec les nouveaux coins.
+        manager.vision._pipeline = None
+
+        await manager.log("info", f"Calibration camera sauvegardee et rechargee: {CALIBRATION_FILE}")
         return {"success": True, "file": CALIBRATION_FILE}
     except Exception as e:
         return {"success": False, "error": str(e)}
