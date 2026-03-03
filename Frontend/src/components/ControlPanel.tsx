@@ -39,7 +39,7 @@ export function ControlPanel({
             flex items-center justify-center gap-2 px-3 py-2 rounded-lg font-semibold text-sm
             transition-all duration-200 shadow-lg hover:scale-105
             ${gameState === 'playing'
-              ? 'bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-white shadow-amber-500/30'
+              ? 'bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-400 hover:to-pink-400 text-white shadow-purple-500/30'
               : 'bg-gradient-to-r from-green-500 to-emerald-500 hover:from-green-400 hover:to-emerald-400 text-white shadow-green-500/30'
             }
           `}

@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Eye, EyeOff, Camera, CheckCircle, AlertTriangle, X, ArrowLeft, RotateCcw, Pencil } from 'lucide-react';
+import { Eye, EyeOff, Camera, CheckCircle, AlertTriangle, X, ArrowLeft, RotateCcw, Pencil, Pause } from 'lucide-react';
 import { ChessBoard } from './ChessBoard';
 import { ControlPanel } from './ControlPanel';
 import { MoveHistory } from './MoveHistory';
@@ -674,17 +674,17 @@ export function GameScreen({ difficulty, gameState, setGameState, onReturnToMenu
           <motion.div
             initial={{ y: 20 }}
             animate={{ y: 0 }}
-            className="bg-gradient-to-br from-cyan-900/95 via-blue-900/95 to-slate-900/95 backdrop-blur-xl border-2 border-cyan-400/50 rounded-2xl p-8 shadow-2xl shadow-cyan-500/30 max-w-xl w-full"
+            className="bg-slate-900/98 backdrop-blur-xl border-2 border-cyan-500/50 rounded-2xl p-8 shadow-2xl shadow-cyan-500/40 max-w-xl w-full"
           >
             <div className="flex items-start gap-5 mb-6">
               <div className="flex-shrink-0">
-                <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-amber-400 to-orange-500 flex items-center justify-center shadow-lg shadow-amber-500/30">
-                  <AlertTriangle className="w-8 h-8 text-white" strokeWidth={2.5} />
+                <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-cyan-500 to-blue-500 flex items-center justify-center shadow-lg shadow-cyan-500/40">
+                  <Pause className="w-8 h-8 text-white" strokeWidth={2.5} fill="currentColor" />
                 </div>
               </div>
               <div className="flex-1">
                 <h3 className="text-white font-bold text-2xl mb-2">
-                  Vérification du plateau
+                  Partie en pause
                 </h3>
                 <p className="text-cyan-100 text-base leading-relaxed">
                   Avant de reprendre la partie, veuillez vérifier que <span className="font-bold text-cyan-300">toutes les pièces sont correctement placées</span> sur l'échiquier.
@@ -692,7 +692,7 @@ export function GameScreen({ difficulty, gameState, setGameState, onReturnToMenu
               </div>
             </div>
 
-            <div className="bg-slate-800/50 rounded-xl p-4 mb-6 border border-slate-700">
+            <div className="bg-cyan-950/30 rounded-xl p-4 mb-6 border border-cyan-500/30">
               <div className="flex items-start gap-3">
                 <CheckCircle className="w-5 h-5 text-cyan-400 flex-shrink-0 mt-0.5" />
                 <div className="flex-1 space-y-2 text-sm text-slate-300">
@@ -706,7 +706,7 @@ export function GameScreen({ difficulty, gameState, setGameState, onReturnToMenu
             <div className="flex items-center gap-3">
               <button
                 onClick={() => setShowResumeAlert(false)}
-                className="flex-1 px-5 py-3 rounded-xl bg-slate-700 hover:bg-slate-600 text-slate-300 hover:text-white font-semibold text-base transition-all duration-200 border border-slate-600 hover:border-slate-500"
+                className="flex-1 px-5 py-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white font-semibold text-base transition-all duration-200 border border-slate-700 hover:border-slate-600"
               >
                 Annuler
               </button>
