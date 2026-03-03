@@ -7,12 +7,29 @@ export interface MoveEvaluation {
   centipawnLoss: number;
 }
 
+export interface PieceEliminee {
+  piece: string;        // 'P', 'N', 'B', 'R', 'Q', 'K'
+  color: 'white' | 'black';
+  case_cimetiere: string; // ex: "a0", "b9"
+  case_origine: string;
+  index: number;
+}
+
+export interface PiecesEliminees {
+  blanches: PieceEliminee[];
+  noires: PieceEliminee[];
+}
+
 export interface VisionState {
   board: { [square: string]: string };
   confidence: { [square: string]: number };
   pieces_count: number;
   game_started: boolean;
   reference_set: boolean;
+  /** Pièces détectées physiquement dans la zone cimetière {"a0":"WP", "a9":"BP"...} */
+  cemetery_board: { [square: string]: string };
+  /** Pièces éliminées telles que tracées par le robot (vue Stockfish) */
+  pieces_eliminees: PiecesEliminees;
 }
 
 export interface IllegalMoveAlert {
@@ -207,6 +224,8 @@ export function useChessRobot(
               pieces_count: msg.pieces_count || 0,
               game_started: msg.game_started || false,
               reference_set: msg.reference_set || false,
+              cemetery_board: msg.cemetery_board || {},
+              pieces_eliminees: msg.pieces_eliminees || { blanches: [], noires: [] },
             });
           }
 

@@ -410,6 +410,8 @@ export function GameScreen({ difficulty, gameState, setGameState, onReturnToMenu
                 showVision={showVision}
                 visionBoard={visionState?.board}
                 visionConfidence={visionState?.confidence}
+                cemeteryBoard={visionState?.cemetery_board}
+                piecesEliminees={visionState?.pieces_eliminees}
               />
             </div>
           </div>
