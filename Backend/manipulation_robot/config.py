@@ -3,11 +3,20 @@
 Configuration et constantes pour le robot d'échecs
 """
 
+import os
 import chess
+from dotenv import load_dotenv
+
+# Charger les variables d'environnement depuis le fichier .env
+load_dotenv()
 
 # ============================================================================
-#                         CONFIGURATION ROBOT
+#                         SÉCURITÉ & ACCÈS
 # ============================================================================
+
+# Code d'accès par défaut si non spécifié dans le .env
+ACCESS_PIN = os.getenv("ACCESS_PIN", "1303")
+
 
 ROBOT_IP = "192.168.0.11"
 VITESSE = 0.6

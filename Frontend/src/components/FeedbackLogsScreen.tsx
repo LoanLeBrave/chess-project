@@ -30,7 +30,6 @@ export function FeedbackLogsScreen({ onBack }: FeedbackLogsScreenProps) {
     distribution: [0, 0, 0, 0, 0] // 1 to 5 stars
   });
 
-  const CORRECT_PIN = '0000';
 
   // Load feedbacks when unlocked
   useEffect(() => {
@@ -104,17 +103,26 @@ export function FeedbackLogsScreen({ onBack }: FeedbackLogsScreenProps) {
     // Check PIN when all 4 digits are entered
     if (newPin.every(digit => digit !== '')) {
       const enteredPin = newPin.join('');
-      if (enteredPin === CORRECT_PIN) {
-        setTimeout(() => {
-          setIsUnlocked(true);
-        }, 300);
-      } else {
-        setError('Code incorrect');
-        setTimeout(() => {
-          setPin(['', '', '', '']);
-          document.getElementById('feedback-pin-0')?.focus();
-        }, 1000);
-      }
+      fetch(`${API_BASE}/auth/verify-pin`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pin: enteredPin }),
+      })
+        .then(res => res.json())
+        .then(data => {
+          if (data.success) {
+            setTimeout(() => {
+              setIsUnlocked(true);
+            }, 300);
+          } else {
+            setError('Code incorrect');
+            setTimeout(() => {
+              setPin(['', '', '', '']);
+              document.getElementById('feedback-pin-0')?.focus();
+            }, 1000);
+          }
+        })
+        .catch(() => setError('Erreur de connexion au serveur'));
     }
   };
 
@@ -400,15 +408,19 @@ export function FeedbackLogsScreen({ onBack }: FeedbackLogsScreenProps) {
                     animate={{ scale: 1, opacity: 1 }}
                     transition={{ delay: 0.2 + index * 0.1 }}
                     id={`feedback-pin-${index}`}
-                    type="text"
+                    type="password"
                     inputMode="numeric"
                     maxLength={1}
                     value={digit}
                     onChange={(e) => handlePinChange(index, e.target.value)}
                     onKeyDown={(e) => handleKeyDown(index, e)}
                     autoFocus={index === 0}
+                    style={{ 
+                      WebkitTextSecurity: 'disc',
+                    }}
                     className={`w-14 h-16 text-center text-2xl font-bold rounded-xl border-2 bg-slate-800/70 text-white
                       transition-all duration-200 outline-none backdrop-blur-sm
+                      [&::-ms-reveal]:hidden [&::-ms-clear]:hidden [&::-webkit-credentials-auto-fill-button]:hidden
                       ${error ? 'border-red-500 animate-shake' : 'border-slate-600 focus:border-purple-400 focus:shadow-lg focus:shadow-purple-500/30'}
                       ${digit ? 'border-purple-500 bg-slate-700/70' : ''}`}
                   />

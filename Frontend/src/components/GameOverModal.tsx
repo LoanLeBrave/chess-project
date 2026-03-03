@@ -30,6 +30,15 @@ interface RobotParticle {
   delay: number;
 }
 
+interface DrawParticle {
+  id: number;
+  x: number;
+  y: number;
+  color: string;
+  delay: number;
+  angle: number;
+}
+
 export function GameOverModal({
   isVisible,
   result,
@@ -42,6 +51,7 @@ export function GameOverModal({
 }: GameOverModalProps) {
   const [confetti, setConfetti] = useState<Confetti[]>([]);
   const [robotParticles, setRobotParticles] = useState<RobotParticle[]>([]);
+  const [drawParticles, setDrawParticles] = useState<DrawParticle[]>([]);
 
   // Generate confetti for player win
   useEffect(() => {
@@ -81,6 +91,27 @@ export function GameOverModal({
       }
       
       setRobotParticles(newParticles);
+    }
+  }, [isVisible, result]);
+
+  // Generate particles for draw
+  useEffect(() => {
+    if (isVisible && result === 'draw') {
+      const newParticles: DrawParticle[] = [];
+      const colors = ['#3b82f6', '#8b5cf6', '#ec4899'];
+      
+      for (let i = 0; i < 20; i++) {
+        newParticles.push({
+          id: i,
+          x: 50,
+          y: 50,
+          color: colors[Math.floor(Math.random() * colors.length)],
+          delay: Math.random() * 0.3,
+          angle: (i / 20) * Math.PI * 2
+        });
+      }
+      
+      setDrawParticles(newParticles);
     }
   }, [isVisible, result]);
 
@@ -184,6 +215,36 @@ export function GameOverModal({
             animate={{ 
               x: `calc(50% + ${Math.cos(angle) * distance}vw)`,
               y: `calc(30% + ${Math.sin(angle) * distance}vh)`,
+              scale: [0, 1.5, 0],
+              opacity: [1, 1, 0]
+            }}
+            transition={{ 
+              duration: 1.5 + Math.random() * 0.5,
+              delay: particle.delay,
+              ease: 'easeOut'
+            }}
+            className="absolute w-2 h-2 rounded-full pointer-events-none blur-sm"
+            style={{ backgroundColor: particle.color }}
+          />
+        );
+      })}
+
+      {/* Draw Particles - Circular Effect */}
+      {result === 'draw' && drawParticles.map((particle) => {
+        const distance = 40 + Math.random() * 20;
+        
+        return (
+          <motion.div
+            key={particle.id}
+            initial={{ 
+              x: '50%',
+              y: '30%',
+              scale: 0,
+              opacity: 1
+            }}
+            animate={{ 
+              x: `calc(50% + ${Math.cos(particle.angle) * distance}vw)`,
+              y: `calc(30% + ${Math.sin(particle.angle) * distance}vh)`,
               scale: [0, 1.5, 0],
               opacity: [1, 1, 0]
             }}
