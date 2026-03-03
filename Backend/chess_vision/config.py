@@ -220,10 +220,10 @@ USE_DEFAULT_ARUCO_PARAMS = False
 #   - cornerRefinementMethod → CORNER_REFINE_NONE : on n'a besoin que du centre,
 #     pas des coins sub-pixel (élimine ~50 itérations par marqueur)
 ARUCO_PARAMS = {
-    'adaptiveThreshWinSizeMin': 24,           # Taille min fenêtre seuillage adaptatif
-    'adaptiveThreshWinSizeMax': 10,           # Taille max fenêtre seuillage adaptatif
-    'adaptiveThreshWinSizeStep': 2,           # Pas entre les tailles de fenêtre
-    'adaptiveThreshConstant': 30,             # Constante C du seuillage adaptatif
+    'adaptiveThreshWinSizeMin': 5,            # Taille min fenêtre seuillage adaptatif
+    'adaptiveThreshWinSizeMax': 51,           # Taille max fenêtre seuillage adaptatif
+    'adaptiveThreshWinSizeStep': 6,           # Pas entre les tailles de fenêtre
+    'adaptiveThreshConstant': 15,             # Constante C du seuillage adaptatif
     'minMarkerPerimeterRate': 0.015,          # Réduit: 0.02→0.015 (lumière change périmètre apparent)
     'maxMarkerPerimeterRate': 5.0,            # Augmenté: 4.0→5.0 (accepte marqueurs paraissant plus grands)
     'polygonalApproxAccuracyRate': 0.12,      # Augmenté: 0.08→0.12 (lumière déforme contours)

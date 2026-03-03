@@ -176,10 +176,9 @@ class ChessManager:
 
     async def toggle_pause(self):
         """Bascule l'état de pause (arrêt d'urgence)"""
-        self.is_paused = not self.is_paused
-
-        if self.is_paused:
+        if not self.is_paused:
             # PAUSE D'URGENCE — stopper le script robot (non-bloquant)
+            self.is_paused = True
             loop = asyncio.get_running_loop()
             if self.robot.connected and self.robot.rtde_c:
                 try:
@@ -194,7 +193,7 @@ class ChessManager:
             self.set_status("paused", "PAUSE D'URGENCE")
             return {"success": True, "paused": True, "message": "PAUSE D'URGENCE - Robot arrêté!"}
         else:
-            # Reprise — lancer le processus de reprise en tâche de fond
+            # Reprise — is_paused sera mis à False par _resume_process() une fois le robot prêt
             asyncio.create_task(self._resume_process())
             await self.log("info", "Reprise en cours...")
             return {"success": True, "paused": False, "message": "Reprise en cours..."}
@@ -214,6 +213,7 @@ class ChessManager:
             except Exception as e:
                 await self.log("error", f"Erreur réactivation robot: {e}")
         self.robot.is_paused = False
+        self.is_paused = False
 
         # 2. Ouvrir le gripper (relâcher toute pièce tenue)
         await self.robot._gripper_open()
@@ -261,7 +261,12 @@ class ChessManager:
 
         if move and move in self.board.legal_moves:
             san = move_info.get("san") or self.board.san(move)
+            is_capture = move_info.get("is_capture", False)
             self.board.push(move)
+
+            # Mettre à jour la référence vision après le coup confirmé
+            if self.vision_service:
+                self.vision_service.update_reference_after_move(from_sq, to_sq, is_capture=is_capture)
 
             await self.broadcast({
                 "type": "move",
@@ -276,6 +281,10 @@ class ChessManager:
 
             # Libérer _interrupted_move avant de déclencher un éventuel coup robot
             self._interrupted_move = None
+
+            # Retourner le robot en position de départ avant tout nouveau mouvement
+            if self.robot.position_depart and not self.robot.is_paused:
+                await self.robot._move_tcp(self.robot.position_depart)
 
             if self.board.is_game_over():
                 result = self.get_game_result()
@@ -429,6 +438,7 @@ class ChessManager:
             "player": "human",
             "san": san_preview,
             "evaluation": None,
+            "is_capture": is_capture,
         }
 
         # Exécuter sur le robot
@@ -627,6 +637,7 @@ class ChessManager:
                 "player": "robot",
                 "san": san_preview,
                 "evaluation": evaluation,
+                "is_capture": is_capture,
             }
 
             # Exécuter sur le robot
@@ -640,7 +651,7 @@ class ChessManager:
 
             if not success:
                 await self.log("warning", "Mouvement interrompu par PAUSE")
-                self.set_status("idle")
+                self.set_status("paused")
                 return {"success": False, "error": "Mouvement interrompu"}
 
             self._interrupted_move = None
@@ -813,7 +824,7 @@ class ChessManager:
     async def _replacer_pieces_deplacees(self):
         """Replace les pièces encore sur le plateau à leur position initiale"""
         await self.log("info", "Replacement des pièces déplacées...")
-        
+
         for case_init, (piece_symbol, color) in POSITION_INITIALE.items():
             square = chess.parse_square(case_init)
             piece_actuelle = self.board.piece_at(square)
@@ -825,19 +836,28 @@ class ChessManager:
 
                 if case_actuelle and case_actuelle != case_init:
                     await self.log("robot", f"Déplacement {piece_symbol} de {case_actuelle} → {case_init}")
-                    
-                    # Prendre la pièce
-                    await self.robot._prendre_piece(case_actuelle)
-                    if self.is_paused:
-                        return
-                    
-                    # Définir le type de pièce
+
+                    # Bug 2 fix : définir le type de pièce AVANT la prise (hauteur Z correcte)
                     self.robot.piece_courante = PIECE_TYPE_MAP.get(piece_symbol.upper(), chess.PAWN)
-                    
-                    # Poser la pièce
-                    await self.robot._poser_piece(case_init)
-                    if self.is_paused:
+
+                    # Bug 3 fix : vérifier le retour de _prendre_piece
+                    success = await self.robot._prendre_piece(case_actuelle)
+                    if not success or self.is_paused:
                         return
+
+                    # Bug 3 fix : vérifier le retour de _poser_piece
+                    success = await self.robot._poser_piece(case_init)
+                    if not success or self.is_paused:
+                        return
+
+                    # Bug 1 fix : mettre à jour le board virtuel pour que _trouver_piece_sur_plateau
+                    # ne retourne plus cette pièce aux prochaines itérations
+                    sq_from = chess.parse_square(case_actuelle)
+                    sq_to = chess.parse_square(case_init)
+                    piece_obj = self.board.piece_at(sq_from)
+                    if piece_obj:
+                        self.board.remove_piece_at(sq_from)
+                        self.board.set_piece_at(sq_to, piece_obj)
 
     def _trouver_piece_sur_plateau(self, piece_symbol: str, color: bool, board: chess.Board):
         """Trouve la position actuelle d'une pièce sur le plateau"""
