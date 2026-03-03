@@ -20,7 +20,7 @@ from robotiq_gripper_control import RobotiqGripper
 from config import (
     ROBOT_IP, VITESSE, ACCELERATION,
     GRIPPER_OUVERTURE,
-    DELTA_APPROCHE, DELTA_TRANSIT, DELTA_RELACHE_BASE,
+    DELTA_TRANSIT, DELTA_RELACHE_BASE,
     FICHIER_CALIBRATION, FICHIER_POSITION_DEPART,
     PIECE_TYPE_MAP, HAUTEUR_PIECES,
     CIMETIERE_BLANCS, CIMETIERE_NOIRS,
@@ -173,6 +173,16 @@ class RobotController:
                 print(f"Erreur lecture position: {e}")
                 return None
         return None
+
+    def _get_current_pose_list(self) -> List[float]:
+        """Retourne la pose TCP courante sous forme de liste [x, y, z, rx, ry, rz]"""
+        if self.connected and self.rtde_r:
+            try:
+                return list(self.rtde_r.getActualTCPPose())
+            except Exception:
+                pass
+        # En mode simulation, retourner une pose par défaut en hauteur de transit
+        return [0, 0, self.calib_origin[2] + DELTA_TRANSIT, 3.14, 0.0, 0.0]
 
     def cam_to_robot(self, cam_x: float, cam_y: float, use_piece_height: bool = True) -> List[float]:
         """
@@ -460,44 +470,39 @@ class RobotController:
         try:
             cx, cy = self.get_square_center(case)
             p_pick = self.cam_to_robot(cx, cy, use_piece_height=True)
-
-            # Hauteur de transit absolue
             z_transit = self.calib_origin[2] + DELTA_TRANSIT
 
-            p_high = list(p_pick)
-            p_high[2] = z_transit
-            p_app = list(p_pick)
-            p_app[2] += DELTA_APPROCHE
+            # 1. Monter en Z à la hauteur de transit (depuis la position courante)
+            current = self._get_current_pose_list()
+            p_up = list(current)
+            p_up[2] = z_transit
+            if not await self._move_tcp(p_up):
+                return False
 
-            # Ouvrir le gripper
+            # 2. Déplacement XY au-dessus de la pièce
+            p_above = list(p_pick)
+            p_above[2] = z_transit
+            if not await self._move_tcp(p_above):
+                return False
+
+            # 3. Ouvrir le gripper
             if self.connected:
                 self.gripper.move(GRIPPER_OUVERTURE)
             if not await self._wait_with_pause_check(0.05):
                 return False
 
-            # Approche haute
-            if not await self._move_tcp(p_high):
-                return False
-
-            # Approche basse
-            if not await self._move_tcp(p_app):
-                return False
-
-            # Descente vers la pièce
+            # 4. Descente en Z vers la pièce (vitesse réduite)
             if not await self._move_tcp(p_pick, VITESSE / 2):
                 return False
 
-            # Fermer le gripper
+            # 5. Fermer le gripper
             if self.connected:
                 self.gripper.close()
             if not await self._wait_with_pause_check(0.2):
                 return False
 
-            # Remontée
-            if not await self._move_tcp(p_app):
-                return False
-
-            if not await self._move_tcp(p_high):
+            # 6. Remontée en Z à la hauteur de transit
+            if not await self._move_tcp(p_above):
                 return False
 
             return True
@@ -514,38 +519,35 @@ class RobotController:
         try:
             cx, cy = self.get_square_center(case)
             p_place = self.cam_to_robot(cx, cy, use_piece_height=True)
-
-            # Hauteur de transit absolue
             z_transit = self.calib_origin[2] + DELTA_TRANSIT
 
-            p_high = list(p_place)
-            p_high[2] = z_transit
-            p_app = list(p_place)
-            p_app[2] += DELTA_APPROCHE
+            # 1. Monter en Z à la hauteur de transit (depuis la position courante)
+            current = self._get_current_pose_list()
+            p_up = list(current)
+            p_up[2] = z_transit
+            if not await self._move_tcp(p_up):
+                return False
 
+            # 2. Déplacement XY au-dessus de la destination
+            p_above = list(p_place)
+            p_above[2] = z_transit
+            if not await self._move_tcp(p_above):
+                return False
+
+            # 3. Descente en Z vers le dépôt (vitesse réduite, avec offset de relâche)
             p_deposit = list(p_place)
             p_deposit[2] += DELTA_RELACHE_BASE
-
-            # Transit haute
-            if not await self._move_tcp(p_high):
-                return False
-
-            # Approche
-            if not await self._move_tcp(p_app):
-                return False
-
-            # Descente vers dépôt
             if not await self._move_tcp(p_deposit, VITESSE / 2):
                 return False
 
-            # Ouvrir le gripper
+            # 4. Ouvrir le gripper
             if self.connected:
                 self.gripper.move(GRIPPER_OUVERTURE)
             if not await self._wait_with_pause_check(0.1):
                 return False
 
-            # Remontée
-            if not await self._move_tcp(p_app):
+            # 5. Remontée en Z à la hauteur de transit
+            if not await self._move_tcp(p_above):
                 return False
 
             return True
@@ -559,74 +561,65 @@ class RobotController:
         Séquence complète prendre et poser
         Retourne True si succès, False si interrompu
         """
-        # Hauteur de transit absolue
         z_transit = self.calib_origin[2] + DELTA_TRANSIT
 
-        p_high_pick = list(p_pick)
-        p_high_pick[2] = z_transit
-        p_app_pick = list(p_pick)
-        p_app_pick[2] += DELTA_APPROCHE
-
         # ===== PICK =====
+
+        # 1. Monter en Z à la hauteur de transit (depuis la position courante)
+        current = self._get_current_pose_list()
+        p_up = list(current)
+        p_up[2] = z_transit
+        if not await self._move_tcp(p_up):
+            return False
+
+        # 2. Déplacement XY pur au-dessus de la pièce à prendre
+        p_above_pick = list(p_pick)
+        p_above_pick[2] = z_transit
+        if not await self._move_tcp(p_above_pick):
+            return False
+
+        # 3. Ouvrir le gripper
         if self.connected:
             self.gripper.move(GRIPPER_OUVERTURE)
         if not await self._wait_with_pause_check(0.05):
             return False
 
-        # Approche haute
-        if not await self._move_tcp(p_high_pick):
-            return False
-
-        # Approche moyenne
-        if not await self._move_tcp(p_app_pick):
-            return False
-
-        # Descente vers pièce
+        # 4. Descente en Z vers la pièce (vitesse réduite)
         if not await self._move_tcp(p_pick, VITESSE / 2):
             return False
 
-        # Fermeture gripper
+        # 5. Fermer le gripper
         if self.connected:
             self.gripper.close()
         if not await self._wait_with_pause_check(0.2):
             return False
 
-        # Remontée
-        if not await self._move_tcp(p_app_pick):
-            return False
-
-        if not await self._move_tcp(p_high_pick):
+        # 6. Remontée en Z à la hauteur de transit
+        if not await self._move_tcp(p_above_pick):
             return False
 
         # ===== PLACE =====
-        p_high_place = list(p_place)
-        p_high_place[2] = z_transit
-        p_app_place = list(p_place)
-        p_app_place[2] += DELTA_APPROCHE
 
+        # 7. Déplacement XY pur au-dessus de la destination
+        p_above_place = list(p_place)
+        p_above_place[2] = z_transit
+        if not await self._move_tcp(p_above_place):
+            return False
+
+        # 8. Descente en Z vers le dépôt (vitesse réduite, avec offset de relâche)
         p_deposit = list(p_place)
         p_deposit[2] += DELTA_RELACHE_BASE
-
-        # Transit vers destination
-        if not await self._move_tcp(p_high_place):
-            return False
-
-        # Approche
-        if not await self._move_tcp(p_app_place):
-            return False
-
-        # Descente vers dépôt
         if not await self._move_tcp(p_deposit, VITESSE / 2):
             return False
 
-        # Ouverture gripper
+        # 9. Ouvrir le gripper
         if self.connected:
             self.gripper.move(GRIPPER_OUVERTURE)
         if not await self._wait_with_pause_check(0.1):
             return False
 
-        # Remontée
-        if not await self._move_tcp(p_app_place):
+        # 10. Remontée en Z à la hauteur de transit
+        if not await self._move_tcp(p_above_place):
             return False
 
         return True

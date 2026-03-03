@@ -276,23 +276,37 @@ class ChessRobotManager:
         if piece:
             self.piece_courante = piece.piece_type
 
-        await self.log("robot", f"Approche {case.upper()}...")
-        self.rtde_c.moveL(self._pos_avec_z(tcp, DELTA_APPROCHE), VITESSE, ACCELERATION)
+        # 1. Monter en Z à la hauteur de transit (depuis la position courante)
+        current = list(self.rtde_r.getActualTCPPose())
+        p_up = list(current)
+        p_up[2] = tcp[2] + DELTA_TRANSIT
+        await self.log("robot", f"Montée transit...")
+        self.rtde_c.moveL(p_up, VITESSE, ACCELERATION)
         if not await self._wait_with_pause_check(0.2): return False
 
+        # 2. Déplacement XY au-dessus de la pièce
+        p_above = self._pos_avec_z(tcp, DELTA_TRANSIT)
+        await self.log("robot", f"Déplacement vers {case.upper()}...")
+        self.rtde_c.moveL(p_above, VITESSE, ACCELERATION)
+        if not await self._wait_with_pause_check(0.2): return False
+
+        # 3. Ouvrir le gripper
+        self.gripper.move(GRIPPER_OUVERTURE)
+        if not await self._wait_with_pause_check(0.1): return False
+
+        # 4. Descente en Z vers la pièce (vitesse réduite)
         await self.log("robot", f"Descente...")
-        self.rtde_c.moveL(tcp, VITESSE, ACCELERATION)
+        self.rtde_c.moveL(tcp, VITESSE / 2, ACCELERATION)
         if not await self._wait_with_pause_check(0.2): return False
 
+        # 5. Fermer le gripper
         await self.log("robot", f"Fermeture gripper...")
         self.gripper.close()
         if not await self._wait_with_pause_check(0.3): return False
 
+        # 6. Remontée en Z à la hauteur de transit
         await self.log("robot", f"Remontée...")
-        self.rtde_c.moveL(self._pos_avec_z(tcp, DELTA_APPROCHE), VITESSE, ACCELERATION)
-        if not await self._wait_with_pause_check(0.1): return False
-
-        self.rtde_c.moveL(self._pos_avec_z(tcp, DELTA_TRANSIT), VITESSE, ACCELERATION)
+        self.rtde_c.moveL(p_above, VITESSE, ACCELERATION)
         if not await self._wait_with_pause_check(0.2): return False
 
         return True
@@ -309,21 +323,30 @@ class ChessRobotManager:
         hauteur_piece = HAUTEUR_PIECES.get(self.piece_courante, 0.005)
         delta_relache = DELTA_RELACHE_BASE + hauteur_piece
 
+        # 1. Monter en Z à la hauteur de transit (depuis la position courante)
+        current = list(self.rtde_r.getActualTCPPose())
+        p_up = list(current)
+        p_up[2] = tcp[2] + DELTA_TRANSIT
+        self.rtde_c.moveL(p_up, VITESSE, ACCELERATION)
+        if not await self._wait_with_pause_check(0.2): return False
+
+        # 2. Déplacement XY au-dessus de la destination
+        p_above = self._pos_avec_z(tcp, DELTA_TRANSIT)
         await self.log("robot", f"Transit vers {case.upper()}...")
-        self.rtde_c.moveL(self._pos_avec_z(tcp, DELTA_TRANSIT), VITESSE, ACCELERATION)
+        self.rtde_c.moveL(p_above, VITESSE, ACCELERATION)
         if not await self._wait_with_pause_check(0.2): return False
 
-        self.rtde_c.moveL(self._pos_avec_z(tcp, DELTA_APPROCHE), VITESSE, ACCELERATION)
-        if not await self._wait_with_pause_check(0.1): return False
-
+        # 3. Descente en Z vers le dépôt (vitesse réduite)
         await self.log("robot", f"Dépose...")
-        self.rtde_c.moveL(self._pos_avec_z(tcp, delta_relache), VITESSE, ACCELERATION)
+        self.rtde_c.moveL(self._pos_avec_z(tcp, delta_relache), VITESSE / 2, ACCELERATION)
         if not await self._wait_with_pause_check(0.2): return False
 
+        # 4. Ouvrir le gripper
         self.gripper.move(GRIPPER_OUVERTURE)
         if not await self._wait_with_pause_check(0.3): return False
 
-        self.rtde_c.moveL(self._pos_avec_z(tcp, DELTA_APPROCHE), VITESSE, ACCELERATION)
+        # 5. Remontée en Z à la hauteur de transit
+        self.rtde_c.moveL(p_above, VITESSE, ACCELERATION)
         if not await self._wait_with_pause_check(0.2): return False
 
         return True
@@ -334,14 +357,24 @@ class ChessRobotManager:
 
         if pos_defausse:
             await self.log("robot", f"Dépôt en zone de défausse...")
+
+            # 1. Monter en Z à la hauteur de transit (depuis la position courante)
+            current = list(self.rtde_r.getActualTCPPose())
+            p_up = list(current)
+            p_up[2] = pos_defausse[2] + DELTA_TRANSIT
+            self.rtde_c.moveL(p_up, VITESSE, ACCELERATION)
+            if not await self._wait_with_pause_check(0.2): return
+
+            # 2. Déplacement XY au-dessus de la défausse
             pos_haute = list(pos_defausse)
             pos_haute[2] += DELTA_TRANSIT
             self.rtde_c.moveL(pos_haute, VITESSE, ACCELERATION)
             if not await self._wait_with_pause_check(0.2): return
 
+            # 3. Descente en Z vers le dépôt (vitesse réduite)
             pos_relache = list(pos_defausse)
             pos_relache[2] += DELTA_RELACHE_BASE + 0.01
-            self.rtde_c.moveL(pos_relache, VITESSE, ACCELERATION)
+            self.rtde_c.moveL(pos_relache, VITESSE / 2, ACCELERATION)
             if not await self._wait_with_pause_check(0.2): return
 
             self.gripper.move(GRIPPER_OUVERTURE)

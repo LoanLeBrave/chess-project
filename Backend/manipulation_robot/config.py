@@ -10,11 +10,11 @@ import chess
 # ============================================================================
 
 ROBOT_IP = "192.168.0.11"
-VITESSE = 0.3
+VITESSE = 0.6
 ACCELERATION = 0.6
 GRIPPER_OUVERTURE = 25
 DELTA_APPROCHE = 0.03   # 3cm
-DELTA_TRANSIT = 0.09    # 9cm
+DELTA_TRANSIT = 0.15    # 15cm
 DELTA_RELACHE_BASE = 0.001
 
 # ============================================================================
