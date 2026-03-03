@@ -28,7 +28,7 @@ from chess_manager import ChessManager
 from leaderboard_manager import LeaderboardManager
 from feedback_manager import FeedbackManager
 from board_reset_manager import BoardResetManager
-from config import FICHIER_CALIBRATION, FICHIER_POSITION_DEPART
+from config import FICHIER_CALIBRATION, FICHIER_POSITION_DEPART, ACCESS_PIN
 from calibration import TwoPointCalibration
 from hybrid_board_manager import HybridBoardManager
 
@@ -793,6 +793,17 @@ async def startup():
 # ============================================================================
 #                          ROUTES API
 # ============================================================================
+
+# --- AUTH ---
+class PinVerifyRequest(BaseModel):
+    pin: str = Field(..., description="Le code PIN a verifier")
+
+@app.post("/auth/verify-pin", tags=["System"])
+async def verify_pin(data: PinVerifyRequest):
+    """Verifie si le code PIN est correct"""
+    if data.pin == ACCESS_PIN:
+        return {"success": True}
+    return {"success": False, "error": "Code PIN incorrect"}
 
 # --- SYSTEM ---
 @app.get("/", tags=["System"])

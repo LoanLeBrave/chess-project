@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Lock, Unlock, CheckCircle, Hand, ArrowLeft, SkipForward, AlignVerticalSpaceAround, Camera, Home, RotateCcw, Loader2, X } from 'lucide-react';
+import { Lock, Unlock, CheckCircle, Hand, ArrowLeft, SkipForward, Camera, Home, RotateCcw, Loader2, X, AlertTriangle } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { RecalibrateCameraModal } from './RecalibrateCameraModal';
 import etape1Image from './images/etape1.jpg';
 import etape2Image from './images/etape2.jpg';
 import etape3Image from './images/etape3.jpg';
@@ -58,7 +59,9 @@ export function CalibrationScreen({ onCalibrationComplete, onBack }: Calibration
   const [freedriveActive, setFreedriveActive] = useState(false);
   const [homeSaved, setHomeSaved] = useState(false);
 
-  const CORRECT_PIN = '0000';
+  // Modal states
+  const [showRecalibrateCameraModal, setShowRecalibrateCameraModal] = useState(false);
+
 
   const handlePinChange = (index: number, value: string) => {
     if (value.length > 1) return;
@@ -78,23 +81,32 @@ export function CalibrationScreen({ onCalibrationComplete, onBack }: Calibration
     // Check PIN when all 4 digits are entered
     if (newPin.every(digit => digit !== '')) {
       const enteredPin = newPin.join('');
-      if (enteredPin === CORRECT_PIN) {
-        // Remettre la pince droite, puis fermer le gripper
-        fetch(`${API_BASE}/robot/calibrate/auto-level`, { method: 'POST' })
-          .catch(() => {})
-          .finally(() => {
-            fetch(`${API_BASE}/robot/calibrate/close-gripper`, { method: 'POST' }).catch(() => {});
-          });
-        setTimeout(() => {
-          setIsUnlocked(true);
-        }, 300);
-      } else {
-        setError('Code incorrect');
-        setTimeout(() => {
-          setPin(['', '', '', '']);
-          document.getElementById('pin-0')?.focus();
-        }, 1000);
-      }
+      fetch(`${API_BASE}/auth/verify-pin`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pin: enteredPin }),
+      })
+        .then(res => res.json())
+        .then(data => {
+          if (data.success) {
+            // Remettre la pince droite, puis fermer le gripper
+            fetch(`${API_BASE}/robot/calibrate/auto-level`, { method: 'POST' })
+              .catch(() => {})
+              .finally(() => {
+                fetch(`${API_BASE}/robot/calibrate/close-gripper`, { method: 'POST' }).catch(() => {});
+              });
+            setTimeout(() => {
+              setIsUnlocked(true);
+            }, 300);
+          } else {
+            setError('Code incorrect');
+            setTimeout(() => {
+              setPin(['', '', '', '']);
+              document.getElementById('pin-0')?.focus();
+            }, 1000);
+          }
+        })
+        .catch(() => setError('Erreur de connexion au serveur'));
     }
   };
 
@@ -428,17 +440,6 @@ export function CalibrationScreen({ onCalibrationComplete, onBack }: Calibration
                   <span>{freedriveActive ? 'Désactiver' : 'Activer'} FreeDrive</span>
                 </button>
 
-                {/* Auto-Level */}
-                <button
-                  onClick={handleAutoLevel}
-                  className="bg-slate-700/50 hover:bg-slate-600/50 border border-slate-600 hover:border-cyan-400
-                    text-white px-4 py-2.5 rounded-lg text-sm font-medium transition-all
-                    flex items-center justify-center gap-2 group"
-                >
-                  <AlignVerticalSpaceAround className="w-4 h-4 text-cyan-400" strokeWidth={2.5} />
-                  <span>Remettre la pince droite</span>
-                </button>
-
                 {/* Save home position */}
                 <button
                   onClick={handleSaveHome}
@@ -458,7 +459,7 @@ export function CalibrationScreen({ onCalibrationComplete, onBack }: Calibration
 
                 {/* Small Camera Calibration Button */}
                 <button
-                  onClick={() => setActiveTab('camera')}
+                  onClick={() => setShowRecalibrateCameraModal(true)}
                   className="bg-slate-700/50 hover:bg-slate-600/50 border border-slate-600 hover:border-purple-400
                     text-slate-300 hover:text-white px-3 py-2.5 rounded-lg text-xs font-medium transition-all
                     flex items-center justify-center gap-2 group"
@@ -635,6 +636,31 @@ export function CalibrationScreen({ onCalibrationComplete, onBack }: Calibration
                   </div>
                 </div>
               </div>
+
+              {/* Warning Banner - Remove Rooks */}
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.3 }}
+                className="bg-gradient-to-r from-orange-600/20 via-amber-600/20 to-orange-600/20 border-2 border-orange-500/50 rounded-xl p-4 backdrop-blur-sm"
+              >
+                <div className="flex items-start gap-4">
+                  <div className="flex-shrink-0">
+                    <div className="w-12 h-12 rounded-xl bg-orange-500/20 border-2 border-orange-400 flex items-center justify-center">
+                      <AlertTriangle className="w-6 h-6 text-orange-400" strokeWidth={2.5} />
+                    </div>
+                  </div>
+                  <div className="flex-1">
+                    <h3 className="text-white font-bold text-base mb-1.5">
+                      ⚠️ Avant de commencer la calibration
+                    </h3>
+                    <p className="text-white text-sm leading-relaxed">
+                      Veuillez retirer les 2 tours proches du trou de calibration de l'échiquier avant de commencer la calibration. 
+                      Cela permet d'éviter que le robot entre en collision avec les tours pendant les déplacements de calibration du plateau.
+                    </p>
+                  </div>
+                </div>
+              </motion.div>
             </div>
         </div>
       </div>
@@ -862,15 +888,19 @@ export function CalibrationScreen({ onCalibrationComplete, onBack }: Calibration
                     animate={{ scale: 1, opacity: 1 }}
                     transition={{ delay: 0.2 + index * 0.1 }}
                     id={`pin-${index}`}
-                    type="text"
+                    type="password"
                     inputMode="numeric"
                     maxLength={1}
                     value={digit}
                     onChange={(e) => handlePinChange(index, e.target.value)}
                     onKeyDown={(e) => handleKeyDown(index, e)}
                     autoFocus={index === 0}
+                    style={{ 
+                      WebkitTextSecurity: 'disc',
+                    }}
                     className={`w-14 h-16 text-center text-2xl font-bold rounded-xl border-2 bg-slate-800/70 text-white
                       transition-all duration-200 outline-none backdrop-blur-sm
+                      [&::-ms-reveal]:hidden [&::-ms-clear]:hidden [&::-webkit-credentials-auto-fill-button]:hidden
                       ${error ? 'border-red-500 animate-shake' : 'border-slate-600 focus:border-cyan-400 focus:shadow-lg focus:shadow-cyan-500/30'}
                       ${digit ? 'border-cyan-500 bg-slate-700/70' : ''}`}
                   />
@@ -890,6 +920,16 @@ export function CalibrationScreen({ onCalibrationComplete, onBack }: Calibration
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Recalibrate Camera Modal */}
+      <RecalibrateCameraModal
+        isVisible={showRecalibrateCameraModal}
+        onConfirm={() => {
+          setShowRecalibrateCameraModal(false);
+          setActiveTab('camera');
+        }}
+        onCancel={() => setShowRecalibrateCameraModal(false)}
+      />
     </div>
   );
 }
