@@ -149,11 +149,11 @@ def _capture_with_rpicam(filepath: str):
         if CAMERA_CONFIG.get('brightness'):
             args.extend(['--brightness', str(CAMERA_CONFIG['brightness'])])
         
-        if CAMERA_CONFIG.get('contrast') is not None:
+        if CAMERA_CONFIG.get('contrast'):
             args.extend(['--contrast', str(CAMERA_CONFIG['contrast'])])
         
-        if CAMERA_CONFIG.get('saturation') is not None:
-            args.extend(['--saturation', str(CAMERA_CONFIG['saturation'])]) 
+        if CAMERA_CONFIG.get('saturation'):
+            args.extend(['--saturation', str(CAMERA_CONFIG['saturation'])])
         
         if CAMERA_CONFIG.get('sharpness'):
             args.extend(['--sharpness', str(CAMERA_CONFIG['sharpness'])])
