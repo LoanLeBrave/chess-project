@@ -33,6 +33,7 @@ function App() {
   const [difficulty, setDifficulty] = useState<DifficultyLevel>('beginner');
   const [playerName, setPlayerName] = useState('');
   const [gameResults, setGameResults] = useState<GameResults | null>(null);
+  const [hasCalibrated, setHasCalibrated] = useState<boolean>(false);
 
   const handleWelcomeContinue = () => {
     setCurrentScreen('calibration');
@@ -47,6 +48,12 @@ function App() {
   };
 
   const handleCalibrationComplete = () => {
+    setHasCalibrated(true); // Marquer que la calibration a été faite
+    setCurrentScreen('safety');
+  };
+
+  const handleSkipCalibration = () => {
+    // Passer directement à la page de sécurité en gardant la calibration existante
     setCurrentScreen('safety');
   };
 
@@ -120,6 +127,8 @@ function App() {
       {currentScreen === 'calibration' && (
         <CalibrationScreen 
           onCalibrationComplete={handleCalibrationComplete}
+          onSkipCalibration={handleSkipCalibration}
+          hasCalibrated={hasCalibrated}
           onBack={handleCalibrationBack}
         />
       )}

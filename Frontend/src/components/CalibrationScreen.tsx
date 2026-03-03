@@ -8,6 +8,8 @@ import etape3Image from './images/etape3.jpg';
 
 interface CalibrationScreenProps {
   onCalibrationComplete: () => void;
+  onSkipCalibration: () => void;
+  hasCalibrated: boolean;
   onBack: () => void;
 }
 
@@ -31,7 +33,7 @@ const CORNER_COLORS: Record<string, string> = {
 type Corner = { x: number; y: number };
 type TabType = 'camera' | 'board';
 
-export function CalibrationScreen({ onCalibrationComplete, onBack }: CalibrationScreenProps) {
+export function CalibrationScreen({ onCalibrationComplete, onSkipCalibration, hasCalibrated, onBack }: CalibrationScreenProps) {
   const [pin, setPin] = useState(['', '', '', '']); // Vide par défaut
   const [isUnlocked, setIsUnlocked] = useState(false);
   const [error, setError] = useState('');
@@ -62,6 +64,7 @@ export function CalibrationScreen({ onCalibrationComplete, onBack }: Calibration
   // Modal states
   const [showRecalibrateCameraModal, setShowRecalibrateCameraModal] = useState(false);
 
+  const CORRECT_PIN = '1303';
 
   const handlePinChange = (index: number, value: string) => {
     if (value.length > 1) return;
@@ -81,32 +84,23 @@ export function CalibrationScreen({ onCalibrationComplete, onBack }: Calibration
     // Check PIN when all 4 digits are entered
     if (newPin.every(digit => digit !== '')) {
       const enteredPin = newPin.join('');
-      fetch(`${API_BASE}/auth/verify-pin`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ pin: enteredPin }),
-      })
-        .then(res => res.json())
-        .then(data => {
-          if (data.success) {
-            // Remettre la pince droite, puis fermer le gripper
-            fetch(`${API_BASE}/robot/calibrate/auto-level`, { method: 'POST' })
-              .catch(() => {})
-              .finally(() => {
-                fetch(`${API_BASE}/robot/calibrate/close-gripper`, { method: 'POST' }).catch(() => {});
-              });
-            setTimeout(() => {
-              setIsUnlocked(true);
-            }, 300);
-          } else {
-            setError('Code incorrect');
-            setTimeout(() => {
-              setPin(['', '', '', '']);
-              document.getElementById('pin-0')?.focus();
-            }, 1000);
-          }
-        })
-        .catch(() => setError('Erreur de connexion au serveur'));
+      if (enteredPin === CORRECT_PIN) {
+        // Remettre la pince droite, puis fermer le gripper
+        fetch(`${API_BASE}/robot/calibrate/auto-level`, { method: 'POST' })
+          .catch(() => {})
+          .finally(() => {
+            fetch(`${API_BASE}/robot/calibrate/close-gripper`, { method: 'POST' }).catch(() => {});
+          });
+        setTimeout(() => {
+          setIsUnlocked(true);
+        }, 300);
+      } else {
+        setError('Code incorrect');
+        setTimeout(() => {
+          setPin(['', '', '', '']);
+          document.getElementById('pin-0')?.focus();
+        }, 1000);
+      }
     }
   };
 
@@ -408,7 +402,7 @@ export function CalibrationScreen({ onCalibrationComplete, onBack }: Calibration
               Calibration Robot UR7e
             </h1>
 
-            {/* Skip button */}
+            {/* Skip button - After unlock */}
             <div className="mt-2 flex gap-3 justify-center items-center">
               <button
                 onClick={onCalibrationComplete}
@@ -916,6 +910,42 @@ export function CalibrationScreen({ onCalibrationComplete, onBack }: Calibration
                   {error}
                 </motion.p>
               )}
+
+              {/* Skip Calibration Button - Under PIN inputs */}
+              <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.6 }}
+                className="mt-6 pt-4 border-t border-slate-700/50"
+              >
+                <button
+                  onClick={onSkipCalibration}
+                  disabled={!hasCalibrated}
+                  className={`px-6 py-3.5 rounded-xl font-semibold text-sm transition-all flex items-center justify-center gap-2 mx-auto shadow-lg
+                    ${hasCalibrated
+                      ? 'bg-gradient-to-r from-purple-500 to-indigo-600 hover:from-purple-600 hover:to-indigo-700 text-white border-2 border-purple-400 hover:scale-105'
+                      : 'bg-slate-800/50 text-slate-600 border-2 border-slate-700 cursor-not-allowed opacity-60'
+                    }`}
+                >
+                  {hasCalibrated ? (
+                    <>
+                      <SkipForward className="w-5 h-5" />
+                      Garder la même calibration
+                    </>
+                  ) : (
+                    <>
+                      <Lock className="w-4 h-4" />
+                      Calibration requise (première partie)
+                    </>
+                  )}
+                </button>
+                <p className={`text-xs text-center mt-3 transition-colors ${hasCalibrated ? 'text-slate-400' : 'text-slate-600'}`}>
+                  {hasCalibrated 
+                    ? ' Passez directement à la page de sécurité sans refaire la calibration'
+                    : ' Ce bouton sera disponible après votre première partie complète'
+                  }
+                </p>
+              </motion.div>
             </motion.div>
           </motion.div>
         )}
