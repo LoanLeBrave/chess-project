@@ -45,6 +45,9 @@ export function GameScreen({ difficulty, gameState, setGameState, onReturnToMenu
   const [isReconnecting, setIsReconnecting] = useState(false);
   const wasReplacingRef = useRef(false);
   
+  // Resume alert state
+  const [showResumeAlert, setShowResumeAlert] = useState(false);
+  
   // Checkmate warning states
   const [showCheckmateWarning, setShowCheckmateWarning] = useState(false);
   const [checkmateWarningType, setCheckmateWarningType] = useState<'danger' | 'opportunity'>('danger');
@@ -196,13 +199,14 @@ export function GameScreen({ difficulty, gameState, setGameState, onReturnToMenu
   // Timer
   useEffect(() => {
     let interval: NodeJS.Timeout;
-    if (gameState === 'playing') {
+    // Arrêter le timer si en pause, si modal stop ouvert, si partie terminée, ou si gameState !== 'playing'
+    if (gameState === 'playing' && !showStopModal && !isGameOver) {
       interval = setInterval(() => {
         setElapsedTime(prev => prev + 1);
       }, 1000);
     }
     return () => clearInterval(interval);
-  }, [gameState]);
+  }, [gameState, showStopModal, isGameOver]);
 
   // Initialize game
   useEffect(() => {
@@ -229,6 +233,15 @@ export function GameScreen({ difficulty, gameState, setGameState, onReturnToMenu
   }, [isReplacingBoard, pendingNavigate]);
 
   const handlePause = async () => {
+    const wasPaused = gameState === 'paused';
+    
+    // Si on veut reprendre depuis pause, afficher d'abord la confirmation
+    if (wasPaused) {
+      setShowResumeAlert(true);
+      return;
+    }
+    
+    // Si on met en pause, pas besoin de confirmation
     try {
       const res = await fetch(`${API_BASE}/game/pause`, { method: 'POST' });
       const data = await res.json();
@@ -238,8 +251,26 @@ export function GameScreen({ difficulty, gameState, setGameState, onReturnToMenu
       }
     } catch {
       // Fallback local si API indisponible
-      setGameState(gameState === 'playing' ? 'paused' : 'playing');
-      addLog('info', gameState === 'playing' ? 'Partie en pause' : 'Partie reprise');
+      setGameState('paused');
+      addLog('info', 'Partie en pause');
+    }
+  };
+
+  // Confirmer la reprise après vérification des pièces
+  const confirmResume = async () => {
+    setShowResumeAlert(false);
+    
+    try {
+      const res = await fetch(`${API_BASE}/game/pause`, { method: 'POST' });
+      const data = await res.json();
+      if (data.paused !== undefined) {
+        setGameState(data.paused ? 'paused' : 'playing');
+        addLog('info', 'Partie reprise');
+      }
+    } catch {
+      // Fallback local si API indisponible
+      setGameState('playing');
+      addLog('info', 'Partie reprise');
     }
   };
 
@@ -517,6 +548,63 @@ export function GameScreen({ difficulty, gameState, setGameState, onReturnToMenu
         type={checkmateWarningType}
         onClose={() => setShowCheckmateWarning(false)}
       />
+
+      {/* Resume Game Confirmation - Must validate pieces placement */}
+      {showResumeAlert && (
+        <motion.div
+          initial={{ opacity: 0, scale: 0.95 }}
+          animate={{ opacity: 1, scale: 1 }}
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4"
+        >
+          <motion.div
+            initial={{ y: 20 }}
+            animate={{ y: 0 }}
+            className="bg-gradient-to-br from-cyan-900/95 via-blue-900/95 to-slate-900/95 backdrop-blur-xl border-2 border-cyan-400/50 rounded-2xl p-8 shadow-2xl shadow-cyan-500/30 max-w-xl w-full"
+          >
+            <div className="flex items-start gap-5 mb-6">
+              <div className="flex-shrink-0">
+                <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-amber-400 to-orange-500 flex items-center justify-center shadow-lg shadow-amber-500/30">
+                  <AlertTriangle className="w-8 h-8 text-white" strokeWidth={2.5} />
+                </div>
+              </div>
+              <div className="flex-1">
+                <h3 className="text-white font-bold text-2xl mb-2">
+                  Vérification du plateau
+                </h3>
+                <p className="text-cyan-100 text-base leading-relaxed">
+                  Avant de reprendre la partie, veuillez vérifier que <span className="font-bold text-cyan-300">toutes les pièces sont correctement placées</span> sur l'échiquier.
+                </p>
+              </div>
+            </div>
+
+            <div className="bg-slate-800/50 rounded-xl p-4 mb-6 border border-slate-700">
+              <div className="flex items-start gap-3">
+                <CheckCircle className="w-5 h-5 text-cyan-400 flex-shrink-0 mt-0.5" />
+                <div className="flex-1 space-y-2 text-sm text-slate-300">
+                  <p>• Le robot a relâché la pince et est en position de repos</p>
+                  <p>• Vérifiez que chaque pièce est bien centrée sur sa case</p>
+                  <p>• Assurez-vous qu'aucune pièce n'a été déplacée par erreur</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => setShowResumeAlert(false)}
+                className="flex-1 px-5 py-3 rounded-xl bg-slate-700 hover:bg-slate-600 text-slate-300 hover:text-white font-semibold text-base transition-all duration-200 border border-slate-600 hover:border-slate-500"
+              >
+                Annuler
+              </button>
+              <button
+                onClick={confirmResume}
+                className="flex-1 px-5 py-3 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-400 hover:to-blue-400 text-white font-bold text-base transition-all duration-200 shadow-lg shadow-cyan-500/30 hover:shadow-cyan-500/50 hover:scale-[1.02]"
+              >
+                ✓ Tout est OK, reprendre
+              </button>
+            </div>
+          </motion.div>
+        </motion.div>
+      )}
     </div>
   );
 }
