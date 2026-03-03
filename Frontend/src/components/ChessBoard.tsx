@@ -214,241 +214,212 @@ export function ChessBoard({
       ? cemeteryBoard
       : piecesElimineeesToMap(piecesEliminees);
 
-  /**
-   * Cases blancs capturés : rang 0 (a0-h0), coins 00/90, col gauche 01-08
-   * Cases noirs capturés  : rang 9 (a9-h9), coins 09/99, col droite 91-98
-   */
-  const isBlancsCell = (sq: string) => sq[0] === '0' || sq[1] === '0';
-  const cemBg = (sq: string) => isBlancsCell(sq) ? '#2a3a4a' : '#1a2a3a';
-  const cemBorder = (sq: string) => isBlancsCell(sq) ? '#3b5268' : '#243447';
+  // ─── Taille unique (px) — toutes les cases font SQ×SQ ─────────────────────
+  const SQ = 56;
 
-  /**
-   * Cellule de cimetière générique.
-   * - widthClass / heightClass : classes Tailwind w-* h-*
-   * - rankLabel : si fourni, affiche le numéro de rang en petit label
-   */
-  const renderCemCell = (sq: string, widthClass: string, heightClass: string, rankLabel?: string) => {
+  // Couleurs cimetière
+  const CEM_BG_BLANC  = '#233040';
+  const CEM_BG_NOIR   = '#1a252f';
+  const CEM_BG_COIN   = '#1d2c38';
+  const CEM_BORDER    = '#2d4155';
+
+  const cemBgForSq = (sq: string): string => {
+    const col = sq[0], row = sq[1];
+    if ((col === '0' || col === '9') && (row === '0' || row === '9')) return CEM_BG_COIN;
+    if (row === '0' || col === '0') return CEM_BG_BLANC;
+    return CEM_BG_NOIR;
+  };
+
+  const renderCemCell = (sq: string) => {
     const code = activeCemeteryMap[sq];
     const pieceKey = code ? visionCodeToPieceKey(code) : null;
     return (
       <div
         key={sq}
-        className={`${widthClass} ${heightClass} flex items-center justify-center relative flex-shrink-0`}
-        style={{ backgroundColor: cemBg(sq), border: `1px solid ${cemBorder(sq)}` }}
         title={code ? `${sq}: ${code}` : sq}
+        style={{
+          width: SQ, height: SQ, flexShrink: 0,
+          backgroundColor: cemBgForSq(sq),
+          border: `1px solid ${CEM_BORDER}`,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          position: 'relative', boxSizing: 'border-box',
+        }}
       >
         {pieceKey && PIECE_IMAGES[pieceKey] && (
           <img
             src={PIECE_IMAGES[pieceKey]}
             alt={pieceKey}
-            className="w-9 h-9 pointer-events-none select-none opacity-90"
+            style={{ width: SQ - 10, height: SQ - 10, pointerEvents: 'none', userSelect: 'none', opacity: 0.92 }}
             draggable={false}
           />
         )}
-        {/* Étiquette de la case (toujours visible en coin) */}
-        <span
-          className="absolute bottom-0.5 right-0.5 text-[8px] font-mono leading-none select-none"
-          style={{ color: code ? '#94a3b8' : '#4b5563' }}
-        >
-          {rankLabel ?? sq}
+        <span style={{
+          position: 'absolute', bottom: 2, right: 2,
+          fontSize: 8, fontFamily: 'monospace', lineHeight: 1,
+          color: code ? '#64748b' : '#374151', userSelect: 'none',
+        }}>
+          {sq}
         </span>
       </div>
     );
   };
 
   return (
-    <div className="bg-slate-800/50 backdrop-blur-sm rounded-xl p-4 border border-slate-700">
-      <div className="inline-block">
+    <div className="bg-slate-800/50 backdrop-blur-sm rounded-xl p-3 border border-slate-700" style={{ width: 'fit-content' }}>
+      {/*
+        Grille 10×10 : SQ=56px → 10×56 = 560px de côté.
+        Rangée 9 (haut) = noirs capturés, rangée 0 (bas) = blancs capturés.
+        Col 0 (gauche) = overflow blancs, col 9 (droite) = overflow noirs.
+      */}
 
-        {/* ═══════════════════════════════════════════════════════════════
-            BANDE HAUT : coins 09/99 + rangée 9 (noirs capturés)
-            Largeur : w-11(coin) + 8×w-16(plateau) + w-11(coin) = 44+512+44 = 600px
-            ═══════════════════════════════════════════════════════════════ */}
-        <div className="flex mb-0.5">
-          {renderCemCell('09', 'w-11', 'h-11')}
-          {files.map(f => renderCemCell(`${f}9`, 'w-16', 'h-11'))}
-          {renderCemCell('99', 'w-11', 'h-11')}
+      {/* ── RANGÉE HAUT : [09] [a9..h9] [99] ── */}
+      <div style={{ display: 'flex' }}>
+        {renderCemCell('09')}
+        {files.map(f => renderCemCell(`${f}9`))}
+        {renderCemCell('99')}
+
+      </div>
+
+      {/* ── ZONE CENTRALE : [col 0] [plateau 8×8] [col 9] ── */}
+      <div style={{ display: 'flex' }}>
+
+        {/* Colonne cimetière gauche (blancs overflow : 08→01, haut→bas = rang 8→1) */}
+        <div style={{ display: 'flex', flexDirection: 'column' }}>
+          {ranks.map(r => renderCemCell(`0${r}`))}
         </div>
 
-        {/* Lettres haut — décalées de w-11=44px pour s'aligner sur le plateau */}
-        <div className="flex" style={{ marginLeft: '44px' }}>
-          {files.map(f => (
-            <div key={f} className="w-16 text-center text-slate-400 text-sm font-bold">{f}</div>
-          ))}
-        </div>
+        {/* Échiquier */}
+        <div
+          style={{
+            display: 'grid', gridTemplateColumns: `repeat(8, ${SQ}px)`,
+            border: '2px solid #5c4033', borderRadius: 4,
+            overflow: 'hidden', boxShadow: '0 10px 40px rgba(0,0,0,0.5)',
+            position: 'relative', flexShrink: 0,
+          }}
+        >
+          {ranks.map(rank =>
+            files.map(file => {
+              const square = `${file}${rank}`;
+              const visionCode = showVision && visionBoard ? visionBoard[square] : null;
+              const visionPieceKey = visionCode ? visionCodeToPieceKey(visionCode) : null;
+              const piece = showVision && visionBoard
+                ? (visionPieceKey as PieceType ?? null)
+                : board[square];
+              const isLight = isLightSquare(file, rank);
+              const isSelected = selectedSquare === square;
+              const isLegal = legalMoves.includes(square);
+              const isLast = lastMove && (lastMove.from === square || lastMove.to === square);
+              const hasMoves = hasMovesFrom(square);
+              const isDest = isDestinationFor(square);
+              const isBestF = isBestFrom(square);
+              const isBestT = isBestTo(square);
 
-        {/* ═══════════════════════════════════════════════════════════════
-            ZONE CENTRALE : col gauche (blancs overflow) + plateau + col droite (noirs overflow)
-            Col gauche  : cases 01-08 (blancs capturés en excès)
-            Col droite  : cases 91-98 (noirs capturés en excès)
-            Les labels sont les numéros de rang 1-8 du plateau
-            ═══════════════════════════════════════════════════════════════ */}
-        <div className="flex">
+              let bgColor = isLight ? '#ebecd0' : '#739552';
+              if (isSelected)            bgColor = '#b9ca43';
+              else if (isBestF || isBestT) bgColor = '#f7f769';
+              else if (isLast)           bgColor = isLight ? '#f5f682' : '#b9ca43';
+              else if (hasMoves)         bgColor = isLight ? '#e8b4e8' : '#a86da8';
+              else if (isDest && !isLegal) bgColor = isLight ? '#f0d0f0' : '#c090c0';
 
-          {/* Colonne cimetière gauche : blancs overflow (01..08, de haut en bas = rang 8..1) */}
-          <div className="flex flex-col">
-            {ranks.map(r => renderCemCell(`0${r}`, 'w-11', 'h-16', r))}
-          </div>
-
-          {/* Échiquier */}
-          <div className="grid grid-cols-8 rounded-md overflow-hidden shadow-2xl relative" style={{ border: '3px solid #5c4033' }}>
-            {ranks.map(rank =>
-              files.map(file => {
-                const square = `${file}${rank}`;
-                // En mode vision : afficher les pieces detectees par la camera
-                const visionCode = showVision && visionBoard ? visionBoard[square] : null;
-                const visionPieceKey = visionCode ? visionCodeToPieceKey(visionCode) : null;
-                const piece = showVision && visionBoard
-                  ? (visionPieceKey as PieceType ?? null)
-                  : board[square];
-                const isLight = isLightSquare(file, rank);
-                const isSelected = selectedSquare === square;
-                const isLegal = legalMoves.includes(square);
-                const isLast = lastMove && (lastMove.from === square || lastMove.to === square);
-                const hasMoves = hasMovesFrom(square);
-                const isDest = isDestinationFor(square);
-                const isBestF = isBestFrom(square);
-                const isBestT = isBestTo(square);
-
-                // Couleurs style chess.com
-                let bgColor = isLight ? '#ebecd0' : '#739552';
-                if (isSelected) {
-                  bgColor = '#b9ca43';
-                } else if (isBestF || isBestT) {
-                  bgColor = '#f7f769';
-                } else if (isLast) {
-                  bgColor = isLight ? '#f5f682' : '#b9ca43';
-                } else if (hasMoves) {
-                  bgColor = isLight ? '#e8b4e8' : '#a86da8';
-                } else if (isDest && !isLegal) {
-                  bgColor = isLight ? '#f0d0f0' : '#c090c0';
-                }
-
-                return (
-                  <div
-                    key={square}
-                    onClick={() => handleSquareClick(square)}
-                    className={`w-16 h-16 flex items-center justify-center relative
-                      ${canInteract ? 'cursor-pointer' : 'cursor-default'}
-                      transition-colors duration-100`}
-                    style={{ backgroundColor: bgColor }}
-                  >
-                    {/* Indicateur coup légal - point ou cercle */}
-                    {isLegal && showHelpOnClick && (
-                      piece ? (
-                        <div className="absolute inset-1 rounded-full border-[5px] border-black/40 pointer-events-none" />
-                      ) : (
-                        <div className="absolute w-[30%] h-[30%] bg-black/30 rounded-full pointer-events-none" />
-                      )
-                    )}
-
-                    {/* Indicateur meilleur coup destination */}
-                    {isBestT && !piece && (
-                      <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                        <div className="w-8 h-8 border-4 border-yellow-600 rounded-full bg-yellow-400/50" />
-                      </div>
-                    )}
-
-                    {/* Pièce */}
-                    {piece && PIECE_IMAGES[piece] && (
-                      <img
-                        src={PIECE_IMAGES[piece]}
-                        alt={piece}
-                        className="w-14 h-14 pointer-events-none select-none"
-                        draggable={false}
-                      />
-                    )}
-
-                    {/* Icône meilleur coup départ */}
-                    {isBestF && (
-                      <div className="absolute top-0.5 left-0.5 bg-yellow-400 rounded-br-lg p-1 shadow-md">
-                        <Lightbulb className="w-4 h-4 text-yellow-800" />
-                      </div>
-                    )}
-
-                    {/* Badge pièce jouable */}
-                    {hasMoves && !isSelected && !isBestF && (
-                      <div className="absolute top-1 right-1 w-4 h-4 bg-purple-600 rounded-full border-2 border-white shadow pointer-events-none" />
-                    )}
-
-                    {/* Coordonnées dans les coins */}
-                    {file === 'a' && (
-                      <span className={`absolute top-0.5 left-1 text-xs font-bold ${isLight ? 'text-[#739552]' : 'text-[#ebecd0]'}`}>
-                        {rank}
-                      </span>
-                    )}
-                    {rank === '1' && (
-                      <span className={`absolute bottom-0.5 right-1 text-xs font-bold ${isLight ? 'text-[#739552]' : 'text-[#ebecd0]'}`}>
-                        {file}
-                      </span>
-                    )}
-                  </div>
-                );
-              })
-            )}
-
-            {/* Overlays */}
-            {robotStatus === 'thinking' && (
-              <div className="absolute inset-0 bg-black/70 flex items-center justify-center">
-                <div className="text-center text-white">
-                  <div className="w-16 h-16 border-4 border-cyan-400 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
-                  <div className="font-semibold text-xl">Robot réfléchit...</div>
+              return (
+                <div
+                  key={square}
+                  onClick={() => handleSquareClick(square)}
+                  style={{ width: SQ, height: SQ, backgroundColor: bgColor, position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                  className={canInteract ? 'cursor-pointer transition-colors duration-100' : 'cursor-default transition-colors duration-100'}
+                >
+                  {isLegal && showHelpOnClick && (
+                    piece
+                      ? <div className="absolute inset-1 rounded-full border-[4px] border-black/40 pointer-events-none" />
+                      : <div className="absolute w-[28%] h-[28%] bg-black/30 rounded-full pointer-events-none" />
+                  )}
+                  {isBestT && !piece && (
+                    <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                      <div className="w-7 h-7 border-4 border-yellow-600 rounded-full bg-yellow-400/50" />
+                    </div>
+                  )}
+                  {piece && PIECE_IMAGES[piece] && (
+                    <img
+                      src={PIECE_IMAGES[piece]} alt={piece}
+                      style={{ width: SQ - 6, height: SQ - 6, pointerEvents: 'none', userSelect: 'none' }}
+                      draggable={false}
+                    />
+                  )}
+                  {isBestF && (
+                    <div className="absolute top-0.5 left-0.5 bg-yellow-400 rounded-br-lg p-0.5 shadow-md">
+                      <Lightbulb className="w-3 h-3 text-yellow-800" />
+                    </div>
+                  )}
+                  {hasMoves && !isSelected && !isBestF && (
+                    <div className="absolute top-0.5 right-0.5 w-3 h-3 bg-purple-600 rounded-full border border-white shadow pointer-events-none" />
+                  )}
+                  {/* Coordonnées */}
+                  {file === 'a' && (
+                    <span style={{ position: 'absolute', top: 2, left: 3, fontSize: 9, fontWeight: 700, color: isLight ? '#739552' : '#ebecd0', userSelect: 'none' }}>
+                      {rank}
+                    </span>
+                  )}
+                  {rank === '1' && (
+                    <span style={{ position: 'absolute', bottom: 2, right: 3, fontSize: 9, fontWeight: 700, color: isLight ? '#739552' : '#ebecd0', userSelect: 'none' }}>
+                      {file}
+                    </span>
+                  )}
                 </div>
-              </div>
-            )}
-            {robotStatus === 'moving' && (
-              <div className="absolute inset-0 bg-black/70 flex items-center justify-center">
-                <div className="text-center text-white">
-                  <div className="w-16 h-16 border-4 border-green-400 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
-                  <div className="font-semibold text-xl">Robot en mouvement...</div>
-                </div>
-              </div>
-            )}
-            {!isWhiteTurn && robotStatus === 'idle' && !isGameOver && (
-              <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
-                <div className="text-white text-2xl font-semibold">🤖 Tour du robot...</div>
-              </div>
-            )}
-            {isGameOver && (
-              <div className="absolute inset-0 bg-black/80 flex items-center justify-center">
-                <div className="text-center">
-                  <div className="text-6xl mb-3">🏆</div>
-                  <div className="text-white text-2xl font-bold">Partie terminée</div>
-                </div>
-              </div>
-            )}
-            {robotStatus === 'disconnected' && (
-              <div className="absolute inset-0 bg-black/80 flex items-center justify-center">
-                <div className="text-center text-white">
-                  <div className="w-12 h-12 border-4 border-slate-400 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
-                  <div className="text-lg">Connexion au serveur...</div>
-                </div>
-              </div>
-            )}
-          </div>
+              );
+            })
+          )}
 
-          {/* Colonne cimetière droite : noirs overflow (91..98, de haut en bas = rang 8..1) */}
-          <div className="flex flex-col">
-            {ranks.map(r => renderCemCell(`9${r}`, 'w-11', 'h-16', r))}
-          </div>
+          {/* Overlays */}
+          {robotStatus === 'thinking' && (
+            <div className="absolute inset-0 bg-black/70 flex items-center justify-center">
+              <div className="text-center text-white">
+                <div className="w-12 h-12 border-4 border-cyan-400 border-t-transparent rounded-full animate-spin mx-auto mb-2" />
+                <div className="font-semibold text-lg">Robot réfléchit...</div>
+              </div>
+            </div>
+          )}
+          {robotStatus === 'moving' && (
+            <div className="absolute inset-0 bg-black/70 flex items-center justify-center">
+              <div className="text-center text-white">
+                <div className="w-12 h-12 border-4 border-green-400 border-t-transparent rounded-full animate-spin mx-auto mb-2" />
+                <div className="font-semibold text-lg">Robot en mouvement...</div>
+              </div>
+            </div>
+          )}
+          {!isWhiteTurn && robotStatus === 'idle' && !isGameOver && (
+            <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
+              <div className="text-white text-xl font-semibold">🤖 Tour du robot...</div>
+            </div>
+          )}
+          {isGameOver && (
+            <div className="absolute inset-0 bg-black/80 flex items-center justify-center">
+              <div className="text-center">
+                <div className="text-5xl mb-2">🏆</div>
+                <div className="text-white text-xl font-bold">Partie terminée</div>
+              </div>
+            </div>
+          )}
+          {robotStatus === 'disconnected' && (
+            <div className="absolute inset-0 bg-black/80 flex items-center justify-center">
+              <div className="text-center text-white">
+                <div className="w-10 h-10 border-4 border-slate-400 border-t-transparent rounded-full animate-spin mx-auto mb-2" />
+                <div className="text-base">Connexion au serveur...</div>
+              </div>
+            </div>
+          )}
         </div>
 
-        {/* Lettres bas — même décalage w-11 */}
-        <div className="flex" style={{ marginLeft: '44px' }}>
-          {files.map(f => (
-            <div key={f} className="w-16 text-center text-slate-400 text-sm font-bold">{f}</div>
-          ))}
+        {/* Colonne cimetière droite (noirs overflow : 98→91, haut→bas = rang 8→1) */}
+        <div style={{ display: 'flex', flexDirection: 'column' }}>
+          {ranks.map(r => renderCemCell(`9${r}`))}
         </div>
+      </div>
 
-        {/* ═══════════════════════════════════════════════════════════════
-            BANDE BAS : coins 00/90 + rangée 0 (blancs capturés)
-            ═══════════════════════════════════════════════════════════════ */}
-        <div className="flex mt-0.5">
-          {renderCemCell('00', 'w-11', 'h-11')}
-          {files.map(f => renderCemCell(`${f}0`, 'w-16', 'h-11'))}
-          {renderCemCell('90', 'w-11', 'h-11')}
-        </div>
-
+      {/* ── RANGÉE BAS : [coin 00] [a0..h0] [coin 90] ── */}
+      <div style={{ display: 'flex' }}>
+        {renderCemCell('00')}
+        {files.map(f => renderCemCell(`${f}0`))}
+        {renderCemCell('90')}
       </div>
     </div>
   );
