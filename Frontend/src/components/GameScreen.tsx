@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Eye, EyeOff, Camera, CheckCircle, AlertTriangle, X, RotateCcw, Pencil, ArrowLeft } from 'lucide-react';
+import { Eye, EyeOff, Camera, CheckCircle, AlertTriangle, X, ArrowLeft, RotateCcw, Pencil } from 'lucide-react';
 import { ChessBoard } from './ChessBoard';
 import { ControlPanel } from './ControlPanel';
 import { MoveHistory } from './MoveHistory';
@@ -9,11 +9,12 @@ import { GameOverModal } from './GameOverModal';
 import { GameOverModalAbandoned } from './GameOverModalAbandoned';
 import { ScoreSavedNotification } from './ScoreSavedNotification';
 import { StopConfirmModal } from './StopConfirmModal';
+import { RestartConfirmModal } from './RestartConfirmModal';
 import { PromotionModal } from './PromotionModal';
 import { CheckmateWarning } from './CheckmateWarning';
 import { useChessRobot } from '../hooks/useChessRobot';
 import type { DifficultyLevel, GameState, LogEntry, GameResults } from '../App';
-import { motion, AnimatePresence } from 'motion/react';
+import { motion } from 'motion/react';
 
 interface GameScreenProps {
   difficulty: DifficultyLevel;
@@ -47,6 +48,9 @@ export function GameScreen({ difficulty, gameState, setGameState, onReturnToMenu
   
   // Resume alert state
   const [showResumeAlert, setShowResumeAlert] = useState(false);
+  
+  // Restart modal state
+  const [showRestartModal, setShowRestartModal] = useState(false);
   
   // Checkmate warning states
   const [showCheckmateWarning, setShowCheckmateWarning] = useState(false);
@@ -91,8 +95,6 @@ export function GameScreen({ difficulty, gameState, setGameState, onReturnToMenu
     confirmPlacement,
     illegalMoveAlert,
     dismissIllegalAlert,
-    replaceBoard,
-    isReplacingBoard,
     isPromotionPending,
     promotionSquare,
     promotionColor,
@@ -106,6 +108,27 @@ export function GameScreen({ difficulty, gameState, setGameState, onReturnToMenu
     exitCorrectionMode,
     correctMove,
   } = useChessRobot(addLog, addMove);
+
+  // État pour le replacement du plateau
+  const [isReplacingBoard, setIsReplacingBoard] = useState(false);
+
+  // Fonction pour replacer le plateau
+  const replaceBoard = async () => {
+    setIsReplacingBoard(true);
+    try {
+      const res = await fetch(`${API_BASE}/board/replace`, { method: 'POST' });
+      const data = await res.json();
+      if (data.success) {
+        addLog('info', 'Plateau replacé avec succès');
+      } else {
+        addLog('error', data.error || 'Erreur lors du replacement');
+      }
+    } catch (err) {
+      addLog('error', `Erreur replacement: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setIsReplacingBoard(false);
+    }
+  };
 
   // Initialiser la partie via l'API au montage
   useEffect(() => {
@@ -320,17 +343,23 @@ export function GameScreen({ difficulty, gameState, setGameState, onReturnToMenu
   };
 
   const handleNewGame = async () => {
+    setShowRestartModal(true);
+  };
+
+  const executeRestart = async (replace: boolean) => {
+    setShowRestartModal(false);
+    
+    if (replace) {
+      addLog('info', 'Replacement du plateau avant la nouvelle partie…');
+      await replaceBoard();
+    }
+    
     setElapsedTime(0);
     setLogs([]);
     setMoves([]);
     resetGame();
     await initGame(difficulty);
     addLog('info', 'Nouvelle partie démarrée');
-  };
-
-  const handleReplaceBoard = async () => {
-    addLog('info', 'Replacement du plateau demandé…');
-    await replaceBoard();
   };
 
   const handleReconnect = async () => {
@@ -416,9 +445,7 @@ export function GameScreen({ difficulty, gameState, setGameState, onReturnToMenu
               onPause={handlePause}
               onStop={handleStopRequest}
               onNewGame={handleNewGame}
-              onReplaceBoard={handleReplaceBoard}
               onReconnect={handleReconnect}
-              isReplacingBoard={isReplacingBoard}
               isReconnecting={isReconnecting}
             />
 
@@ -494,6 +521,7 @@ export function GameScreen({ difficulty, gameState, setGameState, onReturnToMenu
                 showVision={showVision && !isCorrectionMode}
                 visionBoard={visionState?.board}
                 visionConfidence={visionState?.confidence}
+                isCorrectionMode={isCorrectionMode}
                 cemeteryBoard={visionState?.cemetery_board}
                 piecesEliminees={visionState?.pieces_eliminees}
               />
@@ -554,6 +582,13 @@ export function GameScreen({ difficulty, gameState, setGameState, onReturnToMenu
         isVisible={showStopModal}
         onCancel={() => setShowStopModal(false)}
         onConfirm={executeStop}
+      />
+
+      {/* Restart Confirmation Modal */}
+      <RestartConfirmModal
+        isVisible={showRestartModal}
+        onCancel={() => setShowRestartModal(false)}
+        onConfirm={executeRestart}
       />
 
       {/* Promotion Modal */}

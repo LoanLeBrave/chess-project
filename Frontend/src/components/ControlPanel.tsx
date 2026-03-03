@@ -1,4 +1,4 @@
-import { Play, Pause, Square, RotateCcw, Home, LayoutGrid, Loader2, Wifi } from 'lucide-react';
+import { Play, Pause, Square, RotateCcw, Loader2, Wifi } from 'lucide-react';
 import type { GameState } from '../App';
 
 interface ControlPanelProps {
@@ -6,9 +6,7 @@ interface ControlPanelProps {
   onPause: () => void;
   onStop: () => void;
   onNewGame: () => void;
-  onReplaceBoard: () => void;
   onReconnect: () => void;
-  isReplacingBoard?: boolean;
   isReconnecting?: boolean;
 }
 
@@ -17,14 +15,12 @@ export function ControlPanel({
   onPause,
   onStop,
   onNewGame,
-  onReplaceBoard,
   onReconnect,
-  isReplacingBoard = false,
   isReconnecting = false,
 }: ControlPanelProps) {
   return (
     <div className="bg-slate-800/50 backdrop-blur-sm rounded-xl p-4 border border-slate-700">
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-2">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
         <button
           onClick={onStop}
           className="
@@ -39,11 +35,14 @@ export function ControlPanel({
 
         <button
           onClick={onPause}
-          className="
+          className={`
             flex items-center justify-center gap-2 px-3 py-2 rounded-lg font-semibold text-sm
-            bg-yellow-500 hover:bg-yellow-400 text-slate-900
             transition-all duration-200 shadow-lg hover:scale-105
-          "
+            ${gameState === 'playing'
+              ? 'bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-white shadow-amber-500/30'
+              : 'bg-gradient-to-r from-green-500 to-emerald-500 hover:from-green-400 hover:to-emerald-400 text-white shadow-green-500/30'
+            }
+          `}
         >
           {gameState === 'playing' ? (
             <>
@@ -59,41 +58,15 @@ export function ControlPanel({
         </button>
 
         <button
-          onClick={onStop}
+          onClick={onNewGame}
           className="
             flex items-center justify-center gap-2 px-3 py-2 rounded-lg font-semibold text-sm
-            bg-slate-600 hover:bg-slate-500 text-white
+            bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-600 hover:to-blue-600 text-white
             transition-all duration-200 shadow-lg hover:scale-105
           "
         >
-          <Home className="w-4 h-4" />
-          Menu
-        </button>
-
-        <button
-          onClick={onReplaceBoard}
-          disabled={isReplacingBoard}
-          className={`
-            flex items-center justify-center gap-2 px-3 py-2 rounded-lg font-semibold text-sm
-            transition-all duration-200 shadow-lg
-            ${isReplacingBoard
-              ? 'bg-slate-700/50 text-slate-400 cursor-not-allowed'
-              : 'bg-slate-600 hover:bg-slate-500 text-white hover:scale-105'
-            }
-          `}
-          title="Replace toutes les pieces a leur position initiale via le robot"
-        >
-          {isReplacingBoard ? (
-            <>
-              <Loader2 className="w-4 h-4 animate-spin" />
-              Replacement…
-            </>
-          ) : (
-            <>
-              <LayoutGrid className="w-4 h-4" />
-              Replacer
-            </>
-          )}
+          <RotateCcw className="w-4 h-4" />
+          Nouvelle Partie
         </button>
 
         <button
