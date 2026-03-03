@@ -14,6 +14,8 @@ interface ChessBoardProps {
   visionBoard?: { [square: string]: string };
   visionConfidence?: { [square: string]: number };
   isCorrectionMode?: boolean;
+  cemeteryBoard?: { [square: string]: string };
+  piecesEliminees?: PiecesEliminees;
 }
 
 type PieceType = 'K' | 'Q' | 'R' | 'B' | 'N' | 'P' | 'k' | 'q' | 'r' | 'b' | 'n' | 'p' | null;
@@ -87,6 +89,7 @@ function fenToBoard(fen: string): BoardState {
 export function ChessBoard({
   fen, isWhiteTurn, robotStatus, isGameOver, onMove, getLegalMoves, getBestMove,
   showVision, visionBoard, visionConfidence, isCorrectionMode,
+  cemeteryBoard, piecesEliminees,
 }: ChessBoardProps) {
   const [board, setBoard] = useState<BoardState>({});
   const [selectedSquare, setSelectedSquare] = useState<string | null>(null);
