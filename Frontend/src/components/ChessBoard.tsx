@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
-import { Lightbulb, Eye, EyeOff, HelpCircle } from 'lucide-react';
-import type { RobotStatus } from '../hooks/useChessRobot';
+import { Lightbulb } from 'lucide-react';
+import type { RobotStatus, PiecesEliminees } from '../hooks/useChessRobot';
 
 interface ChessBoardProps {
   fen: string;
@@ -18,6 +18,24 @@ interface ChessBoardProps {
 
 type PieceType = 'K' | 'Q' | 'R' | 'B' | 'N' | 'P' | 'k' | 'q' | 'r' | 'b' | 'n' | 'p' | null;
 interface BoardState { [key: string]: PieceType; }
+
+/**
+ * Convertit pieces_eliminees en map {case_cimetiere: 'WP'/'BN'...}
+ * pour afficher la vue Stockfish du cimetière.
+ */
+function piecesElimineeesToMap(pe: PiecesEliminees | undefined): { [square: string]: string } {
+  if (!pe) return {};
+  const map: { [square: string]: string } = {};
+  for (const p of pe.blanches) {
+    const typeChar = p.piece === 'N' ? 'N' : p.piece[0];
+    map[p.case_cimetiere] = `W${typeChar}`;
+  }
+  for (const p of pe.noires) {
+    const typeChar = p.piece === 'N' ? 'N' : p.piece[0];
+    map[p.case_cimetiere] = `B${typeChar}`;
+  }
+  return map;
+}
 
 // Convertit un code vision ("WP", "BK", "BN"...) en cle PIECE_IMAGES ("P", "k", "n"...)
 function visionCodeToPieceKey(code: string): string | null {
@@ -191,10 +209,69 @@ export function ChessBoard({
     ? !isGameOver
     : (isWhiteTurn && robotStatus === 'idle' && !isGameOver);
 
+  // Cimetière : utilise cemetery_board (vision) ou pieces_eliminees (Stockfish)
+  const activeCemeteryMap: { [square: string]: string } =
+    showVision && cemeteryBoard && Object.keys(cemeteryBoard).length > 0
+      ? cemeteryBoard
+      : piecesElimineeesToMap(piecesEliminees);
+
+  /** Affiche une ligne de cimetière (rang 0 ou 9) alignée sur le plateau */
+  const renderCemeteryStrip = (rank: '0' | '9', isBlackCaptures: boolean) => {
+    // Les noirs capturés (par les blancs) vont en rang 9 (haut)
+    // Les blancs capturés (par les noirs) vont en rang 0 (bas)
+    const bgBase = isBlackCaptures ? '#1e293b' : '#334155';
+    return (
+      <div className="flex">
+        {/* Numéro rang gauche */}
+        <div
+          className="w-8 h-12 flex items-center justify-center text-xs font-bold text-slate-400"
+        >
+          {rank}
+        </div>
+        {/* Cases cimetière */}
+        <div className="flex rounded-sm overflow-hidden" style={{ border: '2px solid #374151' }}>
+          {files.map(file => {
+            const sq = `${file}${rank}`;
+            const code = activeCemeteryMap[sq];
+            const pieceKey = code ? visionCodeToPieceKey(code) : null;
+            return (
+              <div
+                key={sq}
+                className="w-16 h-12 flex items-center justify-center relative"
+                style={{ backgroundColor: bgBase }}
+                title={code ? `${sq}: ${code}` : sq}
+              >
+                {pieceKey && PIECE_IMAGES[pieceKey] && (
+                  <img
+                    src={PIECE_IMAGES[pieceKey]}
+                    alt={pieceKey}
+                    className="w-10 h-10 pointer-events-none select-none opacity-90"
+                    draggable={false}
+                  />
+                )}
+                {/* Label de la case si vide */}
+                {!code && (
+                  <span className="text-xs text-slate-600 font-mono">{sq}</span>
+                )}
+              </div>
+            );
+          })}
+        </div>
+        {/* Numéro rang droit (balance) */}
+        <div className="w-8" />
+      </div>
+    );
+  };
+
   return (
     <div className="bg-slate-800/50 backdrop-blur-sm rounded-xl p-4 border border-slate-700">
       {/* Plateau */}
       <div className="inline-block">
+        {/* === Bande cimetière HAUT : noirs capturés (rang 9) === */}
+        <div className="mb-1 opacity-90">
+          {renderCemeteryStrip('9', true)}
+        </div>
+
         {/* Lettres haut */}
         <div className="flex ml-8">
           {files.map(f => (
@@ -371,6 +448,11 @@ export function ChessBoard({
           {files.map(f => (
             <div key={f} className="w-16 text-center text-slate-400 text-sm font-bold">{f}</div>
           ))}
+        </div>
+
+        {/* === Bande cimetière BAS : blancs capturés (rang 0) === */}
+        <div className="mt-1 opacity-90">
+          {renderCemeteryStrip('0', false)}
         </div>
       </div>
     </div>

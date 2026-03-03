@@ -28,7 +28,7 @@ from chess_manager import ChessManager
 from leaderboard_manager import LeaderboardManager
 from feedback_manager import FeedbackManager
 from board_reset_manager import BoardResetManager
-from config import FICHIER_CALIBRATION, FICHIER_POSITION_DEPART
+from config import FICHIER_CALIBRATION, FICHIER_POSITION_DEPART, ACCESS_PIN
 from calibration import TwoPointCalibration
 from hybrid_board_manager import HybridBoardManager
 
@@ -283,12 +283,29 @@ class VisionService:
         self.stable_board, self.confidence = new_stable, new_conf
         return True
 
+    def _get_cemetery_map(self) -> dict:
+        """Retourne les pièces détectées dans la zone cimetière {case: 'WP'/'BN'...}."""
+        result = {}
+        if not self.last_game_state:
+            return result
+        for piece in self.last_game_state.get("pieces", []):
+            if piece.get("zone") != "cemetery":
+                continue
+            grid = piece.get("position", {}).get("grid")
+            if not grid:
+                continue
+            color_char = "W" if piece.get("color") == "white" else "B"
+            type_char = "N" if piece.get("type") == "Knight" else piece.get("type", "Pawn")[0]
+            result[grid.lower()] = f"{color_char}{type_char}"
+        return result
+
     def get_state_message(self) -> dict:
         return {
             "type": "vision_state", "board": self.stable_board, "raw_board": self.raw_board,
             "confidence": self.confidence, "timestamp": self.last_timestamp or datetime.now().isoformat(),
             "pieces_count": self.pieces_count, "game_started": self.game_started,
             "reference_set": self.reference_board is not None,
+            "cemetery_board": self._get_cemetery_map(),
         }
 
     def reverse_last_move(self, from_sq: str, to_sq: str):
@@ -409,7 +426,9 @@ async def vision_loop():
             else:
                 updated = False
             if updated and manager.websocket_clients:
-                await manager.broadcast(manager.vision.get_state_message())
+                msg = manager.vision.get_state_message()
+                msg["pieces_eliminees"] = manager.robot.get_pieces_eliminees()
+                await manager.broadcast(msg)
             if updated and manager.vision.vision_game_enabled and manager.vision.game_started:
                 if manager.status == "idle": await _check_vision_move()
         except Exception as e: print(f"Vision Error: {e}")
@@ -824,6 +843,17 @@ async def startup():
 # ============================================================================
 #                          ROUTES API
 # ============================================================================
+
+# --- AUTH ---
+class PinVerifyRequest(BaseModel):
+    pin: str = Field(..., description="Le code PIN a verifier")
+
+@app.post("/auth/verify-pin", tags=["System"])
+async def verify_pin(data: PinVerifyRequest):
+    """Verifie si le code PIN est correct"""
+    if data.pin == ACCESS_PIN:
+        return {"success": True}
+    return {"success": False, "error": "Code PIN incorrect"}
 
 # --- SYSTEM ---
 @app.get("/", tags=["System"])
