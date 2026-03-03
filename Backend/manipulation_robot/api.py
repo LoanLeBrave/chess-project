@@ -1163,11 +1163,17 @@ async def calibrate_save():
         manager.robot.calib_scale = calib_data["camera_scale"]
         manager.robot.is_calibrated = True
 
-        # Remontee finale de securite
+        # Remontee finale de securite (+10cm)
         pose = manager.robot.rtde_r.getActualTCPPose()
         safe_pose = list(pose)
         safe_pose[2] += 0.1
         manager.robot.rtde_c.moveL(safe_pose, 0.5, 0.3)
+        await manager.log("info", "Remontee de securite effectuee apres Z")
+
+        # Retour a la position de demarrage si elle est definie
+        if manager.robot.position_depart:
+            await manager.robot._move_tcp(manager.robot.position_depart)
+            await manager.log("info", "Retour position de demarrage effectue")
 
         await manager.log("info", f"Calibration sauvegardee (rotation={math.degrees(calib_data['rotation']):.2f}deg)")
 
