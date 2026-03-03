@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { CheckCircle, AlertCircle, RefreshCw, ArrowLeft, Play, Camera } from 'lucide-react';
+import { CheckCircle, AlertCircle, RefreshCw, ArrowLeft, Play, Camera, LayoutGrid, Loader2 } from 'lucide-react';
 import { motion } from 'motion/react';
 
 interface PlacementConfirmationScreenProps {
@@ -57,6 +57,7 @@ export function PlacementConfirmationScreen({ onConfirm, onBack }: Readonly<Plac
   const [isConfirming, setIsConfirming] = useState(false);
   const [error, setError] = useState('');
   const [imageReady, setImageReady] = useState(false);
+  const [isReplacingBoard, setIsReplacingBoard] = useState(false);
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const imageRef = useRef<HTMLImageElement | null>(null);
@@ -203,6 +204,26 @@ export function PlacementConfirmationScreen({ onConfirm, onBack }: Readonly<Plac
 
   useEffect(() => { void loadData(); }, []);
 
+  // ── Replacement des pièces ───────────────────────────────────────────────────
+  const handleReplaceBoard = async () => {
+    setIsReplacingBoard(true);
+    setError('');
+    try {
+      const res = await fetch(`${API_BASE}/board/replace`, { method: 'POST' });
+      const data = await res.json() as { success: boolean; error?: string };
+      if (!data.success) {
+        setError(data.error ?? 'Erreur lors du replacement.');
+      } else {
+        // Recharger les données après replacement
+        await loadData();
+      }
+    } catch (err) {
+      setError(`Impossible de replacer : ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setIsReplacingBoard(false);
+    }
+  };
+
   // ── Confirmation ─────────────────────────────────────────────────────────────
   const handleConfirm = async () => {
     setIsConfirming(true);
@@ -345,30 +366,56 @@ export function PlacementConfirmationScreen({ onConfirm, onBack }: Readonly<Plac
           </div>
 
           {/* Boutons */}
-          <div className="flex items-center gap-4 mt-6">
-            <button
-              onClick={onBack}
-              disabled={isConfirming}
-              className="flex items-center gap-2 px-6 py-3 bg-slate-700/50 hover:bg-slate-700 text-white rounded-xl transition-all duration-300 disabled:opacity-50"
-            >
-              <ArrowLeft className="w-5 h-5" />
-              Retour
-            </button>
+          <div className="flex flex-col gap-3 mt-6">
+            {/* Première ligne - Boutons utilitaires */}
+            <div className="flex items-center gap-4">
+              <button
+                onClick={onBack}
+                disabled={isConfirming || isReplacingBoard}
+                className="flex items-center gap-2 px-6 py-3 bg-slate-700/50 hover:bg-slate-700 text-white rounded-xl transition-all duration-300 disabled:opacity-50"
+              >
+                <ArrowLeft className="w-5 h-5" />
+                Retour
+              </button>
 
-            {/* Bouton debug pour passer la vérification */}
-            <button
-              onClick={onConfirm}
-              className="flex items-center gap-2 px-4 py-2.5 bg-purple-600/50 hover:bg-purple-600 text-purple-200 text-sm rounded-lg transition-all duration-300 border border-purple-500/50"
-              title="Mode debug - passer directement"
-            >
-              <Play className="w-4 h-4" />
-              Debug: Passer
-            </button>
+              {/* Bouton debug pour passer la vérification */}
+              <button
+                onClick={onConfirm}
+                className="flex items-center gap-2 px-4 py-2.5 bg-purple-600/50 hover:bg-purple-600 text-purple-200 text-sm rounded-lg transition-all duration-300 border border-purple-500/50"
+                title="Mode debug - passer directement"
+              >
+                <Play className="w-4 h-4" />
+                Debug: Passer
+              </button>
 
+              <button
+                onClick={() => { void handleReplaceBoard(); }}
+                disabled={isLoading || isReplacingBoard || isConfirming}
+                className={`flex-1 flex items-center justify-center gap-2 px-6 py-3 rounded-xl transition-all duration-300 shadow-lg font-semibold ${
+                  isReplacingBoard
+                    ? 'bg-slate-700/50 text-slate-400 cursor-not-allowed'
+                    : 'bg-slate-600 hover:bg-slate-500 text-white hover:scale-[1.02]'
+                }`}
+              >
+                {isReplacingBoard ? (
+                  <>
+                    <Loader2 className="w-5 h-5 animate-spin" />
+                    Replacement en cours…
+                  </>
+                ) : (
+                  <>
+                    <LayoutGrid className="w-5 h-5" />
+                    Replacer les pièces
+                  </>
+                )}
+              </button>
+            </div>
+
+            {/* Seconde ligne - Bouton de confirmation principal */}
             <button
               onClick={() => { void handleConfirm(); }}
-              disabled={isLoading || isConfirming}
-              className="flex-1 flex items-center justify-center gap-2 px-6 py-4 bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-600 hover:to-blue-600 text-white font-bold rounded-xl transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg"
+              disabled={isLoading || isConfirming || isReplacingBoard}
+              className="w-full flex items-center justify-center gap-2 px-6 py-4 bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-600 hover:to-blue-600 text-white font-bold rounded-xl transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg"
             >
               {isConfirming
                 ? <RefreshCw className="w-6 h-6 animate-spin" />
