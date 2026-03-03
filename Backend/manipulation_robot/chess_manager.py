@@ -448,6 +448,7 @@ class ChessManager:
             precise_pick_coords=precise_coords,
             castling_rook=castling_rook,
             capture_sq=capture_sq,
+            moving_piece_type=piece.piece_type if piece else chess.PAWN,
         )
 
         if not success:
@@ -647,6 +648,7 @@ class ChessManager:
                 precise_pick_coords=precise_coords,
                 castling_rook=castling_rook,
                 capture_sq=capture_sq,
+                moving_piece_type=piece.piece_type if piece else chess.PAWN,
             )
 
             if not success:
