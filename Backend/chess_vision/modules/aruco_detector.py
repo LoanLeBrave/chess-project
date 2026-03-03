@@ -75,9 +75,6 @@ class ArucoDetector:
             params.cornerRefinementWinSize = ARUCO_PARAMS['cornerRefinementWinSize']
             params.cornerRefinementMaxIterations = ARUCO_PARAMS['cornerRefinementMaxIterations']
             params.cornerRefinementMinAccuracy = ARUCO_PARAMS['cornerRefinementMinAccuracy']
-            params.perspectiveRemovePixelPerCell = ARUCO_PARAMS['perspectiveRemovePixelPerCell']
-            params.perspectiveRemoveIgnoredMarginPerCell = ARUCO_PARAMS['perspectiveRemoveIgnoredMarginPerCell']
-            params.errorCorrectionRate = ARUCO_PARAMS['errorCorrectionRate']
         
         return params
     
