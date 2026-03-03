@@ -159,12 +159,20 @@ export function ChessBoard({
 
   const handleSquareClick = async (square: string) => {
     if (isGameOver) return;
-    if (!isCorrectionMode && (robotStatus !== 'idle' || !isWhiteTurn)) return;
+
+    // Autoriser la sélection + affichage des coups légaux dès que c'est le tour du joueur,
+    // même si le robot n'est pas encore "idle" (déconnecté, thinking, etc.)
+    // Seul l'envoi du coup (onMove) requiert que le robot soit prêt.
+    const canMove = isCorrectionMode
+      ? !isGameOver
+      : (robotStatus === 'idle' && isWhiteTurn);
+
+    const canSelect = isCorrectionMode || isWhiteTurn;
 
     const piece = board[square];
 
     if (selectedSquare === null) {
-      if (piece && ['K', 'Q', 'R', 'B', 'N', 'P'].includes(piece)) {
+      if (canSelect && piece && ['K', 'Q', 'R', 'B', 'N', 'P'].includes(piece)) {
         setSelectedSquare(square);
         if (showHelpOnClick) {
           const moves = await getLegalMoves(square);
@@ -176,16 +184,18 @@ export function ChessBoard({
         setSelectedSquare(null);
         setLegalMoves([]);
       } else if (legalMoves.includes(square) || !showHelpOnClick) {
-        const success = await onMove(selectedSquare, square);
-        if (success) {
-          setLastMove({ from: selectedSquare, to: square });
-          setBestMove(null);
-          setShowAllMoves(false);
-          setAllWhiteMoves({});
+        if (canMove) {
+          const success = await onMove(selectedSquare, square);
+          if (success) {
+            setLastMove({ from: selectedSquare, to: square });
+            setBestMove(null);
+            setShowAllMoves(false);
+            setAllWhiteMoves({});
+          }
         }
         setSelectedSquare(null);
         setLegalMoves([]);
-      } else if (piece && ['K', 'Q', 'R', 'B', 'N', 'P'].includes(piece)) {
+      } else if (canSelect && piece && ['K', 'Q', 'R', 'B', 'N', 'P'].includes(piece)) {
         setSelectedSquare(square);
         if (showHelpOnClick) {
           const moves = await getLegalMoves(square);
@@ -334,8 +344,12 @@ export function ChessBoard({
                 >
                   {isLegal && showHelpOnClick && (
                     piece
-                      ? <div className="absolute inset-1 rounded-full border-[4px] border-black/40 pointer-events-none" />
-                      : <div className="absolute w-[28%] h-[28%] bg-black/30 rounded-full pointer-events-none" />
+                      ? <div className="absolute inset-1 rounded-full border-[5px] border-black/60 pointer-events-none z-10" />
+                      : (
+                        <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
+                          <div className="w-[38%] h-[38%] bg-black/55 rounded-full" />
+                        </div>
+                      )
                   )}
                   {isBestT && !piece && (
                     <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
