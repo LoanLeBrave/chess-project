@@ -412,6 +412,7 @@ export function ChessBoard({
           {isCorrectionMode && (
             <div className="absolute inset-0 border-4 border-amber-400 pointer-events-none rounded" />
           )}
+        </div>
 
         {/* Colonne cimetière droite (noirs overflow : 98→91, haut→bas = rang 8→1) */}
         <div style={{ display: 'flex', flexDirection: 'column' }}>
