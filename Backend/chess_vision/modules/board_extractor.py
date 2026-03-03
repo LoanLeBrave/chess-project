@@ -54,7 +54,13 @@ class BoardExtractor:
             board_corners: Coins personnalisés {code: (x, y)} (sinon chargés depuis calibration)
             board_size: Taille de l'image extraite (par défaut EXTRACTED_BOARD_SIZE)
         """
-        self.board_corners = board_corners if board_corners is not None else FIXED_BOARD_CORNERS
+        if board_corners is not None:
+            self.board_corners = board_corners
+        else:
+            # Toujours relire depuis le fichier à l'instanciation pour prendre en compte
+            # une calibration effectuée sans redémarrer le serveur.
+            from ..config import load_board_corners
+            self.board_corners = load_board_corners()
         self.board_size = board_size if board_size is not None else EXTRACTED_BOARD_SIZE
         self._transform_matrix = None
     
