@@ -214,76 +214,80 @@ export function ChessBoard({
       ? cemeteryBoard
       : piecesElimineeesToMap(piecesEliminees);
 
-  /** Affiche une ligne de cimetière (rang 0 ou 9) alignée sur le plateau */
-  const renderCemeteryStrip = (rank: '0' | '9', isBlackCaptures: boolean) => {
-    // Les noirs capturés (par les blancs) vont en rang 9 (haut)
-    // Les blancs capturés (par les noirs) vont en rang 0 (bas)
-    const bgBase = isBlackCaptures ? '#1e293b' : '#334155';
+  /**
+   * Cases blancs capturés : rang 0 (a0-h0), coins 00/90, col gauche 01-08
+   * Cases noirs capturés  : rang 9 (a9-h9), coins 09/99, col droite 91-98
+   */
+  const isBlancsCell = (sq: string) => sq[0] === '0' || sq[1] === '0';
+  const cemBg = (sq: string) => isBlancsCell(sq) ? '#2a3a4a' : '#1a2a3a';
+  const cemBorder = (sq: string) => isBlancsCell(sq) ? '#3b5268' : '#243447';
+
+  /**
+   * Cellule de cimetière générique.
+   * - widthClass / heightClass : classes Tailwind w-* h-*
+   * - rankLabel : si fourni, affiche le numéro de rang en petit label
+   */
+  const renderCemCell = (sq: string, widthClass: string, heightClass: string, rankLabel?: string) => {
+    const code = activeCemeteryMap[sq];
+    const pieceKey = code ? visionCodeToPieceKey(code) : null;
     return (
-      <div className="flex">
-        {/* Numéro rang gauche */}
-        <div
-          className="w-8 h-12 flex items-center justify-center text-xs font-bold text-slate-400"
+      <div
+        key={sq}
+        className={`${widthClass} ${heightClass} flex items-center justify-center relative flex-shrink-0`}
+        style={{ backgroundColor: cemBg(sq), border: `1px solid ${cemBorder(sq)}` }}
+        title={code ? `${sq}: ${code}` : sq}
+      >
+        {pieceKey && PIECE_IMAGES[pieceKey] && (
+          <img
+            src={PIECE_IMAGES[pieceKey]}
+            alt={pieceKey}
+            className="w-9 h-9 pointer-events-none select-none opacity-90"
+            draggable={false}
+          />
+        )}
+        {/* Étiquette de la case (toujours visible en coin) */}
+        <span
+          className="absolute bottom-0.5 right-0.5 text-[8px] font-mono leading-none select-none"
+          style={{ color: code ? '#94a3b8' : '#4b5563' }}
         >
-          {rank}
-        </div>
-        {/* Cases cimetière */}
-        <div className="flex rounded-sm overflow-hidden" style={{ border: '2px solid #374151' }}>
-          {files.map(file => {
-            const sq = `${file}${rank}`;
-            const code = activeCemeteryMap[sq];
-            const pieceKey = code ? visionCodeToPieceKey(code) : null;
-            return (
-              <div
-                key={sq}
-                className="w-16 h-12 flex items-center justify-center relative"
-                style={{ backgroundColor: bgBase }}
-                title={code ? `${sq}: ${code}` : sq}
-              >
-                {pieceKey && PIECE_IMAGES[pieceKey] && (
-                  <img
-                    src={PIECE_IMAGES[pieceKey]}
-                    alt={pieceKey}
-                    className="w-10 h-10 pointer-events-none select-none opacity-90"
-                    draggable={false}
-                  />
-                )}
-                {/* Label de la case si vide */}
-                {!code && (
-                  <span className="text-xs text-slate-600 font-mono">{sq}</span>
-                )}
-              </div>
-            );
-          })}
-        </div>
-        {/* Numéro rang droit (balance) */}
-        <div className="w-8" />
+          {rankLabel ?? sq}
+        </span>
       </div>
     );
   };
 
   return (
     <div className="bg-slate-800/50 backdrop-blur-sm rounded-xl p-4 border border-slate-700">
-      {/* Plateau */}
       <div className="inline-block">
-        {/* === Bande cimetière HAUT : noirs capturés (rang 9) === */}
-        <div className="mb-1 opacity-90">
-          {renderCemeteryStrip('9', true)}
+
+        {/* ═══════════════════════════════════════════════════════════════
+            BANDE HAUT : coins 09/99 + rangée 9 (noirs capturés)
+            Largeur : w-11(coin) + 8×w-16(plateau) + w-11(coin) = 44+512+44 = 600px
+            ═══════════════════════════════════════════════════════════════ */}
+        <div className="flex mb-0.5">
+          {renderCemCell('09', 'w-11', 'h-11')}
+          {files.map(f => renderCemCell(`${f}9`, 'w-16', 'h-11'))}
+          {renderCemCell('99', 'w-11', 'h-11')}
         </div>
 
-        {/* Lettres haut */}
-        <div className="flex ml-8">
+        {/* Lettres haut — décalées de w-11=44px pour s'aligner sur le plateau */}
+        <div className="flex" style={{ marginLeft: '44px' }}>
           {files.map(f => (
             <div key={f} className="w-16 text-center text-slate-400 text-sm font-bold">{f}</div>
           ))}
         </div>
 
+        {/* ═══════════════════════════════════════════════════════════════
+            ZONE CENTRALE : col gauche (blancs overflow) + plateau + col droite (noirs overflow)
+            Col gauche  : cases 01-08 (blancs capturés en excès)
+            Col droite  : cases 91-98 (noirs capturés en excès)
+            Les labels sont les numéros de rang 1-8 du plateau
+            ═══════════════════════════════════════════════════════════════ */}
         <div className="flex">
-          {/* Numéros gauche */}
+
+          {/* Colonne cimetière gauche : blancs overflow (01..08, de haut en bas = rang 8..1) */}
           <div className="flex flex-col">
-            {ranks.map(r => (
-              <div key={r} className="w-8 h-16 flex items-center justify-center text-slate-400 text-sm font-bold">{r}</div>
-            ))}
+            {ranks.map(r => renderCemCell(`0${r}`, 'w-11', 'h-16', r))}
           </div>
 
           {/* Échiquier */}
@@ -308,7 +312,6 @@ export function ChessBoard({
 
                 // Couleurs style chess.com
                 let bgColor = isLight ? '#ebecd0' : '#739552';
-
                 if (isSelected) {
                   bgColor = '#b9ca43';
                 } else if (isBestF || isBestT) {
@@ -333,10 +336,8 @@ export function ChessBoard({
                     {/* Indicateur coup légal - point ou cercle */}
                     {isLegal && showHelpOnClick && (
                       piece ? (
-                        // Cercle autour de la pièce capturable
                         <div className="absolute inset-1 rounded-full border-[5px] border-black/40 pointer-events-none" />
                       ) : (
-                        // Point au centre
                         <div className="absolute w-[30%] h-[30%] bg-black/30 rounded-full pointer-events-none" />
                       )
                     )}
@@ -395,7 +396,6 @@ export function ChessBoard({
                 </div>
               </div>
             )}
-
             {robotStatus === 'moving' && (
               <div className="absolute inset-0 bg-black/70 flex items-center justify-center">
                 <div className="text-center text-white">
@@ -404,13 +404,11 @@ export function ChessBoard({
                 </div>
               </div>
             )}
-
             {!isWhiteTurn && robotStatus === 'idle' && !isGameOver && (
               <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
                 <div className="text-white text-2xl font-semibold">🤖 Tour du robot...</div>
               </div>
             )}
-
             {isGameOver && (
               <div className="absolute inset-0 bg-black/80 flex items-center justify-center">
                 <div className="text-center">
@@ -419,7 +417,6 @@ export function ChessBoard({
                 </div>
               </div>
             )}
-
             {robotStatus === 'disconnected' && (
               <div className="absolute inset-0 bg-black/80 flex items-center justify-center">
                 <div className="text-center text-white">
@@ -430,25 +427,28 @@ export function ChessBoard({
             )}
           </div>
 
-          {/* Numéros droite */}
+          {/* Colonne cimetière droite : noirs overflow (91..98, de haut en bas = rang 8..1) */}
           <div className="flex flex-col">
-            {ranks.map(r => (
-              <div key={r} className="w-8 h-16 flex items-center justify-center text-slate-400 text-sm font-bold">{r}</div>
-            ))}
+            {ranks.map(r => renderCemCell(`9${r}`, 'w-11', 'h-16', r))}
           </div>
         </div>
 
-        {/* Lettres bas */}
-        <div className="flex ml-8">
+        {/* Lettres bas — même décalage w-11 */}
+        <div className="flex" style={{ marginLeft: '44px' }}>
           {files.map(f => (
             <div key={f} className="w-16 text-center text-slate-400 text-sm font-bold">{f}</div>
           ))}
         </div>
 
-        {/* === Bande cimetière BAS : blancs capturés (rang 0) === */}
-        <div className="mt-1 opacity-90">
-          {renderCemeteryStrip('0', false)}
+        {/* ═══════════════════════════════════════════════════════════════
+            BANDE BAS : coins 00/90 + rangée 0 (blancs capturés)
+            ═══════════════════════════════════════════════════════════════ */}
+        <div className="flex mt-0.5">
+          {renderCemCell('00', 'w-11', 'h-11')}
+          {files.map(f => renderCemCell(`${f}0`, 'w-16', 'h-11'))}
+          {renderCemCell('90', 'w-11', 'h-11')}
         </div>
+
       </div>
     </div>
   );
