@@ -75,7 +75,7 @@ export function GameScreen({ difficulty, gameState, setGameState, onReturnToMenu
     setMoves(prev => [...prev, newMove]);
   };
 
-  const API_BASE = `http://${window.location.hostname}:8000`;
+  const API_BASE = `${window.location.protocol}//${window.location.hostname}:8000`;
 
   // Hook personnalise pour gerer la logique d'echecs
   const {
@@ -107,28 +107,9 @@ export function GameScreen({ difficulty, gameState, setGameState, onReturnToMenu
     enterCorrectionMode,
     exitCorrectionMode,
     correctMove,
+    replaceBoard,
+    isReplacingBoard,
   } = useChessRobot(addLog, addMove);
-
-  // État pour le replacement du plateau
-  const [isReplacingBoard, setIsReplacingBoard] = useState(false);
-
-  // Fonction pour replacer le plateau
-  const replaceBoard = async () => {
-    setIsReplacingBoard(true);
-    try {
-      const res = await fetch(`${API_BASE}/board/replace`, { method: 'POST' });
-      const data = await res.json();
-      if (data.success) {
-        addLog('info', 'Plateau replacé avec succès');
-      } else {
-        addLog('error', data.error || 'Erreur lors du replacement');
-      }
-    } catch (err) {
-      addLog('error', `Erreur replacement: ${err instanceof Error ? err.message : String(err)}`);
-    } finally {
-      setIsReplacingBoard(false);
-    }
-  };
 
   // Initialiser la partie via l'API au montage
   useEffect(() => {

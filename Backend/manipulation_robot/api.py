@@ -957,6 +957,7 @@ async def reset_plateau():
     return result
 
 @app.post("/game/replace-board", tags=["Game"])
+@app.post("/board/replace", tags=["Game"])
 async def replace_board():
     """Replace toutes les pièces via la vision caméra"""
     if manager.status == "replacing": return {"success": False, "error": "Déjà en cours"}
@@ -1032,6 +1033,41 @@ async def get_legal_moves(square: str = Path(..., pattern="^[a-h][1-8]$")):
 
 @app.get("/game/best-move", tags=["Game"])
 async def get_best_move(): return manager.chess.get_best_move()
+
+@app.post("/game/analyze-position", tags=["Game"])
+async def analyze_position(data: dict):
+    """Analyse la position FEN fournie et retourne l'évaluation Stockfish (dont mat forcé)"""
+    fen = data.get("fen")
+    if not fen:
+        return {"success": False, "error": "FEN manquant"}
+    
+    try:
+        temp_board = chess.Board(fen)
+        if not manager.chess.engine:
+            return {"success": False, "error": "Stockfish non disponible"}
+        
+        # Analyse rapide
+        info = manager.chess.engine.analyse(temp_board, chess.engine.Limit(time=0.2))
+        score = info.get("score")
+        
+        mate_in = None
+        eval_score = 0.0
+        if score:
+            # On retourne le nombre de coups avant le mat (perspective blancs)
+            # Positif si les blancs matent, négatif si les noirs matent
+            mate_in = score.white().mate()
+            
+            s = score.white().score()
+            if s is not None:
+                eval_score = s / 100.0
+            
+        return {
+            "success": True,
+            "evaluation": eval_score,
+            "forced_mate": mate_in
+        }
+    except Exception as e:
+        return {"success": False, "error": str(e)}
 
 @app.post("/game/move/human", tags=["Game"])
 async def human_move(move: MoveRequest):
