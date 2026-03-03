@@ -1024,7 +1024,7 @@ async def calibrate_close_gripper():
 
 @app.post("/robot/calibrate/auto-level")
 async def calibrate_auto_level():
-    """Remet la pince parfaitement verticale [pi, 0, 0]"""
+    """Remet la pince parfaitement verticale [pi, 0, 0] et ferme le gripper"""
     if not manager.robot.connected or not manager.robot.rtde_c:
         return {"success": False, "error": "Robot non connecte"}
 
@@ -1041,6 +1041,15 @@ async def calibrate_auto_level():
         current = manager.robot.rtde_r.getActualTCPPose()
         vertical_pose = [current[0], current[1], current[2], 3.1415, 0.0, 0.0]
         manager.robot.rtde_c.moveL(vertical_pose, 0.2, 0.2)
+
+        # Fermer le gripper pour la calibration (pointe fine dans le trou)
+        if manager.robot.gripper:
+            try:
+                manager.robot.gripper.close()
+                await manager.log("info", "Gripper ferme pour calibration")
+            except Exception:
+                pass
+
         await manager.log("info", "Pince remise droite (auto-level)")
         return {"success": True}
     except Exception as e:
@@ -1089,6 +1098,8 @@ async def calibrate_point(data: dict):
     if point not in ('a1', 'h8', 'z'):
         return {"success": False, "error": f"Point invalide: {point}"}
 
+    was_freedrive = data.get("freedrive_active", False)
+
     try:
         pose = manager.robot.rtde_r.getActualTCPPose()
         manager.calib_points[point] = list(pose)
@@ -1096,10 +1107,28 @@ async def calibrate_point(data: dict):
 
         # Remontee de securite apres A1 ou H8
         if point in ('a1', 'h8'):
+            # Desactiver freedrive avant le moveL
+            if was_freedrive:
+                try:
+                    manager.robot.rtde_c.endFreedriveMode()
+                    time.sleep(0.1)
+                    manager.robot.rtde_c.reuploadScript()
+                    time.sleep(0.1)
+                except:
+                    pass
+
             safe_pose = list(pose)
             safe_pose[2] += 0.1  # +10cm en Z
             manager.robot.rtde_c.moveL(safe_pose, 0.5, 0.3)
             await manager.log("info", "Remontee de securite effectuee")
+
+            # Reactiver freedrive si il etait actif
+            if was_freedrive:
+                try:
+                    manager.robot.rtde_c.freedriveMode([1, 1, 1, 0, 0, 0])
+                    await manager.log("info", "FreeDrive reactive apres remontee")
+                except:
+                    pass
 
         return {
             "success": True,
