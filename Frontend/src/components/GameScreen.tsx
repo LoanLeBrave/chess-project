@@ -483,8 +483,8 @@ export function GameScreen({ difficulty, gameState, setGameState, onReturnToMenu
               </button>
             </div>
             
-            {/* Chess Board - Flexible size */}
-            <div className="flex-1 min-h-0">
+            {/* Chess Board - taille fixe, centrée */}
+            <div className="flex-1 min-h-0 flex items-start justify-center overflow-auto pt-1">
               <ChessBoard
                 fen={fen}
                 isWhiteTurn={isWhiteTurn}
