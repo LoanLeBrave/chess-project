@@ -38,6 +38,13 @@ export interface IllegalMoveAlert {
   timestamp: number;
 }
 
+export interface ResumeConfirmation {
+  pieceName: string;
+  fromSq: string;
+  toSq: string;
+  player: 'human' | 'robot';
+}
+
 export interface UseChessRobotReturn {
   fen: string;
   isWhiteTurn: boolean;
@@ -64,6 +71,13 @@ export interface UseChessRobotReturn {
   replaceBoard: () => Promise<boolean>;
   confirmPromotion: (from_sq: string) => Promise<boolean>;
   reconnectRobot: () => Promise<boolean>;
+  resumeConfirmation: ResumeConfirmation | null;
+  confirmResume: () => Promise<boolean>;
+  isCorrectionMode: boolean;
+  undoLastMove: () => Promise<number>;
+  enterCorrectionMode: () => Promise<number>;
+  exitCorrectionMode: () => void;
+  correctMove: (from: string, to: string) => Promise<boolean>;
 }
 
 const API_BASE = `${window.location.protocol}//${window.location.hostname}:8000`;
@@ -123,6 +137,8 @@ export function useChessRobot(
   const [isPromotionPending, setIsPromotionPending] = useState(false);
   const [promotionSquare, setPromotionSquare] = useState<string | null>(null);
   const [promotionColor, setPromotionColor] = useState<'white' | 'black' | null>(null);
+  const [resumeConfirmation, setResumeConfirmation] = useState<ResumeConfirmation | null>(null);
+  const [isCorrectionMode, setIsCorrectionMode] = useState(false);
 
   const wsRef = useRef<WebSocket | null>(null);
   const addLogRef = useRef(addLog);
@@ -181,6 +197,15 @@ export function useChessRobot(
               });
               addLogRef.current('robot', `Robot joue: ${msg.san || msg.from + ' -> ' + msg.to}`);
               setRobotStatus('idle');
+              // Mise à jour ACPL via le CPL calculé par le backend (couvre mode manuel ET vision)
+              if (typeof msg.cpl === 'number') {
+                setMoveEvaluations(prev => {
+                  const updated = [...prev, { move: `${msg.from}-${msg.to}`, centipawnLoss: msg.cpl }];
+                  const total = updated.reduce((sum, e) => sum + e.centipawnLoss, 0);
+                  setAcplScore(Math.round(total / updated.length));
+                  return updated;
+                });
+              }
             } else if (msg.player === 'human') {
               // Coup humain detecte par la vision camera
               onMoveCompleteRef.current({
@@ -234,6 +259,16 @@ export function useChessRobot(
             addLogRef.current('info', `Placement confirme (${msg.source}, ${msg.pieces_count} pieces)`);
           }
 
+          if (msg.type === 'resume_confirmation_needed') {
+            setResumeConfirmation({
+              pieceName: msg.piece_name || 'Pièce',
+              fromSq: msg.from_sq || '?',
+              toSq: msg.to_sq || '?',
+              player: msg.player === 'human' ? 'human' : 'robot',
+            });
+            addLog('info', `Replacez le ${msg.piece_name} en ${msg.to_sq} et confirmez`);
+          }
+
           if (msg.type === 'vision_anomaly') {
             addLogRef.current('warning', msg.message || 'Anomalie vision detectee');
             const suggestions: string[] = [];
@@ -248,6 +283,11 @@ export function useChessRobot(
               suggestions,
               timestamp: Date.now(),
             });
+          }
+
+          if (msg.type === 'move_undone') {
+            setFen(msg.fen);
+            setIsWhiteTurn(msg.fen.split(' ')[1] === 'w');
           }
 
           if (msg.type === 'promotion_required') {
@@ -387,16 +427,6 @@ export function useChessRobot(
         else setGameResult('draw');
       }
 
-      // ACPL: utiliser l'evaluation du backend
-      if (data.evaluation !== undefined) {
-        const cpLoss = typeof data.evaluation === 'number' ? Math.abs(data.evaluation * 100) : 0;
-        setMoveEvaluations(prev => {
-          const updated = [...prev, { move: `${data.from}-${data.to}`, centipawnLoss: cpLoss }];
-          const total = updated.reduce((sum, e) => sum + e.centipawnLoss, 0);
-          setAcplScore(Math.round(total / updated.length));
-          return updated;
-        });
-      }
     } catch (e) {
       addLogRef.current('error', 'Erreur connexion API pour coup robot');
       setRobotStatus('error');
@@ -532,6 +562,76 @@ export function useChessRobot(
     setIllegalMoveAlert(null);
   }, []);
 
+  // --- Confirm resume after pause via API ---
+  const confirmResume = useCallback(async (): Promise<boolean> => {
+    try {
+      const res = await fetch(`${API_BASE}/game/confirm-resume`, { method: 'POST' });
+      const data = await res.json();
+      if (data.success) {
+        setResumeConfirmation(null);
+      }
+      return data.success;
+    } catch {
+      addLogRef.current('error', 'Erreur confirmation reprise');
+      return false;
+    }
+  }, []);
+
+  // --- Undo last move via API ---
+  const undoLastMove = useCallback(async (): Promise<number> => {
+    try {
+      const res = await fetch(`${API_BASE}/game/undo-move`, { method: 'POST' });
+      const data = await res.json();
+      if (data.success) {
+        setFen(data.fen);
+        setIsWhiteTurn(data.fen.split(' ')[1] === 'w');
+        return data.moves_undone || 0;
+      } else {
+        addLogRef.current('warning', data.error || 'Impossible d\'annuler le coup');
+        return 0;
+      }
+    } catch {
+      addLogRef.current('error', 'Erreur connexion API pour annuler coup');
+      return 0;
+    }
+  }, []);
+
+  // --- Enter correction mode (undo + enable correction UI) ---
+  const enterCorrectionMode = useCallback(async (): Promise<number> => {
+    const count = await undoLastMove();
+    if (count > 0) {
+      setIsCorrectionMode(true);
+    }
+    return count;
+  }, [undoLastMove]);
+
+  // --- Exit correction mode without playing a correction ---
+  const exitCorrectionMode = useCallback(() => {
+    setIsCorrectionMode(false);
+  }, []);
+
+  // --- Play corrected move (vision-style, no physical robot movement for human piece) ---
+  const correctMove = useCallback(async (from: string, to: string): Promise<boolean> => {
+    try {
+      const res = await fetch(`${API_BASE}/game/correct-move`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ from_sq: from, to_sq: to }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setIsCorrectionMode(false);
+      } else {
+        addLogRef.current('error', data.error || 'Coup corrigé illégal');
+      }
+      return data.success;
+    } catch {
+      addLogRef.current('error', 'Erreur connexion API pour correction de coup');
+      return false;
+    }
+  }, []);
+
+
   return {
     fen,
     isWhiteTurn,
@@ -558,5 +658,12 @@ export function useChessRobot(
     replaceBoard,
     confirmPromotion,
     reconnectRobot,
+    resumeConfirmation,
+    confirmResume,
+    isCorrectionMode,
+    undoLastMove,
+    enterCorrectionMode,
+    exitCorrectionMode,
+    correctMove,
   };
 }

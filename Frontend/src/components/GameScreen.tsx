@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Eye, EyeOff, Camera, CheckCircle, AlertTriangle, X, ArrowLeft } from 'lucide-react';
+import { Eye, EyeOff, Camera, CheckCircle, AlertTriangle, X, RotateCcw, Pencil, ArrowLeft } from 'lucide-react';
 import { ChessBoard } from './ChessBoard';
 import { ControlPanel } from './ControlPanel';
 import { MoveHistory } from './MoveHistory';
@@ -98,6 +98,13 @@ export function GameScreen({ difficulty, gameState, setGameState, onReturnToMenu
     promotionColor,
     confirmPromotion,
     reconnectRobot,
+    resumeConfirmation,
+    confirmResume,
+    isCorrectionMode,
+    undoLastMove,
+    enterCorrectionMode,
+    exitCorrectionMode,
+    correctMove,
   } = useChessRobot(addLog, addMove);
 
   // Initialiser la partie via l'API au montage
@@ -333,6 +340,25 @@ export function GameScreen({ difficulty, gameState, setGameState, onReturnToMenu
     setIsReconnecting(false);
   };
 
+  const handleUndo = async () => {
+    const count = await undoLastMove();
+    if (count > 0) {
+      setMoves(prev => prev.slice(0, Math.max(0, prev.length - count)));
+    }
+  };
+
+  const handleEnterCorrection = async () => {
+    const count = await enterCorrectionMode();
+    if (count > 0) {
+      setMoves(prev => prev.slice(0, Math.max(0, prev.length - count)));
+      addLog('info', 'Mode correction — cliquez la case de départ puis la case d\'arrivée correctes sur le plateau');
+    }
+  };
+
+  const handleCorrectionMove = useCallback(async (from: string, to: string): Promise<boolean> => {
+    return await correctMove(from, to);
+  }, [correctMove]);
+
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
     const secs = seconds % 60;
@@ -411,6 +437,34 @@ export function GameScreen({ difficulty, gameState, setGameState, onReturnToMenu
                 </div>
               )}
 
+              {/* Boutons Annuler / Corriger */}
+              {!isGameOver && moves.length > 0 && !isReplacingBoard && (
+                <>
+                  <button
+                    onClick={handleUndo}
+                    disabled={robotStatus !== 'idle' || isCorrectionMode}
+                    className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium bg-slate-700 hover:bg-slate-600 text-slate-200 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                    title="Annuler le dernier coup"
+                  >
+                    <RotateCcw className="w-4 h-4" />
+                    Annuler
+                  </button>
+                  <button
+                    onClick={isCorrectionMode ? exitCorrectionMode : handleEnterCorrection}
+                    disabled={!isCorrectionMode && robotStatus !== 'idle'}
+                    className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                      isCorrectionMode
+                        ? 'bg-amber-600 hover:bg-amber-500 text-white'
+                        : 'bg-slate-700 hover:bg-slate-600 text-slate-200 disabled:opacity-40 disabled:cursor-not-allowed'
+                    }`}
+                    title={isCorrectionMode ? 'Annuler la correction' : 'Corriger un coup mal détecté par la caméra'}
+                  >
+                    <Pencil className="w-4 h-4" />
+                    {isCorrectionMode ? 'Annuler correction' : 'Corriger'}
+                  </button>
+                </>
+              )}
+
               {/* Toggle vision overlay */}
               <button
                 onClick={() => setShowVision(!showVision)}
@@ -435,10 +489,10 @@ export function GameScreen({ difficulty, gameState, setGameState, onReturnToMenu
                 isWhiteTurn={isWhiteTurn}
                 robotStatus={robotStatus}
                 isGameOver={isGameOver}
-                onMove={onMove}
+                onMove={isCorrectionMode ? handleCorrectionMove : onMove}
                 getLegalMoves={getLegalMoves}
                 getBestMove={getBestMove}
-                showVision={showVision}
+                showVision={showVision && !isCorrectionMode}
                 visionBoard={visionState?.board}
                 visionConfidence={visionState?.confidence}
                 cemeteryBoard={visionState?.cemetery_board}
@@ -510,6 +564,31 @@ export function GameScreen({ difficulty, gameState, setGameState, onReturnToMenu
         promotionColor={promotionColor || 'white'}
         onConfirm={confirmPromotion}
       />
+
+      {/* Resume Confirmation Alert */}
+      {resumeConfirmation && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 animate-in slide-in-from-bottom-4">
+          <div className="bg-amber-900 border border-amber-500 rounded-xl px-5 py-4 shadow-2xl max-w-md w-full">
+            <div className="flex items-start gap-3 mb-3">
+              <AlertTriangle className="w-6 h-6 text-amber-400 flex-shrink-0 mt-0.5" />
+              <div className="flex-1">
+                <p className="text-amber-100 font-semibold text-sm">Partie reprise — pince relâchée</p>
+                <p className="text-amber-200 text-sm mt-1">
+                  Le <span className="font-bold text-amber-300">{resumeConfirmation.pieceName}</span> devait
+                  aller en <span className="font-bold text-amber-400">{resumeConfirmation.toSq}</span>.
+                  Replacez-le manuellement sur cette case.
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={confirmResume}
+              className="w-full px-4 py-2 rounded-lg bg-amber-600 hover:bg-amber-500 text-white font-medium text-sm transition-colors"
+            >
+              Pièce replacée — Continuer la partie
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Illegal Move Alert */}
       {illegalMoveAlert && (

@@ -308,6 +308,20 @@ class VisionService:
             "cemetery_board": self._get_cemetery_map(),
         }
 
+    def reverse_last_move(self, from_sq: str, to_sq: str):
+        """
+        Inverse les effets de update_reference_after_move(from_sq→to_sq).
+        Déplace la pièce de to_sq vers from_sq dans reference_board et camera_baseline.
+        Réinitialise les buffers pour repartir d'un état stable.
+        """
+        for board_dict in [self.reference_board, self.camera_baseline]:
+            if board_dict is not None:
+                piece = board_dict.pop(to_sq, None)
+                if piece:
+                    board_dict[from_sq] = piece
+        self._buffers.clear()
+        self._stability_counter = 0
+
     def get_occupied_cimetiere_cells(self) -> set:
         """
         Retourne les cases du cimetière actuellement occupées d'après la vision
@@ -389,11 +403,28 @@ app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, 
 #                          BOUCLES & LOGIQUE MÉTIER
 # ============================================================================
 
+_vision_update_running = False  # Empêche les captures simultanées
+
 async def vision_loop():
+    global _vision_update_running
     manager.vision.running = True
+    loop = asyncio.get_running_loop()
     while manager.vision.running:
         try:
-            updated = manager.vision.update()
+            if not _vision_update_running:
+                _vision_update_running = True
+                try:
+                    updated = await asyncio.wait_for(
+                        loop.run_in_executor(None, manager.vision.update),
+                        timeout=10.0
+                    )
+                except asyncio.TimeoutError:
+                    updated = False
+                    print("Vision update timeout (>10s) — caméra peut-être bloquée")
+                finally:
+                    _vision_update_running = False
+            else:
+                updated = False
             if updated and manager.websocket_clients:
                 msg = manager.vision.get_state_message()
                 msg["pieces_eliminees"] = manager.robot.get_pieces_eliminees()
@@ -873,10 +904,16 @@ async def toggle_pause():
 @app.post("/game/stop", tags=["Game"])
 async def stop_game():
     """Arrête immédiatement tous les processus de jeu (sans déplacer les pièces physiquement)."""
-    # 1. Arrêt matériel immédiat du robot
+    loop = asyncio.get_running_loop()
+
+    # 1. Arrêt matériel immédiat du robot (dans executor — stopScript peut bloquer si connexion instable)
     if manager.robot.connected and manager.robot.rtde_c:
+        rtde_c = manager.robot.rtde_c
         try:
-            manager.robot.rtde_c.stopScript()
+            await asyncio.wait_for(
+                loop.run_in_executor(None, rtde_c.stopScript),
+                timeout=3.0
+            )
         except Exception:
             pass
 
@@ -889,11 +926,15 @@ async def stop_game():
     manager.chess.is_paused = False
     manager.robot.is_paused = False
 
-    # 4. Relancer le script robot pour que la connexion reste opérationnelle
+    # 4. Relancer le script robot pour que la connexion reste opérationnelle (dans executor)
     if manager.robot.connected and manager.robot.rtde_c:
+        rtde_c = manager.robot.rtde_c
         try:
             await asyncio.sleep(0.15)
-            manager.robot.rtde_c.reuploadScript()
+            await asyncio.wait_for(
+                loop.run_in_executor(None, rtde_c.reuploadScript),
+                timeout=3.0
+            )
             await asyncio.sleep(0.15)
         except Exception:
             pass
@@ -927,6 +968,46 @@ async def replace_board():
             await manager.broadcast({"type": "board_replaced", "fen": manager.chess.board.fen()})
     finally: manager.set_status("idle")
     return result
+
+@app.post("/game/confirm-resume", tags=["Game"])
+async def confirm_resume():
+    """
+    Confirme que la pièce relâchée après une pause a été replacée manuellement.
+    À appeler après avoir reçu l'événement WebSocket 'resume_confirmation_needed'.
+    """
+    success = manager.chess.confirm_resume()
+    if not success:
+        return {"success": False, "error": "Aucune reprise en attente"}
+    await manager.log("info", "Reprise confirmée par le joueur")
+    return {"success": True}
+
+
+@app.post("/game/undo-move", tags=["Game"])
+async def undo_move():
+    """
+    Annule le(s) dernier(s) coup(s) de la partie :
+    - Si c'est le tour du joueur, annule le coup robot + le coup humain.
+    - Si le robot n'a pas encore joué, annule uniquement le coup humain.
+    Retourne le nouveau FEN et le nombre de coups annulés.
+    """
+    return await manager.chess.undo_last_move()
+
+
+@app.post("/game/correct-move", tags=["Game"])
+async def correct_move_endpoint(data: dict):
+    """
+    Joue un coup corrigé (from_sq→to_sq) comme coup humain (vision-style),
+    sans déplacer physiquement la pièce du joueur.
+    À appeler après /game/undo-move pour corriger un coup mal détecté.
+    Body: {"from_sq": "e2", "to_sq": "e4"}
+    """
+    from_sq = data.get("from_sq", "").strip().lower()
+    to_sq = data.get("to_sq", "").strip().lower()
+    if not from_sq or not to_sq:
+        return {"success": False, "error": "Paramètres from_sq et to_sq requis"}
+    await manager.log("info", f"Coup corrigé reçu: {from_sq} → {to_sq}")
+    return await manager.chess.play_vision_move(from_sq, to_sq)
+
 
 @app.post("/game/confirm-promotion", tags=["Game"])
 async def confirm_promotion(data: dict):

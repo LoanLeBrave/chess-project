@@ -276,6 +276,32 @@ class RobotController:
             await asyncio.sleep(0.01)  # Vérifier toutes les 10ms
         return True
 
+    async def _gripper_open(self):
+        """Ouvre le gripper via executor — ne bloque pas l'event loop."""
+        if not self.connected or not self.gripper:
+            return
+        loop = asyncio.get_running_loop()
+        try:
+            await asyncio.wait_for(
+                loop.run_in_executor(None, lambda: self.gripper.move(GRIPPER_OUVERTURE)),
+                timeout=5.0
+            )
+        except Exception:
+            pass
+
+    async def _gripper_close(self):
+        """Ferme le gripper via executor — ne bloque pas l'event loop."""
+        if not self.connected or not self.gripper:
+            return
+        loop = asyncio.get_running_loop()
+        try:
+            await asyncio.wait_for(
+                loop.run_in_executor(None, self.gripper.close),
+                timeout=5.0
+            )
+        except Exception:
+            pass
+
     async def _move_tcp(self, target_pose, speed=VITESSE, acc=ACCELERATION):
         """Déplace le TCP — non-bloquant via run_in_executor. Timeout après MOVE_TIMEOUT secondes."""
         if self.is_paused:
@@ -310,11 +336,12 @@ class RobotController:
     async def _recover_from_timeout(self):
         """Récupération après timeout moveL : récupération douce, puis reconnexion si nécessaire."""
         await self.log("warning", "Tentative de récupération douce (stopScript + reuploadScript)")
+        loop = asyncio.get_running_loop()
         try:
-            self.rtde_c.stopScript()
-            await asyncio.sleep(0.2)
-            self.rtde_c.reuploadScript()
-            await asyncio.sleep(0.2)
+            await asyncio.wait_for(
+                loop.run_in_executor(None, self._do_soft_recover),
+                timeout=5.0
+            )
             await self.log("info", "Récupération douce réussie après timeout")
             return
         except Exception as e:
@@ -331,11 +358,8 @@ class RobotController:
         self.gripper.set_speed(150)
         self.gripper.move(GRIPPER_OUVERTURE)
 
-    async def reconnect(self) -> bool:
-        """Reconnexion complète RTDE + gripper. Appelé manuellement ou après un timeout."""
-        await self.log("info", "Reconnexion au robot en cours...")
-
-        # Fermer les connexions existantes proprement
+    def _do_disconnect(self):
+        """Déconnexion synchrone propre (à exécuter dans un executor)."""
         try:
             if self.rtde_c:
                 self.rtde_c.stopScript()
@@ -348,23 +372,66 @@ class RobotController:
         except Exception:
             pass
 
+    def _do_soft_recover(self):
+        """Récupération douce synchrone — stopScript + reuploadScript (à exécuter dans un executor)."""
+        self.rtde_c.stopScript()
+        time.sleep(0.2)
+        self.rtde_c.reuploadScript()
+        time.sleep(0.2)
+
+    async def reconnect(self) -> bool:
+        """Reconnexion complète RTDE + gripper avec retries. Appelé manuellement ou après un timeout."""
+        MAX_RETRIES = 8          # Nombre maximum de tentatives
+        RETRY_DELAY = 3.0        # Secondes entre chaque tentative
+        CONNECT_TIMEOUT = 12.0   # Timeout par tentative (la lib ur_rtde a 5s en interne)
+
+        await self.log("info", "Reconnexion au robot en cours...")
+
+        # Fermer les connexions existantes dans un executor pour ne pas bloquer l'event loop
+        # (stopScript/disconnect peuvent bloquer si la connexion TCP est morte)
+        loop = asyncio.get_running_loop()
+        try:
+            await asyncio.wait_for(
+                loop.run_in_executor(None, self._do_disconnect),
+                timeout=5.0
+            )
+        except Exception:
+            pass  # Timeout ou erreur de déconnexion : on continue quand même
+
         self.rtde_c = None
         self.rtde_r = None
         self.gripper = None
         self.connected = False
 
-        await asyncio.sleep(0.5)  # Laisser le robot se stabiliser
+        await asyncio.sleep(1.0)  # Laisser le robot se stabiliser
 
-        try:
-            loop = asyncio.get_running_loop()
-            await loop.run_in_executor(None, self._do_connect)
-            self.connected = True
-            await self.log("info", "Robot reconnecté avec succès")
-            return True
-        except Exception as e:
-            self.connected = False
-            await self.log("error", f"Échec de la reconnexion : {e}")
-            return False
+        for attempt in range(1, MAX_RETRIES + 1):
+            await self.log("info", f"Tentative {attempt}/{MAX_RETRIES}...")
+            try:
+                await asyncio.wait_for(
+                    loop.run_in_executor(None, self._do_connect),
+                    timeout=CONNECT_TIMEOUT
+                )
+                self.connected = True
+                await self.log("info", f"Robot reconnecté avec succès (tentative {attempt})")
+                return True
+            except asyncio.TimeoutError:
+                await self.log("warning", f"Tentative {attempt}/{MAX_RETRIES} : timeout ({CONNECT_TIMEOUT}s)")
+            except Exception as e:
+                await self.log("warning", f"Tentative {attempt}/{MAX_RETRIES} : {e}")
+
+            # Nettoyer les objets partiellement créés avant de réessayer
+            self.rtde_c = None
+            self.rtde_r = None
+            self.gripper = None
+
+            if attempt < MAX_RETRIES:
+                await self.log("info", f"Nouvelle tentative dans {RETRY_DELAY:.0f}s...")
+                await asyncio.sleep(RETRY_DELAY)
+
+        self.connected = False
+        await self.log("error", f"Échec de la reconnexion après {MAX_RETRIES} tentatives")
+        return False
 
     async def execute_move(self, from_sq: str, to_sq: str, is_capture: bool, captured_piece=None,
                            precise_pick_coords=None, castling_rook: Optional[Tuple[str, str]] = None,
