@@ -196,8 +196,8 @@ CAMERA_CONFIG = {
     'gain': None,                     # Gain (1.0 = minimum)
     'awb': 'indoor',                  # Balance blancs: 'auto', 'tungsten', 'indoor', etc.
     'brightness': None,               # -1.0 à 1.0
-    'contrast': 0,                    # 0 = neutre/désactivé
-    'saturation': 0,                  # 0 = neutre/désactivé
+    'contrast': None,                  # None = valeur par défaut caméra (1.0)
+    'saturation': None,               # None = valeur par défaut caméra (1.0)
     'sharpness': 8,                   # Netteté augmentée
     'denoise': None,                  # 'auto', 'off', etc.
     'timeout': 50,                    # Temps stabilisation (ms) - ULTRA-RAPIDE (focus manuel)

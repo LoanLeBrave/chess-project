@@ -1,3 +1,1 @@
 # chess-project
-
-test
