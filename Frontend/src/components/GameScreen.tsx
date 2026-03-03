@@ -264,6 +264,7 @@ export function GameScreen({ difficulty, gameState, setGameState, onReturnToMenu
   };
 
   // Confirmer la reprise après vérification des pièces
+
   const handleManualResume = async () => {
     setShowResumeAlert(false);
     try {
@@ -276,9 +277,6 @@ export function GameScreen({ difficulty, gameState, setGameState, onReturnToMenu
     } catch {
       setGameState('playing');
       addLog('info', 'Partie reprise');
-    }
-  };
-
     }
   };
 
