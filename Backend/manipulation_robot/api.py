@@ -1260,9 +1260,9 @@ async def camera_calibrate_save(data: dict):
         new_corners = _cv_config.load_board_corners()
         _cv_config.FIXED_BOARD_CORNERS = new_corners
 
-        # Forcer la réinitialisation du pipeline vision si déjà instancié
-        if hasattr(manager, '_pipeline'):
-            manager._pipeline = None
+        # Forcer la réinitialisation du pipeline vision (manager.vision._pipeline)
+        # pour que le prochain cycle recrée un BoardExtractor avec les nouveaux coins.
+        manager.vision._pipeline = None
 
         await manager.log("info", f"Calibration camera sauvegardee et rechargee: {CALIBRATION_FILE}")
         return {"success": True, "file": CALIBRATION_FILE}
