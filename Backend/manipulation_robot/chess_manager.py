@@ -964,6 +964,29 @@ class ChessManager:
                 if detected_move:
                     break
 
+        # Cas 3 : Roque — roi et tour bougent simultanément
+        # Le roi blanc disparait de sa case et réapparaît 2 cases plus loin,
+        # ce que sync_with_vision ne peut pas détecter comme coup simple car deux
+        # pièces bougent en même temps. On parcourt les coups légaux de roque
+        # et on vérifie que le roi apparaît bien à la destination attendue.
+        if not detected_move:
+            king_from = next(
+                (sq for sq, code in disappeared.items() if code == "WK"),
+                None
+            )
+            if king_from:
+                for move in self.board.legal_moves:
+                    if not self.board.is_castling(move):
+                        continue
+                    moving_piece = self.board.piece_at(move.from_square)
+                    if moving_piece is None or moving_piece.color != chess.WHITE:
+                        continue
+                    king_to = chess.square_name(move.to_square)
+                    # Le roi doit être visible à sa case de destination
+                    if appeared.get(king_to) == "WK":
+                        detected_move = {"from": king_from, "to": king_to}
+                        break
+
         if detected_move:
             from_sq = detected_move["from"]
             to_sq = detected_move["to"]
