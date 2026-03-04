@@ -6,7 +6,7 @@ sidebar_position: 2
 
 # Pince Robotiq
 
-Le robot UR5e est équipé d'une **pince Robotiq 2F-85** (ou 2F-140) pour saisir les pièces d'échecs.
+Le robot UR5e est équipé d'une **pince Robotiq Hand-E**  pour saisir les pièces d'échecs.
 
 ## Interface
 
