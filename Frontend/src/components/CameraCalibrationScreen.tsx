@@ -189,7 +189,7 @@ export function CameraCalibrationScreen({ onComplete, onCancel }: CameraCalibrat
         // Configurer le canvas
         const canvas = canvasRef.current;
         if (canvas) {
-          const maxWidth = Math.min(800, window.innerWidth - 40);
+          const maxWidth = Math.min(1400, globalThis.innerWidth - 40);
           const ratio = data.height / data.width;
           canvas.width = maxWidth;
           canvas.height = maxWidth * ratio;
@@ -327,7 +327,7 @@ export function CameraCalibrationScreen({ onComplete, onCancel }: CameraCalibrat
   return (
     <div className="h-screen flex flex-col items-center p-4 overflow-auto">
       {/* Header */}
-      <div className="w-full max-w-4xl mb-4">
+      <div className="w-full max-w-7xl mb-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="w-12 h-12 bg-gradient-to-br from-purple-500 to-indigo-600 rounded-xl flex items-center justify-center shadow-xl shadow-purple-500/20">
@@ -348,7 +348,7 @@ export function CameraCalibrationScreen({ onComplete, onCancel }: CameraCalibrat
       </div>
 
       {/* Contenu principal */}
-      <div className="w-full max-w-4xl flex-1 flex flex-col gap-4">
+      <div className="w-full max-w-7xl flex-1 flex flex-col gap-4">
         {/* Bouton capture si pas d'image */}
         {!imageBase64 && (
           <motion.div

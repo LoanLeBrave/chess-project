@@ -239,7 +239,7 @@ export function CalibrationScreen({ onCalibrationComplete, onSkipCalibration, ha
         imageRef.current = img;
         const canvas = canvasRef.current;
         if (canvas) {
-          const maxWidth = Math.min(800, window.innerWidth - 40);
+          const maxWidth = Math.min(1400, globalThis.innerWidth - 40);
           const ratio = data.height / data.width;
           canvas.width = maxWidth;
           canvas.height = maxWidth * ratio;
@@ -739,7 +739,7 @@ export function CalibrationScreen({ onCalibrationComplete, onSkipCalibration, ha
               initial={{ scale: 0.9, y: 20 }}
               animate={{ scale: 1, y: 0 }}
               exit={{ scale: 0.9, y: 20 }}
-              className="bg-slate-800/90 rounded-2xl border border-slate-700 p-6 max-w-4xl w-full max-h-[90vh] overflow-y-auto"
+              className="bg-slate-800/90 rounded-2xl border border-slate-700 p-6 max-w-7xl w-full max-h-[90vh] overflow-y-auto"
             >
               {/* Header */}
               <div className="flex items-center justify-between mb-6">
