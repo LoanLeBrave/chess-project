@@ -35,6 +35,8 @@ export function CameraCalibrationScreen({ onComplete, onCancel }: CameraCalibrat
   const [error, setError] = useState('');
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const imageRef = useRef<HTMLImageElement | null>(null);
+  const magCanvasRef = useRef<HTMLCanvasElement>(null);
+  const [magnifier, setMagnifier] = useState<{ visible: boolean; x: number; y: number }>({ visible: false, x: 0, y: 0 });
 
   const currentCornerIdx = corners.length;
   const allCornersPlaced = corners.length === 4;
@@ -223,6 +225,80 @@ export function CameraCalibrationScreen({ onComplete, onCancel }: CameraCalibrat
     setCorners([]);
   };
 
+  const MAG_SIZE = 220;
+  const MAG_ZOOM = 4;
+
+  const handleCanvasMouseMove = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
+    if (!canvasRef.current || !imageRef.current) return;
+    const rect = canvasRef.current.getBoundingClientRect();
+    const scaleX = canvasRef.current.width / rect.width;
+    const scaleY = canvasRef.current.height / rect.height;
+    const canvasX = (e.clientX - rect.left) * scaleX;
+    const canvasY = (e.clientY - rect.top) * scaleY;
+    const imgScale = getScale();
+    const origX = canvasX / imgScale;
+    const origY = canvasY / imgScale;
+
+    setMagnifier({ visible: true, x: e.clientX, y: e.clientY });
+
+    const magCanvas = magCanvasRef.current;
+    if (!magCanvas) return;
+    const magCtx = magCanvas.getContext('2d');
+    if (!magCtx) return;
+
+    const srcHalf = MAG_SIZE / (2 * MAG_ZOOM);
+    magCtx.clearRect(0, 0, MAG_SIZE, MAG_SIZE);
+
+    // Clip circulaire
+    magCtx.save();
+    magCtx.beginPath();
+    magCtx.arc(MAG_SIZE / 2, MAG_SIZE / 2, MAG_SIZE / 2 - 1, 0, Math.PI * 2);
+    magCtx.clip();
+
+    // Fond noir si hors image
+    magCtx.fillStyle = '#0f172a';
+    magCtx.fillRect(0, 0, MAG_SIZE, MAG_SIZE);
+
+    // Image zoomée
+    magCtx.drawImage(
+      imageRef.current,
+      origX - srcHalf, origY - srcHalf, srcHalf * 2, srcHalf * 2,
+      0, 0, MAG_SIZE, MAG_SIZE
+    );
+    magCtx.restore();
+
+    // Viseur (réticule) au centre
+    const idx = Math.min(corners.length, 3);
+    const color = !allCornersPlaced ? CORNER_COLORS[CORNER_NAMES[idx]] : 'rgba(255,255,255,0.7)';
+    const cx = MAG_SIZE / 2;
+    const cy = MAG_SIZE / 2;
+    magCtx.strokeStyle = 'rgba(0,0,0,0.5)';
+    magCtx.lineWidth = 3;
+    for (const [ax, ay, bx, by] of [
+      [cx - 25, cy, cx - 7, cy], [cx + 7, cy, cx + 25, cy],
+      [cx, cy - 25, cx, cy - 7], [cx, cy + 7, cx, cy + 25],
+    ] as [number,number,number,number][]) {
+      magCtx.beginPath(); magCtx.moveTo(ax, ay); magCtx.lineTo(bx, by); magCtx.stroke();
+    }
+    magCtx.strokeStyle = color;
+    magCtx.lineWidth = 1.5;
+    for (const [ax, ay, bx, by] of [
+      [cx - 25, cy, cx - 7, cy], [cx + 7, cy, cx + 25, cy],
+      [cx, cy - 25, cx, cy - 7], [cx, cy + 7, cx, cy + 25],
+    ] as [number,number,number,number][]) {
+      magCtx.beginPath(); magCtx.moveTo(ax, ay); magCtx.lineTo(bx, by); magCtx.stroke();
+    }
+    // Point central
+    magCtx.fillStyle = color;
+    magCtx.beginPath();
+    magCtx.arc(cx, cy, 2.5, 0, Math.PI * 2);
+    magCtx.fill();
+  }, [corners.length, allCornersPlaced, getScale]);
+
+  const handleCanvasMouseLeave = useCallback(() => {
+    setMagnifier(prev => ({ ...prev, visible: false }));
+  }, []);
+
   const handleSave = async () => {
     if (!allCornersPlaced) return;
     setSaving(true);
@@ -335,9 +411,70 @@ export function CameraCalibrationScreen({ onComplete, onCancel }: CameraCalibrat
               <canvas
                 ref={canvasRef}
                 onClick={handleCanvasClick}
+                onMouseMove={handleCanvasMouseMove}
+                onMouseLeave={handleCanvasMouseLeave}
                 className={`max-w-full ${!allCornersPlaced ? 'cursor-crosshair' : 'cursor-default'}`}
               />
             </div>
+
+            {/* Loupe */}
+            {imageBase64 && (
+              <div
+                className="fixed pointer-events-none z-[9999] transition-opacity duration-100"
+                style={{
+                  left: magnifier.x + 28,
+                  top: magnifier.y - MAG_SIZE - 28,
+                  opacity: magnifier.visible ? 1 : 0,
+                  transform: magnifier.x > window.innerWidth - MAG_SIZE - 50 ? 'translateX(calc(-100% - 56px))' : undefined,
+                }}
+              >
+                <div className="relative">
+                  {/* Halo coloré */}
+                  <div
+                    className="absolute inset-0 rounded-full blur-xl opacity-50"
+                    style={{
+                      background: !allCornersPlaced
+                        ? CORNER_COLORS[CORNER_NAMES[Math.min(corners.length, 3)]]
+                        : '#ffffff',
+                      transform: 'scale(1.15)',
+                    }}
+                  />
+                  {/* Canvas loupe */}
+                  <canvas
+                    ref={magCanvasRef}
+                    width={MAG_SIZE}
+                    height={MAG_SIZE}
+                    className="rounded-full relative"
+                    style={{
+                      border: `2.5px solid ${
+                        !allCornersPlaced
+                          ? CORNER_COLORS[CORNER_NAMES[Math.min(corners.length, 3)]]
+                          : 'rgba(255,255,255,0.4)'
+                      }`,
+                      boxShadow: `0 0 0 1px rgba(0,0,0,0.6), 0 8px 32px rgba(0,0,0,0.7), 0 0 24px ${
+                        !allCornersPlaced
+                          ? CORNER_COLORS[CORNER_NAMES[Math.min(corners.length, 3)]] + '60'
+                          : 'rgba(255,255,255,0.15)'
+                      }`,
+                    }}
+                  />
+                  {/* Badge zoom */}
+                  <div
+                    className="absolute -bottom-6 left-1/2 -translate-x-1/2 text-[10px] font-bold px-2 py-0.5 rounded-full whitespace-nowrap backdrop-blur-sm bg-black/50 border"
+                    style={{
+                      color: !allCornersPlaced
+                        ? CORNER_COLORS[CORNER_NAMES[Math.min(corners.length, 3)]]
+                        : 'rgba(255,255,255,0.6)',
+                      borderColor: !allCornersPlaced
+                        ? CORNER_COLORS[CORNER_NAMES[Math.min(corners.length, 3)]] + '60'
+                        : 'rgba(255,255,255,0.15)',
+                    }}
+                  >
+                    ×{MAG_ZOOM} — {!allCornersPlaced ? CORNER_NAMES[Math.min(corners.length, 3)] : '✓'}
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* Boutons d'action */}
             <div className="flex gap-3 justify-center flex-wrap">
