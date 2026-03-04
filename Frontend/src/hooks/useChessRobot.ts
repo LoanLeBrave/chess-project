@@ -444,8 +444,9 @@ export function useChessRobot(
     const computeLocal = (): string[] => {
       try {
         const chess = new Chess(fenRef.current);
-        return chess.moves({ square: square as Parameters<typeof chess.moves>[0]['square'], verbose: true })
-          .map((m) => m.to);
+        // cast en any pour éviter les problèmes de surcharge TypeScript verbose
+        const moves = chess.moves({ square: square as any, verbose: true }) as any[];
+        return moves.map((m: any) => m.to as string);
       } catch {
         return [];
       }
