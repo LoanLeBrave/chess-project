@@ -75,7 +75,7 @@ export function GameScreen({ difficulty, gameState, setGameState, onReturnToMenu
     setMoves(prev => [...prev, newMove]);
   };
 
-  const API_BASE = `${window.location.protocol}//${window.location.hostname}:8000`;
+  const API_BASE = `http://${window.location.hostname}:8000`;
 
   // Hook personnalise pour gerer la logique d'echecs
   const {
@@ -107,9 +107,28 @@ export function GameScreen({ difficulty, gameState, setGameState, onReturnToMenu
     enterCorrectionMode,
     exitCorrectionMode,
     correctMove,
-    replaceBoard,
-    isReplacingBoard,
   } = useChessRobot(addLog, addMove);
+
+  // État pour le replacement du plateau
+  const [isReplacingBoard, setIsReplacingBoard] = useState(false);
+
+  // Fonction pour replacer le plateau
+  const replaceBoard = async () => {
+    setIsReplacingBoard(true);
+    try {
+      const res = await fetch(`${API_BASE}/board/replace`, { method: 'POST' });
+      const data = await res.json();
+      if (data.success) {
+        addLog('info', 'Plateau replacé avec succès');
+      } else {
+        addLog('error', data.error || 'Erreur lors du replacement');
+      }
+    } catch (err) {
+      addLog('error', `Erreur replacement: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setIsReplacingBoard(false);
+    }
+  };
 
   // Initialiser la partie via l'API au montage
   useEffect(() => {
@@ -330,14 +349,16 @@ export function GameScreen({ difficulty, gameState, setGameState, onReturnToMenu
   const executeRestart = async (replace: boolean) => {
     setShowRestartModal(false);
     
+    // Reset UI state immediately
+    setElapsedTime(0);
+    setLogs([]);
+    setMoves([]);
+
     if (replace) {
       addLog('info', 'Replacement du plateau avant la nouvelle partie…');
       await replaceBoard();
     }
     
-    setElapsedTime(0);
-    setLogs([]);
-    setMoves([]);
     resetGame();
     await initGame(difficulty);
     addLog('info', 'Nouvelle partie démarrée');
@@ -697,6 +718,55 @@ export function GameScreen({ difficulty, gameState, setGameState, onReturnToMenu
               >
                 ✓ Tout est OK, reprendre
               </button>
+            </div>
+          </motion.div>
+        </motion.div>
+      )}
+
+      {/* Replacement Loading Modal */}
+      {isReplacingBoard && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm"
+        >
+          <motion.div
+            initial={{ scale: 0.9, y: 20 }}
+            animate={{ scale: 1, y: 0 }}
+            className="bg-slate-900/95 border-2 border-cyan-500/50 rounded-2xl p-8 shadow-2xl shadow-cyan-500/40 max-w-md w-full mx-4"
+          >
+            <div className="text-center">
+              <div className="w-20 h-20 mx-auto mb-6 rounded-2xl bg-gradient-to-br from-cyan-500 to-blue-500 flex items-center justify-center shadow-lg shadow-cyan-500/40">
+                <motion.div
+                  animate={{ rotate: 360 }}
+                  transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
+                >
+                  <RotateCcw className="w-10 h-10 text-white" />
+                </motion.div>
+              </div>
+              <h3 className="text-white font-bold text-2xl mb-2">
+                Replacement en cours
+              </h3>
+              <p className="text-cyan-100 text-base leading-relaxed mb-4">
+                Le robot UR7e replace toutes les pièces en position initiale...
+              </p>
+              <div className="flex items-center justify-center gap-2">
+                <motion.div
+                  className="w-2 h-2 rounded-full bg-cyan-400"
+                  animate={{ opacity: [0.3, 1, 0.3] }}
+                  transition={{ duration: 1.5, repeat: Infinity, delay: 0 }}
+                />
+                <motion.div
+                  className="w-2 h-2 rounded-full bg-cyan-400"
+                  animate={{ opacity: [0.3, 1, 0.3] }}
+                  transition={{ duration: 1.5, repeat: Infinity, delay: 0.2 }}
+                />
+                <motion.div
+                  className="w-2 h-2 rounded-full bg-cyan-400"
+                  animate={{ opacity: [0.3, 1, 0.3] }}
+                  transition={{ duration: 1.5, repeat: Infinity, delay: 0.4 }}
+                />
+              </div>
             </div>
           </motion.div>
         </motion.div>
