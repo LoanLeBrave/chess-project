@@ -20,7 +20,7 @@ export function LeaderboardScreen({ onBack }: LeaderboardScreenProps) {
   const [leaderboard, setLeaderboard] = useState<PlayerScore[]>([]);
   const [isRefreshing, setIsRefreshing] = useState(false);
 
-  const API_BASE = `http://${window.location.hostname}:8000`;
+  const API_BASE = `${window.location.protocol}//${window.location.hostname}:8000`;
 
   // Fonction pour charger le classement (mémoire du robot ou local)
   const fetchLeaderboard = useCallback(async () => {
