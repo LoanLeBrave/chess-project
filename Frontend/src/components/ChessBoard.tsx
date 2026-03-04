@@ -348,12 +348,21 @@ export function ChessBoard({
                 >
                   {isLegal && showHelpOnClick && (
                     piece
-                      ? <div className="absolute inset-1 rounded-full border-[5px] border-black/60 pointer-events-none z-10" />
-                      : (
-                        <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
-                          <div className="w-[38%] h-[38%] bg-black/55 rounded-full" />
+                      ? <div style={{
+                          position: 'absolute', inset: 4, borderRadius: '50%',
+                          border: '5px solid rgba(0,0,0,0.6)',
+                          pointerEvents: 'none', zIndex: 10,
+                        }} />
+                      : <div style={{
+                          position: 'absolute', inset: 0,
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          pointerEvents: 'none', zIndex: 10,
+                        }}>
+                          <div style={{
+                            width: '36%', height: '36%', borderRadius: '50%',
+                            backgroundColor: 'rgba(0,0,0,0.5)',
+                          }} />
                         </div>
-                      )
                   )}
                   {isBestT && !piece && (
                     <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
