@@ -171,7 +171,7 @@ export function GameScreen({ difficulty, gameState, setGameState, onReturnToMenu
     if (playerMoves.length === 0) return;
 
     try {
-      await fetch(`${API_BASE}/leaderboard/add-game`, {
+      const res = await fetch(`${API_BASE}/leaderboard/add-game`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -183,6 +183,10 @@ export function GameScreen({ difficulty, gameState, setGameState, onReturnToMenu
           game_duration: elapsedTime,
         }),
       });
+      if (res.ok) {
+        setShowScoreSaved(true);
+        setTimeout(() => setShowScoreSaved(false), 4000);
+      }
     } catch {
       // Fallback localStorage si API indisponible
       const leaderboardData = localStorage.getItem('chessLeaderboard');
