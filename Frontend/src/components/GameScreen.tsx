@@ -349,14 +349,16 @@ export function GameScreen({ difficulty, gameState, setGameState, onReturnToMenu
   const executeRestart = async (replace: boolean) => {
     setShowRestartModal(false);
     
+    // Reset UI state immediately
+    setElapsedTime(0);
+    setLogs([]);
+    setMoves([]);
+
     if (replace) {
       addLog('info', 'Replacement du plateau avant la nouvelle partie…');
       await replaceBoard();
     }
     
-    setElapsedTime(0);
-    setLogs([]);
-    setMoves([]);
     resetGame();
     await initGame(difficulty);
     addLog('info', 'Nouvelle partie démarrée');
