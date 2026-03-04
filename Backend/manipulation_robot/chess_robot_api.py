@@ -25,6 +25,7 @@ ROBOT_IP = "192.168.0.11"
 VITESSE = 0.1
 ACCELERATION = 0.3
 GRIPPER_OUVERTURE = 25
+GRIPPER_OUVERTURE_CHEVALIER = 29  # ouverture élargie pour le chevalier (65% vs 55%)
 DELTA_APPROCHE = 0.03
 DELTA_TRANSIT = 0.08
 DELTA_RELACHE_BASE = 0.004
@@ -290,8 +291,9 @@ class ChessRobotManager:
         self.rtde_c.moveL(p_above, VITESSE, ACCELERATION)
         if not await self._wait_with_pause_check(0.2): return False
 
-        # 3. Ouvrir le gripper
-        self.gripper.move(GRIPPER_OUVERTURE)
+        # 3. Ouvrir le gripper (ouverture élargie pour le chevalier)
+        ouverture = GRIPPER_OUVERTURE_CHEVALIER if self.piece_courante == chess.KNIGHT else GRIPPER_OUVERTURE
+        self.gripper.move(ouverture)
         if not await self._wait_with_pause_check(0.1): return False
 
         # 4. Descente en Z vers la pièce (vitesse réduite)
