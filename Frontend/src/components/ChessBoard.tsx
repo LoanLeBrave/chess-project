@@ -160,9 +160,6 @@ export function ChessBoard({
   const handleSquareClick = async (square: string) => {
     if (isGameOver) return;
 
-    // Autoriser la sélection + affichage des coups légaux dès que c'est le tour du joueur,
-    // même si le robot n'est pas encore "idle" (déconnecté, thinking, etc.)
-    // Seul l'envoi du coup (onMove) requiert que le robot soit prêt.
     const canMove = isCorrectionMode
       ? !isGameOver
       : (robotStatus === 'idle' && isWhiteTurn);
@@ -170,12 +167,15 @@ export function ChessBoard({
     const canSelect = isCorrectionMode || isWhiteTurn;
 
     const piece = board[square];
+    console.log('[ChessBoard] click', square, '| piece:', piece, '| canSelect:', canSelect, '| isWhiteTurn:', isWhiteTurn, '| robotStatus:', robotStatus, '| showHelpOnClick:', showHelpOnClick);
 
     if (selectedSquare === null) {
       if (canSelect && piece && ['K', 'Q', 'R', 'B', 'N', 'P'].includes(piece)) {
         setSelectedSquare(square);
         if (showHelpOnClick) {
+          console.log('[ChessBoard] calling getLegalMoves for', square);
           const moves = await getLegalMoves(square);
+          console.log('[ChessBoard] getLegalMoves result:', moves);
           setLegalMoves(moves);
         }
       }
@@ -280,6 +280,10 @@ export function ChessBoard({
 
   return (
     <div className="bg-slate-800/50 backdrop-blur-sm rounded-xl p-3 border border-slate-700" style={{ width: 'fit-content' }}>
+      {/* ── DEBUG PANEL ── */}
+      <div style={{ fontSize: 11, color: '#facc15', background: '#1e293b', padding: '4px 8px', marginBottom: 4, borderRadius: 4, fontFamily: 'monospace' }}>
+        sel: <b>{selectedSquare ?? 'null'}</b> | legal: <b>[{legalMoves.join(', ')}]</b> | showHelp: <b>{String(showHelpOnClick)}</b> | white: <b>{String(isWhiteTurn)}</b> | robot: <b>{robotStatus}</b>
+      </div>
       {/*
         Grille 10×10 : SQ=56px → 10×56 = 560px de côté.
         Rangée 9 (haut) = noirs capturés, rangée 0 (bas) = blancs capturés.
