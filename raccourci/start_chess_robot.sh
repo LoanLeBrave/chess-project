@@ -184,15 +184,33 @@ start_api() {
     
     local api_pid=$!
     echo $api_pid > "$API_PID_FILE"
-    sleep 2
-    
-    if kill -0 $api_pid 2>/dev/null; then
-        print_success "API démarrée (PID: $api_pid)"
-    else
-        print_error "Échec du démarrage de l'API"
-        return 1
+
+    # Attendre que l'API soit RÉELLEMENT prête (startup event terminé = robot connecté ou en simulation)
+    # Le simple sleep 2 + kill -0 ne suffit pas : le PID existe dès le démarrage de uvicorn,
+    # avant même que la connexion robot soit tentée.
+    print_info "Initialisation en cours (connexion robot...)  max 40s"
+    local max_wait=40
+    local waited=0
+    while [ $waited -lt $max_wait ]; do
+        if curl -sf "http://127.0.0.1:$API_PORT/" > /dev/null 2>&1; then
+            print_success "API prête et initialisée (${waited}s)"
+            break
+        fi
+        if ! kill -0 $api_pid 2>/dev/null; then
+            print_error "L'API s'est arrêtée de façon inattendue"
+            return 1
+        fi
+        sleep 1
+        waited=$((waited + 1))
+        if [ $((waited % 5)) -eq 0 ]; then
+            print_info "  ... ${waited}s"
+        fi
+    done
+
+    if [ $waited -ge $max_wait ]; then
+        print_warning "L'API a pris plus de ${max_wait}s - elle continue en arrière-plan"
     fi
-    
+
     cd - > /dev/null
 }
 

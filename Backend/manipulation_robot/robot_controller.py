@@ -219,8 +219,9 @@ class RobotController:
         print()
         print("  Le frontend se lance normalement.")
         print("  Le robot ne sera PAS contrôlé.")
-        print("  La caméra et la vision seront désactivées.")
+        print("  La caméra et la vision fonctionnent normalement.")
         print(_SEP)
+        sys.stdout.flush()
 
     def get_position(self):
         """Retourne la position actuelle du TCP via l'interface de réception"""
