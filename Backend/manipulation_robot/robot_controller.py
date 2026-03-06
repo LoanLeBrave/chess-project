@@ -9,7 +9,9 @@ import time
 import math
 import json
 import os
+import sys
 import asyncio
+import threading
 from typing import List, Optional, Set, Tuple
 import chess
 
@@ -124,51 +126,106 @@ class RobotController:
 
     def init_robot(self):
         """Initialise la connexion et charge la calibration"""
+        _SEP = "=" * 60
+
+        # --- Calibration (rapide, pas de réseau) ---
         try:
-            # Charger la calibration
             if not os.path.exists(FICHIER_CALIBRATION):
-                print(f" Fichier calibration introuvable: {FICHIER_CALIBRATION}")
+                print(f"⚠  Fichier calibration introuvable: {FICHIER_CALIBRATION}")
+                self._print_simulation_banner("Calibration manquante")
                 return False
 
             with open(FICHIER_CALIBRATION, 'r') as f:
                 data = json.load(f)
                 self.calib_origin = data["origin"]
                 self.calib_rotation = data["rotation"]
-                if "camera_scale" in data:
-                    self.calib_scale = data["camera_scale"]
-                else:
-                    self.calib_scale = data["board_size"] / 20.0
-
+                self.calib_scale = data.get("camera_scale", data.get("board_size", 20.0) / 20.0)
                 self.is_calibrated = True
-                print(f" Calibration chargée (Scale: {self.calib_scale:.4f})")
+                print(f"✓ Calibration chargée (scale={self.calib_scale:.4f})")
 
-            # Charger la position de départ (home)
             if os.path.exists(FICHIER_POSITION_DEPART):
                 with open(FICHIER_POSITION_DEPART, 'r') as f:
-                    data = json.load(f)
-                    self.position_depart = data.get("position_depart")
-                    print("Position de départ chargée")
-
-            # Connexion au robot
-            print(f"Connexion robot {ROBOT_IP}...")
-            self.rtde_c = RTDEControlInterface(ROBOT_IP)
-            self.rtde_r = RTDEReceiveInterface(ROBOT_IP)
-            
-            # Initialisation du gripper
-            self.gripper = RobotiqGripper(self.rtde_c)
-            self.gripper.activate()
-            self.gripper.set_force(50)
-            self.gripper.set_speed(150)
-            self.gripper.move(GRIPPER_OUVERTURE)
-
-            self.connected = True
-            print(" Robot connecté et prêt!")
-            return True
+                    self.position_depart = json.load(f).get("position_depart")
+                print("✓ Position de départ chargée")
 
         except Exception as e:
-            print(f" Erreur initialisation: {e}")
+            print(f"✗ Erreur lecture calibration: {e}")
+            self._print_simulation_banner(str(e))
+            return False
+
+        # --- Connexion RTDE (bloquante — on tourne dans un thread avec spinner) ---
+        print(_SEP)
+        print(f"  Connexion au robot UR5e  ({ROBOT_IP})")
+        print(_SEP)
+
+        result   = {"ok": False, "error": None}
+        rtde_c_r = [None, None, None]   # [rtde_c, rtde_r, gripper]
+
+        def _connect():
+            try:
+                rtde_c_r[0] = RTDEControlInterface(ROBOT_IP)
+                rtde_c_r[1] = RTDEReceiveInterface(ROBOT_IP)
+                g = RobotiqGripper(rtde_c_r[0])
+                g.activate()
+                g.set_force(50)
+                g.set_speed(150)
+                g.move(GRIPPER_OUVERTURE)
+                rtde_c_r[2] = g
+                result["ok"] = True
+            except Exception as e:
+                result["error"] = e
+
+        t = threading.Thread(target=_connect, daemon=True)
+        t.start()
+
+        # Spinner pendant l'attente
+        frames  = ["⠋","⠙","⠹","⠸","⠼","⠴","⠦","⠧","⠇","⠏"]
+        bars    = ["▏","▎","▍","▌","▋","▊","▉","█"]
+        max_wait = 20.0
+        interval = 0.1
+        elapsed  = 0.0
+        bar_len  = 30
+
+        while t.is_alive() and elapsed < max_wait:
+            pct      = min(elapsed / max_wait, 1.0)
+            filled   = int(pct * bar_len)
+            partial  = bars[int((pct * bar_len - filled) * len(bars))] if filled < bar_len else ""
+            bar      = "█" * filled + partial + "░" * (bar_len - filled - len(partial))
+            frame    = frames[int(elapsed / interval) % len(frames)]
+            sys.stdout.write(f"\r  {frame} [{bar}]  {elapsed:4.1f}s / {max_wait:.0f}s")
+            sys.stdout.flush()
+            time.sleep(interval)
+            elapsed += interval
+
+        # Attendre la fin du thread (il a peut-être fini avant max_wait)
+        t.join(timeout=2.0)
+        sys.stdout.write("\r" + " " * 70 + "\r")
+        sys.stdout.flush()
+
+        if result["ok"]:
+            self.rtde_c, self.rtde_r, self.gripper = rtde_c_r
+            self.connected = True
+            print(f"✓ Robot connecté et prêt !  (en {elapsed:.1f}s)")
+            print(_SEP)
+            return True
+        else:
+            err_msg = str(result["error"]) if result["error"] else f"timeout {max_wait:.0f}s"
+            print(f"✗ Connexion échouée : {err_msg}")
+            self._print_simulation_banner(err_msg)
             self.connected = False
             return False
+
+    def _print_simulation_banner(self, reason: str = ""):
+        _SEP = "=" * 60
+        print(_SEP)
+        print("  ⚠   MODE SIMULATION")
+        if reason:
+            print(f"  Raison : {reason}")
+        print()
+        print("  Le frontend se lance normalement.")
+        print("  Le robot ne sera PAS contrôlé.")
+        print("  La caméra et la vision seront désactivées.")
+        print(_SEP)
 
     def get_position(self):
         """Retourne la position actuelle du TCP via l'interface de réception"""
