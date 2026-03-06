@@ -4,17 +4,19 @@
 #  Script d'installation des raccourcis sur le bureau
 # =============================================================================
 
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+
 echo "Installation du raccourci Chess Robot sur le bureau..."
 
 # Créer le dossier Desktop si nécessaire
 mkdir -p /home/robot/Desktop
 
 # Copier le script de lancement sur le bureau
-cp start_chess_robot.sh /home/robot/Desktop/
+cp "$SCRIPT_DIR/start_chess_robot.sh" /home/robot/Desktop/
 chmod +x /home/robot/Desktop/start_chess_robot.sh
 
 # Copier le raccourci .desktop
-cp ChessRobot.desktop /home/robot/Desktop/
+cp "$SCRIPT_DIR/ChessRobot.desktop" /home/robot/Desktop/
 chmod +x /home/robot/Desktop/ChessRobot.desktop
 
 # Rendre le .desktop "trusted" (pour éviter le popup de sécurité)

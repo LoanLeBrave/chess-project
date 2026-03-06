@@ -16,14 +16,12 @@
 #
 # =============================================================================
 
-set -e
-
 # Configuration - Chemins adaptés à ton installation
 # =============================================================================
-PROJECT_DIR="/home/robot/ur_modbus/mappingEchec/chess-project"
+PROJECT_DIR="/home/robot/robotFull/chess-project"
 BACKEND_DIR="$PROJECT_DIR/Backend/manipulation_robot"
 FRONTEND_DIR="$PROJECT_DIR/Frontend"
-VENV_DIR="$BACKEND_DIR/.venv"
+VENV_DIR="/home/robot/ur_modbus/.venv"
 
 API_HOST="0.0.0.0"
 API_PORT="8000"
@@ -116,12 +114,13 @@ check_prerequisites() {
 }
 
 setup_venv() {
-    if [ ! -d "$VENV_DIR" ]; then
-        print_info "Création de l'environnement virtuel Python..."
-        python3 -m venv "$VENV_DIR"
+    if [ ! -f "$VENV_DIR/bin/activate" ]; then
+        print_error "Venv introuvable: $VENV_DIR"
+        print_error "Vérifie que le chemin est correct."
+        exit 1
     fi
     source "$VENV_DIR/bin/activate"
-    print_success "Environnement virtuel activé"
+    print_success "Environnement virtuel activé ($VENV_DIR)"
 }
 
 install_python_deps() {
