@@ -153,10 +153,15 @@ class RobotController:
             self._print_simulation_banner(str(e))
             return False
 
-        # --- Connexion RTDE (bloquante — on tourne dans un thread avec spinner) ---
+        # --- Connexion RTDE (bloquante — on tourne dans un thread) ---
+        MAX_WAIT    = 20.0   # secondes avant d'abandonner
+        REPORT_EACH = 5.0    # afficher un point de progression toutes les N secondes
+
         print(_SEP)
         print(f"  Connexion au robot UR5e  ({ROBOT_IP})")
+        print(f"  Timeout : {MAX_WAIT:.0f}s")
         print(_SEP)
+        sys.stdout.flush()
 
         result   = {"ok": False, "error": None}
         rtde_c_r = [None, None, None]   # [rtde_c, rtde_r, gripper]
@@ -178,39 +183,29 @@ class RobotController:
         t = threading.Thread(target=_connect, daemon=True)
         t.start()
 
-        # Spinner pendant l'attente
-        frames  = ["⠋","⠙","⠹","⠸","⠼","⠴","⠦","⠧","⠇","⠏"]
-        bars    = ["▏","▎","▍","▌","▋","▊","▉","█"]
-        max_wait = 20.0
-        interval = 0.1
-        elapsed  = 0.0
-        bar_len  = 30
+        elapsed      = 0.0
+        next_report  = REPORT_EACH
+        while t.is_alive() and elapsed < MAX_WAIT:
+            time.sleep(0.5)
+            elapsed += 0.5
+            if elapsed >= next_report:
+                print(f"  ... {elapsed:.0f}s — en attente de réponse du robot...")
+                sys.stdout.flush()
+                next_report += REPORT_EACH
 
-        while t.is_alive() and elapsed < max_wait:
-            pct      = min(elapsed / max_wait, 1.0)
-            filled   = int(pct * bar_len)
-            partial  = bars[int((pct * bar_len - filled) * len(bars))] if filled < bar_len else ""
-            bar      = "█" * filled + partial + "░" * (bar_len - filled - len(partial))
-            frame    = frames[int(elapsed / interval) % len(frames)]
-            sys.stdout.write(f"\r  {frame} [{bar}]  {elapsed:4.1f}s / {max_wait:.0f}s")
-            sys.stdout.flush()
-            time.sleep(interval)
-            elapsed += interval
-
-        # Attendre la fin du thread (il a peut-être fini avant max_wait)
         t.join(timeout=2.0)
-        sys.stdout.write("\r" + " " * 70 + "\r")
-        sys.stdout.flush()
 
         if result["ok"]:
             self.rtde_c, self.rtde_r, self.gripper = rtde_c_r
             self.connected = True
-            print(f"✓ Robot connecté et prêt !  (en {elapsed:.1f}s)")
+            print(f"✓ Robot connecté et prêt !  ({elapsed:.1f}s)")
             print(_SEP)
+            sys.stdout.flush()
             return True
         else:
-            err_msg = str(result["error"]) if result["error"] else f"timeout {max_wait:.0f}s"
+            err_msg = str(result["error"]) if result["error"] else f"timeout {MAX_WAIT:.0f}s"
             print(f"✗ Connexion échouée : {err_msg}")
+            sys.stdout.flush()
             self._print_simulation_banner(err_msg)
             self.connected = False
             return False
