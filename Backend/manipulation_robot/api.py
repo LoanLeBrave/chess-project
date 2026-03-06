@@ -369,6 +369,7 @@ class ApplicationManager:
         self.board_reset.set_broadcast_callback(self.broadcast)
         self.demo_mode: bool = False
         self.demo_task: Optional[asyncio.Task] = None
+        self.startup_time: Optional[float] = None
 
     async def broadcast(self, message: dict):
         for client in self.websocket_clients[:]:
@@ -884,6 +885,7 @@ async def startup():
     print(" Démarrage de l'API Chess Robot...")
     manager.chess.init_stockfish()
     manager.robot.init_robot()
+    manager.startup_time = time.time()
     asyncio.create_task(vision_loop())
     asyncio.create_task(_move_to_waiting_position())
     print("API prête!")
@@ -906,6 +908,25 @@ async def verify_pin(data: PinVerifyRequest):
 # --- SYSTEM ---
 @app.get("/", tags=["System"])
 async def root(): return {"status": "operational"}
+
+@app.get("/ready", tags=["System"])
+async def ready():
+    """
+    Readiness probe pour le script de lancement.
+    Retourne 200 uniquement quand l'API ET la vision sont prêtes
+    (première capture réussie). Permet au frontend de démarrer
+    seulement quand tout est opérationnel.
+    """
+    # Vision prête = au moins une capture réussie
+    if manager.vision.last_timestamp is not None:
+        return {"ready": True, "vision": True, "robot": manager.robot.connected}
+
+    # Fallback : si 15s se sont écoulées depuis le startup sans vision,
+    # on laisse passer quand même (caméra absente ou erreur)
+    if manager.startup_time and (time.time() - manager.startup_time) > 15:
+        return {"ready": True, "vision": False, "robot": manager.robot.connected}
+
+    raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Initialisation en cours")
 
 @app.get("/status", tags=["System"])
 async def get_status():

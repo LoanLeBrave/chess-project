@@ -185,31 +185,50 @@ start_api() {
     local api_pid=$!
     echo $api_pid > "$API_PID_FILE"
 
-    # Attendre que l'API soit RÉELLEMENT prête (startup event terminé = robot connecté ou en simulation)
-    # Le simple sleep 2 + kill -0 ne suffit pas : le PID existe dès le démarrage de uvicorn,
-    # avant même que la connexion robot soit tentée.
-    print_info "Initialisation en cours (connexion robot...)  max 40s"
-    local max_wait=40
+    # Attendre que l'API soit RÉELLEMENT prête :
+    #   - robot connecté (ou simulation confirmée)
+    #   - première capture caméra réussie
+    # On polle /ready qui retourne 200 seulement quand tout est opérationnel.
+    local max_wait=60
     local waited=0
+    local bar_len=30
+
+    echo ""
+    echo -e "${BLUE}  Attente de l'initialisation complète (robot + caméra)...${NC}"
+
     while [ $waited -lt $max_wait ]; do
-        if curl -sf "http://127.0.0.1:$API_PORT/" > /dev/null 2>&1; then
-            print_success "API prête et initialisée (${waited}s)"
+        if curl -sf "http://127.0.0.1:$API_PORT/ready" > /dev/null 2>&1; then
+            local full_bar=""
+            local i
+            for ((i=0; i<bar_len; i++)); do full_bar="${full_bar}█"; done
+            printf "\r  ${GREEN}[%s]${NC}  %ds — Prêt !          \n" "$full_bar" "$waited"
+            print_success "API + caméra prêtes (${waited}s)"
             break
         fi
         if ! kill -0 $api_pid 2>/dev/null; then
+            echo ""
             print_error "L'API s'est arrêtée de façon inattendue"
             return 1
         fi
+
+        # Barre de progression
+        local filled=$(( waited * bar_len / max_wait ))
+        local empty=$(( bar_len - filled ))
+        local bar=""
+        local i
+        for ((i=0; i<filled; i++)); do bar="${bar}█"; done
+        for ((i=0; i<empty;  i++)); do bar="${bar}░"; done
+        printf "\r  ${CYAN}[%s]${NC}  %ds / %ds" "$bar" "$waited" "$max_wait"
+
         sleep 1
         waited=$((waited + 1))
-        if [ $((waited % 5)) -eq 0 ]; then
-            print_info "  ... ${waited}s"
-        fi
     done
 
     if [ $waited -ge $max_wait ]; then
-        print_warning "L'API a pris plus de ${max_wait}s - elle continue en arrière-plan"
+        echo ""
+        print_warning "Timeout ${max_wait}s dépassé — lancement du frontend quand même"
     fi
+    echo ""
 
     cd - > /dev/null
 }

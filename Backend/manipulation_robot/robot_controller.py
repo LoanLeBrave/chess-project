@@ -183,27 +183,40 @@ class RobotController:
         t = threading.Thread(target=_connect, daemon=True)
         t.start()
 
-        elapsed      = 0.0
-        next_report  = REPORT_EACH
+        frames  = ["⠋","⠙","⠹","⠸","⠼","⠴","⠦","⠧","⠇","⠏"]
+        bar_len = 30
+        step    = 0.15
+        elapsed = 0.0
+
         while t.is_alive() and elapsed < MAX_WAIT:
-            time.sleep(0.5)
-            elapsed += 0.5
-            if elapsed >= next_report:
-                print(f"  ... {elapsed:.0f}s — en attente de réponse du robot...")
-                sys.stdout.flush()
-                next_report += REPORT_EACH
+            pct    = min(elapsed / MAX_WAIT, 1.0)
+            filled = int(pct * bar_len)
+            bar    = "█" * filled + "░" * (bar_len - filled)
+            frame  = frames[int(elapsed / step) % len(frames)]
+            sys.stdout.write(f"\r  {frame} [{bar}]  {elapsed:4.0f}s / {MAX_WAIT:.0f}s")
+            sys.stdout.flush()
+            time.sleep(step)
+            elapsed += step
+
+        # Effacer la ligne du spinner
+        sys.stdout.write("\r" + " " * 60 + "\r")
+        sys.stdout.flush()
 
         t.join(timeout=2.0)
 
         if result["ok"]:
             self.rtde_c, self.rtde_r, self.gripper = rtde_c_r
             self.connected = True
-            print(f"✓ Robot connecté et prêt !  ({elapsed:.1f}s)")
+            bar = "█" * bar_len
+            print(f"  ✓ [{bar}]  OK en {elapsed:.1f}s")
+            print(f"✓ Robot connecté et prêt !")
             print(_SEP)
             sys.stdout.flush()
             return True
         else:
             err_msg = str(result["error"]) if result["error"] else f"timeout {MAX_WAIT:.0f}s"
+            bar = "░" * bar_len
+            print(f"  ✗ [{bar}]  Échec ({elapsed:.0f}s)")
             print(f"✗ Connexion échouée : {err_msg}")
             sys.stdout.flush()
             self._print_simulation_banner(err_msg)
