@@ -21,7 +21,7 @@ set -e
 # Configuration - Chemins adaptés à ton installation
 # =============================================================================
 PROJECT_DIR="/home/robot/ur_modbus/mappingEchec/chess-project"
-BACKEND_DIR="$PROJECT_DIR/Backend"
+BACKEND_DIR="$PROJECT_DIR/Backend/manipulation_robot"
 FRONTEND_DIR="$PROJECT_DIR/Frontend"
 VENV_DIR="$BACKEND_DIR/.venv"
 
@@ -127,17 +127,20 @@ setup_venv() {
 install_python_deps() {
     print_info "Vérification des dépendances Python..."
     pip install --upgrade pip -q 2>/dev/null
-    
-    for dep in fastapi uvicorn websockets python-chess; do
+
+    for dep in fastapi uvicorn websockets python-chess opencv-python numpy python-dotenv; do
         if ! pip show "$dep" &> /dev/null; then
             print_info "Installation de $dep..."
             pip install "$dep" -q
         fi
     done
-    
-    # ur-rtde pour le robot
-    pip install ur-rtde -q 2>/dev/null || true
-    
+
+    # ur-rtde pour le robot UR5e (peut échouer si le paquet n'est pas dispo sur l'arch)
+    if ! pip show ur-rtde &> /dev/null; then
+        print_info "Installation de ur-rtde..."
+        pip install ur-rtde -q 2>/dev/null || print_warning "ur-rtde non installable (normal hors Pi)"
+    fi
+
     print_success "Dépendances Python OK"
 }
 
@@ -172,9 +175,9 @@ start_api() {
     source "$VENV_DIR/bin/activate"
     
     if [ "$DEV_MODE" = true ]; then
-        uvicorn chess_robot_api:app --host $API_HOST --port $API_PORT --reload &
+        uvicorn api:app --host $API_HOST --port $API_PORT --reload &
     else
-        uvicorn chess_robot_api:app --host $API_HOST --port $API_PORT &
+        uvicorn api:app --host $API_HOST --port $API_PORT &
     fi
     
     local api_pid=$!

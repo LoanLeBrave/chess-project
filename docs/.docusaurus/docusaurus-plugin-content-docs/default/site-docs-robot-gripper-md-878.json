@@ -1,7 +1,7 @@
 {
   "id": "robot/gripper",
   "title": "Pince Robotiq",
-  "description": "Le robot UR5e est équipé d'une pince Robotiq Hand-E  pour saisir les pièces d'échecs.",
+  "description": "Le robot UR7e est équipé d'une pince Robotiq Hand-E  pour saisir les pièces d'échecs.",
   "source": "@site/docs/robot/gripper.md",
   "sourceDirName": "robot",
   "slug": "/robot/gripper",

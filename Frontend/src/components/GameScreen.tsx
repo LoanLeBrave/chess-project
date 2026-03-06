@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Eye, EyeOff, Camera, CheckCircle, AlertTriangle, X, ArrowLeft, RotateCcw, Pencil, Pause } from 'lucide-react';
+import { Eye, EyeOff, Camera, CheckCircle, AlertTriangle, X, ArrowLeft, RotateCcw, Pencil, Pause, Play, Square } from 'lucide-react';
 import { ChessBoard } from './ChessBoard';
 import { ControlPanel } from './ControlPanel';
 import { MoveHistory } from './MoveHistory';
@@ -109,6 +109,12 @@ export function GameScreen({ difficulty, gameState, setGameState, onReturnToMenu
     correctMove,
     replaceBoard,
     isReplacingBoard,
+    isDemoMode,
+    demoCycle,
+    demoMoveCount,
+    demoMovesPerCycle,
+    startDemo,
+    stopDemo,
   } = useChessRobot(addLog, addMove);
 
   // Initialiser la partie via l'API au montage
@@ -372,6 +378,14 @@ export function GameScreen({ difficulty, gameState, setGameState, onReturnToMenu
     return await correctMove(from, to);
   }, [correctMove]);
 
+  const handleStartDemo = async () => {
+    await startDemo(10, 4.0);
+  };
+
+  const handleStopDemo = async () => {
+    await stopDemo();
+  };
+
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
     const secs = seconds % 60;
@@ -412,12 +426,44 @@ export function GameScreen({ difficulty, gameState, setGameState, onReturnToMenu
               </span>
             </p>
           </div>
-          <div className="text-right">
-            <div className="text-3xl font-bold text-cyan-400 font-mono">
-              {formatTime(elapsedTime)}
+          {isDemoMode ? (
+            <div className="flex items-center gap-3">
+              <div className="text-right">
+                <div className="text-xs text-purple-400 font-medium uppercase tracking-wide">Mode Démo</div>
+                <div className="text-sm text-slate-300">
+                  Cycle <span className="text-purple-400 font-bold">{demoCycle}</span>
+                  {' · '}Coup <span className="text-purple-400 font-bold">{demoMoveCount}/{demoMovesPerCycle}</span>
+                </div>
+              </div>
+              <button
+                onClick={handleStopDemo}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium bg-red-700 hover:bg-red-600 text-white transition-colors"
+                title="Arrêter le mode démo"
+              >
+                <Square className="w-4 h-4" />
+                Arrêter démo
+              </button>
             </div>
-            <div className="text-xs text-slate-500">Temps écoulé</div>
-          </div>
+          ) : (
+            <div className="flex flex-col items-end gap-1">
+              <div className="text-3xl font-bold text-cyan-400 font-mono">
+                {formatTime(elapsedTime)}
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="text-xs text-slate-500">Temps écoulé</div>
+                {!isGameOver && (
+                  <button
+                    onClick={handleStartDemo}
+                    className="flex items-center gap-1 px-2 py-1 rounded text-xs font-medium bg-purple-700/50 hover:bg-purple-600/70 text-purple-300 border border-purple-600/50 transition-colors"
+                    title="Démarrer le mode démo (robot joue seul en boucle)"
+                  >
+                    <Play className="w-3 h-3" />
+                    Démo
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Main Grid - Optimized for single screen */}

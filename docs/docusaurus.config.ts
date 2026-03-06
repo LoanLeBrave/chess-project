@@ -5,7 +5,7 @@ import type * as Preset from '@docusaurus/preset-classic';
 const config: Config = {
   title: 'Chess Robot — Documentation',
   tagline: 'Robot UR5e joueur d\'échecs autonome',
-  favicon: 'img/favicon.ico',
+  favicon: 'img/logo_doc.png',
 
   future: {
     v4: true,
@@ -50,7 +50,7 @@ const config: Config = {
       title: 'Chess Robot',
       logo: {
         alt: 'Chess Robot Logo',
-        src: 'img/logo.svg',
+        src: 'img/logo_doc.jpeg',
       },
       items: [
         {

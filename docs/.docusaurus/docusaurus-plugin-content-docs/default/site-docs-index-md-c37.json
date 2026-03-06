@@ -1,7 +1,7 @@
 {
   "id": "index",
   "title": "Introduction",
-  "description": "Bienvenue dans la documentation du Chess Robot, un projet intégrant un bras robotique UR5e capable de jouer aux échecs de manière autonome contre un joueur humain.",
+  "description": "Bienvenue dans la documentation du Chess Robot, un projet intégrant un bras robotique UR7e capable de jouer aux échecs de manière autonome contre un joueur humain.",
   "source": "@site/docs/index.md",
   "sourceDirName": ".",
   "slug": "/",

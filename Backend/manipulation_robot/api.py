@@ -80,6 +80,10 @@ class FeedbackSubmitRequest(BaseModel):
     acpl_score: float = Field(...)
     timestamp: Optional[str] = Field(None)
 
+class DemoConfig(BaseModel):
+    moves_per_cycle: int = Field(10, ge=1, le=100, description="Nombre de coups par cycle avant reset physique")
+    delay_between_moves: float = Field(4.0, ge=0.5, le=30.0, description="Délai en secondes entre deux coups")
+
 # ============================================================================
 #                          VISION SERVICE
 # ============================================================================
@@ -363,6 +367,8 @@ class ApplicationManager:
         self.chess.set_status_callback(self.set_status)
         self.board_reset.set_log_callback(self.log)
         self.board_reset.set_broadcast_callback(self.broadcast)
+        self.demo_mode: bool = False
+        self.demo_task: Optional[asyncio.Task] = None
 
     async def broadcast(self, message: dict):
         for client in self.websocket_clients[:]:
@@ -375,6 +381,48 @@ class ApplicationManager:
 
     async def log(self, log_type: str, message: str):
         await self.broadcast({"type": "log", "logType": log_type, "message": message, "timestamp": datetime.now().isoformat()})
+
+    async def _demo_loop(self, moves_per_cycle: int, delay: float):
+        """Boucle démo : Stockfish joue les deux couleurs en boucle, puis reset physique."""
+        cycle = 0
+        try:
+            while self.demo_mode:
+                cycle += 1
+                self.chess.new_game("intermediate")
+                self.robot.reset_cemetery_tracking()
+                hybrid_manager.reset()
+                await self.broadcast({"type": "demo_cycle_started", "cycle": cycle, "moves_per_cycle": moves_per_cycle})
+                await self.log("info", f"[DÉMO] Cycle {cycle} — nouvelle partie")
+
+                move_count = 0
+                while self.demo_mode and move_count < moves_per_cycle:
+                    if self.chess.board.is_game_over():
+                        break
+                    result = await self.chess.play_robot_move()
+                    if not result.get("success"):
+                        break
+                    move_count += 1
+                    await self.broadcast({"type": "demo_move", "move_count": move_count, "moves_per_cycle": moves_per_cycle, "cycle": cycle})
+                    await asyncio.sleep(delay)
+
+                if not self.demo_mode:
+                    break
+
+                await self.log("info", f"[DÉMO] Cycle {cycle} terminé ({move_count} coups) — replacement du plateau")
+                await self.broadcast({"type": "demo_resetting", "cycle": cycle})
+                self.set_status("replacing", "Démo — replacement du plateau")
+                await self.board_reset.replace_board()
+                self.chess.board.reset()
+                self.robot.reset_tracking()
+                self.set_status("idle")
+                await asyncio.sleep(2.0)
+
+        except asyncio.CancelledError:
+            pass
+        finally:
+            self.demo_mode = False
+            self.set_status("idle")
+            await self.broadcast({"type": "demo_stopped"})
 
 manager = ApplicationManager()
 hybrid_manager = HybridBoardManager()
@@ -981,6 +1029,51 @@ async def replace_board():
             await manager.broadcast({"type": "board_replaced", "fen": manager.chess.board.fen()})
     finally: manager.set_status("idle")
     return result
+
+@app.post("/game/demo/start", tags=["Game"])
+async def start_demo(config: DemoConfig):
+    """Démarre le mode démo : Stockfish joue les deux couleurs en boucle avec reset physique entre chaque cycle."""
+    if manager.demo_mode:
+        return {"success": False, "error": "Mode démo déjà actif"}
+    if manager.status not in ("idle",):
+        return {"success": False, "error": f"Robot occupé ({manager.status})"}
+    manager.demo_mode = True
+    manager.vision.game_started = False
+    manager.demo_task = asyncio.create_task(
+        manager._demo_loop(config.moves_per_cycle, config.delay_between_moves)
+    )
+    await manager.log("info", f"[DÉMO] Démarrage — {config.moves_per_cycle} coups/cycle, {config.delay_between_moves}s entre les coups")
+    await manager.broadcast({"type": "demo_started", "moves_per_cycle": config.moves_per_cycle})
+    return {"success": True}
+
+@app.post("/game/demo/stop", tags=["Game"])
+async def stop_demo():
+    """Arrête le mode démo immédiatement."""
+    if not manager.demo_mode:
+        return {"success": False, "error": "Aucun mode démo actif"}
+    manager.demo_mode = False
+    if manager.demo_task and not manager.demo_task.done():
+        manager.demo_task.cancel()
+    loop = asyncio.get_running_loop()
+    if manager.robot.connected and manager.robot.rtde_c:
+        rtde_c = manager.robot.rtde_c
+        try:
+            await asyncio.wait_for(loop.run_in_executor(None, rtde_c.stopScript), timeout=3.0)
+            await asyncio.sleep(0.15)
+            await asyncio.wait_for(loop.run_in_executor(None, rtde_c.reuploadScript), timeout=3.0)
+        except Exception:
+            pass
+    manager.chess.board.reset()
+    manager.robot.reset_tracking()
+    manager.set_status("idle")
+    await manager.log("info", "[DÉMO] Arrêt manuel")
+    await manager.broadcast({"type": "demo_stopped"})
+    return {"success": True}
+
+@app.get("/game/demo/status", tags=["Game"])
+async def get_demo_status():
+    """Retourne l'état du mode démo."""
+    return {"demo_mode": manager.demo_mode}
 
 @app.post("/game/confirm-resume", tags=["Game"])
 async def confirm_resume():
