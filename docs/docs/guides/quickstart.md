@@ -11,14 +11,14 @@ Ce guide permet de lancer le système Chess Robot en moins de 5 minutes.
 ## Pré-requis
 
 - Raspberry Pi 4 (ou 5) avec Python 3.11+
-- Robot UR5e connecté sur le réseau local
+- Robot UR7e connecté sur le réseau local
 - Caméra Raspberry Pi connectée
 - Node.js 18+ pour le frontend
 
 ## 1. Cloner le projet
 
 ```bash
-git clone https://github.com/junia/chess-robot.git
+git clone https://github.com/LoanLeBrave/chess-project
 cd chess-robot
 ```
 

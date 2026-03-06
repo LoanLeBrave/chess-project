@@ -948,6 +948,17 @@ async def stop_game():
     await manager.broadcast({"type": "game_stopped"})
     return {"success": True}
 
+@app.post("/robot/reset-cemetery", tags=["Robot"])
+async def reset_cemetery():
+    """
+    Réinitialise le tracking permanent du cimetière.
+    À appeler quand l'opérateur a remis manuellement toutes les pièces
+    à leur position initiale et que le cimetière est physiquement vide.
+    """
+    manager.robot.reset_cemetery_tracking()
+    await manager.log("info", "Tracking cimetière réinitialisé manuellement")
+    return {"success": True, "message": "Tracking cimetière réinitialisé"}
+
 @app.post("/game/reset-plateau", tags=["Game"])
 async def reset_plateau():
     """Remet toutes les pièces à leur position initiale"""
@@ -966,6 +977,7 @@ async def replace_board():
         result = await manager.board_reset.replace_board()
         if result.get("success"):
             manager.chess.board.reset()
+            manager.robot.reset_cemetery_tracking()
             await manager.broadcast({"type": "board_replaced", "fen": manager.chess.board.fen()})
     finally: manager.set_status("idle")
     return result

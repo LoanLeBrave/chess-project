@@ -60,7 +60,7 @@ const config: Config = {
           label: 'Documentation',
         },
         {
-          href: 'https://github.com/junia/chess-robot',
+          href: 'https://github.com/LoanLeBrave/chess-project',
           label: 'GitHub',
           position: 'right',
         },

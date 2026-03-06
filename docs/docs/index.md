@@ -11,7 +11,7 @@ Bienvenue dans la documentation du **Chess Robot**, un projet intégrant un bras
 ## Présentation du projet
 
 Le Chess Robot combine :
-- Un **bras robotique UR5e** (Universal Robots) pour manipuler les pièces d'échecs
+- Un **bras robotique UR7e** (Universal Robots) pour manipuler les pièces d'échecs
 - Un moteur **Stockfish** pour calculer les meilleurs coups
 - Une **caméra Raspberry Pi** et des marqueurs **ArUco** pour détecter les mouvements du joueur
 - Une **interface web React** pour configurer la partie et suivre le jeu en temps réel

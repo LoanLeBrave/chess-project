@@ -10,7 +10,7 @@ import math
 import json
 import os
 import asyncio
-from typing import List, Optional, Tuple
+from typing import List, Optional, Set, Tuple
 import chess
 
 from rtde_control import RTDEControlInterface
@@ -54,6 +54,12 @@ class RobotController:
         # Pièces éliminées — stockées dans les cases du cimetière (grille 10x10)
         self.pieces_blanches_eliminees: List[PieceEliminee] = []
         self.pieces_noires_eliminees: List[PieceEliminee] = []
+
+        # Cases du cimetière occupées pendant la partie en cours.
+        # Vidé à chaque arrêt de partie (reset_tracking) et à chaque reset physique.
+        # Garantit que le robot ne posera jamais deux pièces sur la même case
+        # au cours d'une même partie, même si la vision est défaillante.
+        self._cemetery_permanently_occupied: Set[str] = set()
 
         # Callback pour logs
         self.log_callback = None
@@ -103,10 +109,18 @@ class RobotController:
             await self.log_callback(log_type, message)
 
     def reset_tracking(self):
-        """Réinitialise le suivi des pièces éliminées"""
+        """Réinitialise le suivi des pièces éliminées entre deux parties."""
         self.pieces_blanches_eliminees.clear()
         self.pieces_noires_eliminees.clear()
+        self.reset_cemetery_tracking()
         self.is_paused = False
+
+    def reset_cemetery_tracking(self):
+        """Vide le tracking permanent du cimetière.
+        À appeler UNIQUEMENT après que le robot a physiquement remis toutes
+        les pièces à leur position initiale (replace_board ou reset_plateau).
+        """
+        self._cemetery_permanently_occupied.clear()
 
     def init_robot(self):
         """Initialise la connexion et charge la calibration"""
@@ -247,23 +261,22 @@ class RobotController:
         Retourne la prochaine case libre du cimetière pour la couleur donnée.
         Les blancs capturés vont en rangée 0, les noirs capturés en rangée 9.
 
-        vision_occupied : cases jugées physiquement occupées par la vision
-                          (pièces placées manuellement par un joueur).
+        Priorité des blocages (du plus fiable au moins fiable) :
+        1. _cemetery_permanently_occupied : toutes les cases où le robot a déjà
+           posé une pièce depuis le dernier reset physique — source de vérité absolue.
+        2. vision_occupied : pièces détectées par la caméra (fiabilité variable).
         """
         cells = CIMETIERE_BLANCS if is_white else CIMETIERE_NOIRS
-        # Cases déjà utilisées par le robot lors de cette partie
-        used = {
-            p.case_cimetiere
-            for p in (self.pieces_blanches_eliminees if is_white else self.pieces_noires_eliminees)
-        }
-        # Cases supplémentaires occupées physiquement (détectées par la vision)
+
+        # Cases supplémentaires occupées physiquement (détectées par la vision),
+        # utilisées comme filet de sécurité secondaire uniquement.
         physically_blocked = vision_occupied or set()
 
         for cell in cells:
-            if cell in used:
-                continue
+            if cell in self._cemetery_permanently_occupied:
+                continue  # Le robot a déjà posé quelque chose ici — interdit absolu
             if cell in physically_blocked:
-                continue  # Un humain a posé quelque chose ici
+                continue  # La vision détecte quelque chose ici (humain ou erreur vision)
             return cell
         return None  # Ne devrait pas arriver en partie normale (max 15 captures)
 
@@ -737,6 +750,12 @@ class RobotController:
         else:
             self.pieces_noires_eliminees.append(elim)
 
+        # Marquer la case comme définitivement occupée : cette information survit
+        # aux reset_tracking() inter-parties et garantit qu'aucun coup futur
+        # ne viendra poser une pièce sur cette case tant que le plateau n'est pas
+        # physiquement remis à zéro via reset_plateau().
+        self._cemetery_permanently_occupied.add(case_cimetiere)
+
         return True
 
     async def reset_plateau(self):
@@ -796,9 +815,11 @@ class RobotController:
                     await self.log("warning", "Reset interrompu par pause")
                     return {"success": False, "message": "Interrompu par pause"}
 
-            # Clear les listes
+            # Clear les listes et le tracking permanent : le plateau physique est remis
+            # à zéro, donc toutes les cases du cimetière sont à nouveau disponibles.
             self.pieces_blanches_eliminees.clear()
             self.pieces_noires_eliminees.clear()
+            self.reset_cemetery_tracking()
 
             await self.log("info", "✓ Reset des pièces terminé")
             return {"success": True, "message": "Toutes les pièces replacées"}

@@ -333,12 +333,12 @@ export function GameScreen({ difficulty, gameState, setGameState, onReturnToMenu
 
   const executeRestart = async (replace: boolean) => {
     setShowRestartModal(false);
-    
+
     if (replace) {
       addLog('info', 'Replacement du plateau avant la nouvelle partie…');
       await replaceBoard();
     }
-    
+
     setElapsedTime(0);
     setLogs([]);
     setMoves([]);
