@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { Lock, Unlock, CheckCircle, Hand, ArrowLeft, SkipForward, Camera, Home, RotateCcw, Loader2, X, AlertTriangle } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { RecalibrateCameraModal } from './RecalibrateCameraModal';
+import { NumericKeypad } from './NumericKeypad';
 import etape1Image from './images/etape1.jpg';
 import etape2Image from './images/etape2.jpg';
 import etape3Image from './images/etape3.jpg';
@@ -87,8 +88,12 @@ export function CalibrationScreen({ onCalibrationComplete, onSkipCalibration, ha
     if (newPin.every(digit => digit !== '')) {
       const enteredPin = newPin.join('');
       if (enteredPin === CORRECT_PIN) {
-        // Remettre la pince droite et fermer le gripper (auto-level fait les deux)
-        fetch(`${API_BASE}/robot/calibrate/auto-level`, { method: 'POST' }).catch(() => {});
+        // Remettre la pince droite, puis fermer le gripper
+        fetch(`${API_BASE}/robot/calibrate/auto-level`, { method: 'POST' })
+          .catch(() => {})
+          .finally(() => {
+            fetch(`${API_BASE}/robot/calibrate/close-gripper`, { method: 'POST' }).catch(() => {});
+          });
         setTimeout(() => {
           setIsUnlocked(true);
         }, 300);
@@ -106,6 +111,25 @@ export function CalibrationScreen({ onCalibrationComplete, onSkipCalibration, ha
     if (e.key === 'Backspace' && !pin[index] && index > 0) {
       const prevInput = document.getElementById(`pin-${index - 1}`);
       prevInput?.focus();
+    }
+  };
+
+  // Handle keypad press
+  const handleKeypadPress = (value: string) => {
+    // Find first empty position
+    const emptyIndex = pin.findIndex(d => d === '');
+    if (emptyIndex !== -1) {
+      handlePinChange(emptyIndex, value);
+    }
+  };
+
+  // Handle backspace from keypad
+  const handleKeypadBackspace = () => {
+    // Find last filled position
+    const lastFilledIndex = [...pin].reverse().findIndex(d => d !== '');
+    if (lastFilledIndex !== -1) {
+      const actualIndex = pin.length - 1 - lastFilledIndex;
+      handlePinChange(actualIndex, '');
     }
   };
 
@@ -375,12 +399,11 @@ export function CalibrationScreen({ onCalibrationComplete, onSkipCalibration, ha
       await fetch(`${API_BASE}/robot/calibrate/point`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ point: 'a1', freedrive_active: freedriveActive }),
+        body: JSON.stringify({ point: 'a1' }),
       });
     } catch { /* continue */ }
     setA1Calibrated(true);
     setCalibrationStep('h8');
-    // freedrive reste dans son état actuel - le backend gère la remontée de sécurité
   };
 
   const handleValidateH8 = async () => {
@@ -388,10 +411,15 @@ export function CalibrationScreen({ onCalibrationComplete, onSkipCalibration, ha
       await fetch(`${API_BASE}/robot/calibrate/point`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ point: 'h8', freedrive_active: freedriveActive }),
+        body: JSON.stringify({ point: 'h8' }),
       });
-      // Ne PAS désactiver le FreeDrive ici - il reste actif pour l'étape Z
+      await fetch(`${API_BASE}/robot/calibrate/freedrive`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enable: false }),
+      });
     } catch { /* continue */ }
+    setFreedriveActive(false);
     setH8Calibrated(true);
     setCalibrationStep('z');
   };
@@ -403,16 +431,12 @@ export function CalibrationScreen({ onCalibrationComplete, onSkipCalibration, ha
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ point: 'z' }),
       });
-      // calibrate/save coupe le freedrive, fait la remontée +10cm,
-      // puis va en position de démarrage - tout ça avant de retourner la réponse
       await fetch(`${API_BASE}/robot/calibrate/save`, { method: 'POST' });
     } catch { /* continue */ }
-    setFreedriveActive(false); // le backend a coupé le freedrive
     setZCalibrated(true);
-    // Petit délai visuel, puis navigation
     setTimeout(() => {
       onCalibrationComplete();
-    }, 800);
+    }, 500);
   };
 
   const handleToggleFreedrive = async () => {
@@ -1039,6 +1063,19 @@ export function CalibrationScreen({ onCalibrationComplete, onSkipCalibration, ha
                 </motion.p>
               )}
 
+              {/* Numeric Keypad */}
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.4, duration: 0.4 }}
+                className="mt-6 mb-6"
+              >
+                <NumericKeypad
+                  onKeyPress={handleKeypadPress}
+                  onBackspace={handleKeypadBackspace}
+                />
+              </motion.div>
+
               {/* Skip Calibration Button - Under PIN inputs */}
               <motion.div
                 initial={{ opacity: 0, y: 10 }}
@@ -1069,8 +1106,8 @@ export function CalibrationScreen({ onCalibrationComplete, onSkipCalibration, ha
                 </button>
                 <p className={`text-xs text-center mt-3 transition-colors ${hasCalibrated ? 'text-slate-400' : 'text-slate-600'}`}>
                   {hasCalibrated 
-                    ? ' Passez directement à la page de sécurité sans refaire la calibration'
-                    : ' Ce bouton sera disponible après votre première partie complète'
+                    ? '✨ Passez directement à la page de sécurité sans refaire la calibration'
+                    : '🔒 Ce bouton sera disponible après votre première partie complète'
                   }
                 </p>
               </motion.div>
