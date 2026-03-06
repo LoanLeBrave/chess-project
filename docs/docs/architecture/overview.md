@@ -8,36 +8,7 @@ sidebar_position: 1
 
 ## Diagramme général
 
-```
-┌─────────────────────────────────────────────────────────┐
-│                    FRONTEND (React)                      │
-│  CalibrationScreen │ GameScreen │ LeaderboardScreen      │
-│         └──────────┴────────────┘                        │
-│              useChessRobot.ts (WebSocket + REST)         │
-└────────────────────────┬────────────────────────────────┘
-                         │ HTTP / WebSocket :8000
-┌────────────────────────▼────────────────────────────────┐
-│                  BACKEND (FastAPI)                       │
-│  ┌─────────────────┐  ┌──────────────────────────────┐  │
-│  │ ApplicationMgr  │  │      VisionService           │  │
-│  │  (api.py)       │  │  (api.py, chess_vision/)     │  │
-│  └────────┬────────┘  └──────────────────────────────┘  │
-│           │                                              │
-│  ┌────────▼────────┐  ┌──────────────────────────────┐  │
-│  │  ChessManager   │  │    LeaderboardManager        │  │
-│  │ (chess_manager) │  │  (leaderboard_manager.py)    │  │
-│  └────────┬────────┘  └──────────────────────────────┘  │
-│           │                                              │
-│  ┌────────▼────────┐                                     │
-│  │ RobotController │                                     │
-│  │(robot_controller│                                     │
-│  └────────┬────────┘                                     │
-└───────────┼──────────────────────────────────────────────┘
-            │ RTDE (TCP/IP)
-┌───────────▼──────────────────────────────────────────────┐
-│              ROBOT UR5e + Robotiq Gripper                 │
-└──────────────────────────────────────────────────────────┘
-```
+![Architecture générale du Chess Robot](/img/architecture_overview.svg)
 
 ## Couches logicielles
 
