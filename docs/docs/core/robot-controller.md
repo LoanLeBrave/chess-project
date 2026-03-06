@@ -8,7 +8,7 @@ sidebar_position: 2
 
 **Fichier :** `Backend/manipulation_robot/robot_controller.py`
 
-Le `RobotController` encapsule toutes les interactions avec le bras robotique UR5e et la pince Robotiq.
+Le `RobotController` encapsule toutes les interactions avec le bras robotique UR7e et la pince Robotiq.
 
 ## Connexion
 

@@ -1,0 +1,28 @@
+{
+  "id": "api-reference/endpoints",
+  "title": "Vue d'ensemble des endpoints",
+  "description": "Le backend expose une API REST sur le port 8000 et un WebSocket sur /ws.",
+  "source": "@site/docs/api-reference/endpoints.md",
+  "sourceDirName": "api-reference",
+  "slug": "/api-reference/endpoints",
+  "permalink": "/api-reference/endpoints",
+  "draft": false,
+  "unlisted": false,
+  "tags": [],
+  "version": "current",
+  "sidebarPosition": 1,
+  "frontMatter": {
+    "id": "endpoints",
+    "title": "Vue d'ensemble des endpoints",
+    "sidebar_position": 1
+  },
+  "sidebar": "mainSidebar",
+  "previous": {
+    "title": "Synchronisation",
+    "permalink": "/chess-vision/synchronization"
+  },
+  "next": {
+    "title": "WebSocket",
+    "permalink": "/api-reference/websocket"
+  }
+}

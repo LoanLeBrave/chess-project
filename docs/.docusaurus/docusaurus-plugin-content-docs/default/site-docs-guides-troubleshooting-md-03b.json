@@ -1,0 +1,24 @@
+{
+  "id": "guides/troubleshooting",
+  "title": "Dépannage",
+  "description": "Problèmes de connexion robot",
+  "source": "@site/docs/guides/troubleshooting.md",
+  "sourceDirName": "guides",
+  "slug": "/guides/troubleshooting",
+  "permalink": "/guides/troubleshooting",
+  "draft": false,
+  "unlisted": false,
+  "tags": [],
+  "version": "current",
+  "sidebarPosition": 3,
+  "frontMatter": {
+    "id": "troubleshooting",
+    "title": "Dépannage",
+    "sidebar_position": 3
+  },
+  "sidebar": "mainSidebar",
+  "previous": {
+    "title": "Guide de calibration",
+    "permalink": "/guides/calibration"
+  }
+}

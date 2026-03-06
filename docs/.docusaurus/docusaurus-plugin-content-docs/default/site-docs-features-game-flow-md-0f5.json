@@ -1,0 +1,28 @@
+{
+  "id": "features/game-flow",
+  "title": "Flux de jeu",
+  "description": "Cycle de vie d'une partie",
+  "source": "@site/docs/features/game-flow.md",
+  "sourceDirName": "features",
+  "slug": "/features/game-flow",
+  "permalink": "/features/game-flow",
+  "draft": false,
+  "unlisted": false,
+  "tags": [],
+  "version": "current",
+  "sidebarPosition": 1,
+  "frontMatter": {
+    "id": "game-flow",
+    "title": "Flux de jeu",
+    "sidebar_position": 1
+  },
+  "sidebar": "mainSidebar",
+  "previous": {
+    "title": "Configuration",
+    "permalink": "/core/config"
+  },
+  "next": {
+    "title": "Pause / Reprise",
+    "permalink": "/features/pause-resume"
+  }
+}

@@ -1,0 +1,24 @@
+{
+  "id": "index",
+  "title": "Introduction",
+  "description": "Bienvenue dans la documentation du Chess Robot, un projet intégrant un bras robotique UR5e capable de jouer aux échecs de manière autonome contre un joueur humain.",
+  "source": "@site/docs/index.md",
+  "sourceDirName": ".",
+  "slug": "/",
+  "permalink": "/",
+  "draft": false,
+  "unlisted": false,
+  "tags": [],
+  "version": "current",
+  "sidebarPosition": 1,
+  "frontMatter": {
+    "id": "index",
+    "title": "Introduction",
+    "sidebar_position": 1
+  },
+  "sidebar": "mainSidebar",
+  "next": {
+    "title": "Vue d'ensemble",
+    "permalink": "/architecture/overview"
+  }
+}

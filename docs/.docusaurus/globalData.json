@@ -1,0 +1,168 @@
+{
+  "docusaurus-plugin-content-docs": {
+    "default": {
+      "path": "/",
+      "versions": [
+        {
+          "name": "current",
+          "label": "Next",
+          "isLast": true,
+          "path": "/",
+          "mainDocId": "index",
+          "docs": [
+            {
+              "id": "api-reference/endpoints",
+              "path": "/api-reference/endpoints",
+              "sidebar": "mainSidebar"
+            },
+            {
+              "id": "api-reference/game-routes",
+              "path": "/api-reference/game-routes",
+              "sidebar": "mainSidebar"
+            },
+            {
+              "id": "api-reference/leaderboard-routes",
+              "path": "/api-reference/leaderboard-routes",
+              "sidebar": "mainSidebar"
+            },
+            {
+              "id": "api-reference/robot-routes",
+              "path": "/api-reference/robot-routes",
+              "sidebar": "mainSidebar"
+            },
+            {
+              "id": "api-reference/websocket",
+              "path": "/api-reference/websocket",
+              "sidebar": "mainSidebar"
+            },
+            {
+              "id": "architecture/components",
+              "path": "/architecture/components",
+              "sidebar": "mainSidebar"
+            },
+            {
+              "id": "architecture/data-flow",
+              "path": "/architecture/data-flow",
+              "sidebar": "mainSidebar"
+            },
+            {
+              "id": "architecture/overview",
+              "path": "/architecture/overview",
+              "sidebar": "mainSidebar"
+            },
+            {
+              "id": "chess-vision/aruco",
+              "path": "/chess-vision/aruco",
+              "sidebar": "mainSidebar"
+            },
+            {
+              "id": "chess-vision/grid",
+              "path": "/chess-vision/grid",
+              "sidebar": "mainSidebar"
+            },
+            {
+              "id": "chess-vision/synchronization",
+              "path": "/chess-vision/synchronization",
+              "sidebar": "mainSidebar"
+            },
+            {
+              "id": "core/chess-manager",
+              "path": "/core/chess-manager",
+              "sidebar": "mainSidebar"
+            },
+            {
+              "id": "core/config",
+              "path": "/core/config",
+              "sidebar": "mainSidebar"
+            },
+            {
+              "id": "core/robot-controller",
+              "path": "/core/robot-controller",
+              "sidebar": "mainSidebar"
+            },
+            {
+              "id": "core/vision-service",
+              "path": "/core/vision-service",
+              "sidebar": "mainSidebar"
+            },
+            {
+              "id": "features/castling",
+              "path": "/features/castling",
+              "sidebar": "mainSidebar"
+            },
+            {
+              "id": "features/game-flow",
+              "path": "/features/game-flow",
+              "sidebar": "mainSidebar"
+            },
+            {
+              "id": "features/leaderboard",
+              "path": "/features/leaderboard",
+              "sidebar": "mainSidebar"
+            },
+            {
+              "id": "features/pause-resume",
+              "path": "/features/pause-resume",
+              "sidebar": "mainSidebar"
+            },
+            {
+              "id": "features/promotion",
+              "path": "/features/promotion",
+              "sidebar": "mainSidebar"
+            },
+            {
+              "id": "features/replacement",
+              "path": "/features/replacement",
+              "sidebar": "mainSidebar"
+            },
+            {
+              "id": "guides/calibration",
+              "path": "/guides/calibration",
+              "sidebar": "mainSidebar"
+            },
+            {
+              "id": "guides/quickstart",
+              "path": "/guides/quickstart",
+              "sidebar": "mainSidebar"
+            },
+            {
+              "id": "guides/troubleshooting",
+              "path": "/guides/troubleshooting",
+              "sidebar": "mainSidebar"
+            },
+            {
+              "id": "index",
+              "path": "/",
+              "sidebar": "mainSidebar"
+            },
+            {
+              "id": "robot/calibration",
+              "path": "/robot/calibration",
+              "sidebar": "mainSidebar"
+            },
+            {
+              "id": "robot/gripper",
+              "path": "/robot/gripper",
+              "sidebar": "mainSidebar"
+            },
+            {
+              "id": "robot/movements",
+              "path": "/robot/movements",
+              "sidebar": "mainSidebar"
+            }
+          ],
+          "draftIds": [],
+          "sidebars": {
+            "mainSidebar": {
+              "link": {
+                "path": "/",
+                "label": "Introduction"
+              }
+            }
+          }
+        }
+      ],
+      "breadcrumbs": true
+    }
+  }
+}

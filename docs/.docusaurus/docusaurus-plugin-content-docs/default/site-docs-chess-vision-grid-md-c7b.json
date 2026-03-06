@@ -1,0 +1,28 @@
+{
+  "id": "chess-vision/grid",
+  "title": "Détection de la grille",
+  "description": "La grille 10×10 est détectée à partir des marqueurs ArUco placés aux coins de l'échiquier.",
+  "source": "@site/docs/chess-vision/grid.md",
+  "sourceDirName": "chess-vision",
+  "slug": "/chess-vision/grid",
+  "permalink": "/chess-vision/grid",
+  "draft": false,
+  "unlisted": false,
+  "tags": [],
+  "version": "current",
+  "sidebarPosition": 2,
+  "frontMatter": {
+    "id": "grid",
+    "title": "Détection de la grille",
+    "sidebar_position": 2
+  },
+  "sidebar": "mainSidebar",
+  "previous": {
+    "title": "Marqueurs ArUco",
+    "permalink": "/chess-vision/aruco"
+  },
+  "next": {
+    "title": "Synchronisation",
+    "permalink": "/chess-vision/synchronization"
+  }
+}

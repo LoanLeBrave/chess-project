@@ -1,0 +1,28 @@
+{
+  "id": "features/leaderboard",
+  "title": "Classement",
+  "description": "Le classement affiche les 10 meilleurs joueurs triés par leur score ACPL (Average Centipawn Loss). Un score plus bas indique un meilleur joueur.",
+  "source": "@site/docs/features/leaderboard.md",
+  "sourceDirName": "features",
+  "slug": "/features/leaderboard",
+  "permalink": "/features/leaderboard",
+  "draft": false,
+  "unlisted": false,
+  "tags": [],
+  "version": "current",
+  "sidebarPosition": 6,
+  "frontMatter": {
+    "id": "leaderboard",
+    "title": "Classement",
+    "sidebar_position": 6
+  },
+  "sidebar": "mainSidebar",
+  "previous": {
+    "title": "Remplacement des pièces",
+    "permalink": "/features/replacement"
+  },
+  "next": {
+    "title": "Mouvements",
+    "permalink": "/robot/movements"
+  }
+}

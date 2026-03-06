@@ -6,7 +6,7 @@ sidebar_position: 2
 
 # Pince Robotiq
 
-Le robot UR5e est équipé d'une **pince Robotiq Hand-E**  pour saisir les pièces d'échecs.
+Le robot UR7e est équipé d'une **pince Robotiq Hand-E**  pour saisir les pièces d'échecs.
 
 ## Interface
 

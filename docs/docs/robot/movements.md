@@ -4,11 +4,11 @@ title: Mouvements
 sidebar_position: 1
 ---
 
-# Mouvements du robot UR5e
+# Mouvements du robot UR7e
 
 ## Types de mouvements
 
-Le robot UR5e utilise des mouvements **cartésiens linéaires** (`moveL`) pour tous ses déplacements. Cela garantit des trajectoires prévisibles au-dessus de l'échiquier.
+Le robot UR7e utilise des mouvements **cartésiens linéaires** (`moveL`) pour tous ses déplacements. Cela garantit des trajectoires prévisibles au-dessus de l'échiquier.
 
 ### `moveL(position, speed, acceleration)`
 

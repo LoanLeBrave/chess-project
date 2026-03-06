@@ -1,0 +1,28 @@
+{
+  "id": "api-reference/leaderboard-routes",
+  "title": "Routes classement",
+  "description": "GET /leaderboard",
+  "source": "@site/docs/api-reference/leaderboard-routes.md",
+  "sourceDirName": "api-reference",
+  "slug": "/api-reference/leaderboard-routes",
+  "permalink": "/api-reference/leaderboard-routes",
+  "draft": false,
+  "unlisted": false,
+  "tags": [],
+  "version": "current",
+  "sidebarPosition": 5,
+  "frontMatter": {
+    "id": "leaderboard-routes",
+    "title": "Routes classement",
+    "sidebar_position": 5
+  },
+  "sidebar": "mainSidebar",
+  "previous": {
+    "title": "Routes robot",
+    "permalink": "/api-reference/robot-routes"
+  },
+  "next": {
+    "title": "Démarrage rapide",
+    "permalink": "/guides/quickstart"
+  }
+}
