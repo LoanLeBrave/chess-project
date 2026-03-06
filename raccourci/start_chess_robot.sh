@@ -172,7 +172,10 @@ start_api() {
     
     cd "$BACKEND_DIR"
     source "$VENV_DIR/bin/activate"
-    
+
+    # Désactiver le buffering Python pour que les print() soient visibles immédiatement
+    export PYTHONUNBUFFERED=1
+
     if [ "$DEV_MODE" = true ]; then
         uvicorn api:app --host $API_HOST --port $API_PORT --reload &
     else
