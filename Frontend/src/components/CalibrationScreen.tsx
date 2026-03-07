@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { Lock, Unlock, CheckCircle, Hand, ArrowLeft, SkipForward, Camera, Home, RotateCcw, Loader2, X, AlertTriangle } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { RecalibrateCameraModal } from './RecalibrateCameraModal';
+import { NumericKeypad } from './NumericKeypad';
 import etape1Image from './images/etape1.jpg';
 import etape2Image from './images/etape2.jpg';
 import etape3Image from './images/etape3.jpg';
@@ -52,6 +53,8 @@ export function CalibrationScreen({ onCalibrationComplete, onSkipCalibration, ha
   const [cameraError, setCameraError] = useState('');
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const imageRef = useRef<HTMLImageElement | null>(null);
+  const magCanvasRef = useRef<HTMLCanvasElement>(null);
+  const [magnifier, setMagnifier] = useState<{ visible: boolean; x: number; y: number }>({ visible: false, x: 0, y: 0 });
 
   // Board calibration state
   const [calibrationStep, setCalibrationStep] = useState<'a1' | 'h8' | 'z'>('a1');
@@ -85,8 +88,12 @@ export function CalibrationScreen({ onCalibrationComplete, onSkipCalibration, ha
     if (newPin.every(digit => digit !== '')) {
       const enteredPin = newPin.join('');
       if (enteredPin === CORRECT_PIN) {
-        // Remettre la pince droite et fermer le gripper (auto-level fait les deux)
-        fetch(`${API_BASE}/robot/calibrate/auto-level`, { method: 'POST' }).catch(() => {});
+        // Remettre la pince droite, puis fermer le gripper
+        fetch(`${API_BASE}/robot/calibrate/auto-level`, { method: 'POST' })
+          .catch(() => {})
+          .finally(() => {
+            fetch(`${API_BASE}/robot/calibrate/close-gripper`, { method: 'POST' }).catch(() => {});
+          });
         setTimeout(() => {
           setIsUnlocked(true);
         }, 300);
@@ -104,6 +111,25 @@ export function CalibrationScreen({ onCalibrationComplete, onSkipCalibration, ha
     if (e.key === 'Backspace' && !pin[index] && index > 0) {
       const prevInput = document.getElementById(`pin-${index - 1}`);
       prevInput?.focus();
+    }
+  };
+
+  // Handle keypad press
+  const handleKeypadPress = (value: string) => {
+    // Find first empty position
+    const emptyIndex = pin.findIndex(d => d === '');
+    if (emptyIndex !== -1) {
+      handlePinChange(emptyIndex, value);
+    }
+  };
+
+  // Handle backspace from keypad
+  const handleKeypadBackspace = () => {
+    // Find last filled position
+    const lastFilledIndex = [...pin].reverse().findIndex(d => d !== '');
+    if (lastFilledIndex !== -1) {
+      const actualIndex = pin.length - 1 - lastFilledIndex;
+      handlePinChange(actualIndex, '');
     }
   };
 
@@ -237,7 +263,7 @@ export function CalibrationScreen({ onCalibrationComplete, onSkipCalibration, ha
         imageRef.current = img;
         const canvas = canvasRef.current;
         if (canvas) {
-          const maxWidth = Math.min(800, window.innerWidth - 40);
+          const maxWidth = Math.min(1400, globalThis.innerWidth - 40);
           const ratio = data.height / data.width;
           canvas.width = maxWidth;
           canvas.height = maxWidth * ratio;
@@ -272,6 +298,75 @@ export function CalibrationScreen({ onCalibrationComplete, onSkipCalibration, ha
     setCorners([]);
   };
 
+  const CAL_MAG_SIZE = 220;
+  const CAL_MAG_ZOOM = 4;
+
+  const handleCanvasMouseMove = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
+    if (!canvasRef.current || !imageRef.current) return;
+    const rect = canvasRef.current.getBoundingClientRect();
+    const scaleX = canvasRef.current.width / rect.width;
+    const scaleY = canvasRef.current.height / rect.height;
+    const canvasX = (e.clientX - rect.left) * scaleX;
+    const canvasY = (e.clientY - rect.top) * scaleY;
+    const imgScale = getScale();
+    const origX = canvasX / imgScale;
+    const origY = canvasY / imgScale;
+
+    setMagnifier({ visible: true, x: e.clientX, y: e.clientY });
+
+    const magCanvas = magCanvasRef.current;
+    if (!magCanvas) return;
+    const magCtx = magCanvas.getContext('2d');
+    if (!magCtx) return;
+
+    const srcHalf = CAL_MAG_SIZE / (2 * CAL_MAG_ZOOM);
+    magCtx.clearRect(0, 0, CAL_MAG_SIZE, CAL_MAG_SIZE);
+
+    magCtx.save();
+    magCtx.beginPath();
+    magCtx.arc(CAL_MAG_SIZE / 2, CAL_MAG_SIZE / 2, CAL_MAG_SIZE / 2 - 1, 0, Math.PI * 2);
+    magCtx.clip();
+
+    magCtx.fillStyle = '#0f172a';
+    magCtx.fillRect(0, 0, CAL_MAG_SIZE, CAL_MAG_SIZE);
+
+    magCtx.drawImage(
+      imageRef.current,
+      origX - srcHalf, origY - srcHalf, srcHalf * 2, srcHalf * 2,
+      0, 0, CAL_MAG_SIZE, CAL_MAG_SIZE
+    );
+    magCtx.restore();
+
+    const idx = Math.min(corners.length, 3);
+    const color = !allCornersPlaced ? CORNER_COLORS[CORNER_NAMES[idx]] : 'rgba(255,255,255,0.7)';
+    const cx = CAL_MAG_SIZE / 2;
+    const cy = CAL_MAG_SIZE / 2;
+    magCtx.strokeStyle = 'rgba(0,0,0,0.5)';
+    magCtx.lineWidth = 3;
+    for (const [ax, ay, bx, by] of [
+      [cx - 25, cy, cx - 7, cy], [cx + 7, cy, cx + 25, cy],
+      [cx, cy - 25, cx, cy - 7], [cx, cy + 7, cx, cy + 25],
+    ] as [number,number,number,number][]) {
+      magCtx.beginPath(); magCtx.moveTo(ax, ay); magCtx.lineTo(bx, by); magCtx.stroke();
+    }
+    magCtx.strokeStyle = color;
+    magCtx.lineWidth = 1.5;
+    for (const [ax, ay, bx, by] of [
+      [cx - 25, cy, cx - 7, cy], [cx + 7, cy, cx + 25, cy],
+      [cx, cy - 25, cx, cy - 7], [cx, cy + 7, cx, cy + 25],
+    ] as [number,number,number,number][]) {
+      magCtx.beginPath(); magCtx.moveTo(ax, ay); magCtx.lineTo(bx, by); magCtx.stroke();
+    }
+    magCtx.fillStyle = color;
+    magCtx.beginPath();
+    magCtx.arc(cx, cy, 2.5, 0, Math.PI * 2);
+    magCtx.fill();
+  }, [corners.length, allCornersPlaced, getScale]);
+
+  const handleCanvasMouseLeave = useCallback(() => {
+    setMagnifier(prev => ({ ...prev, visible: false }));
+  }, []);
+
   const handleSaveCamera = async () => {
     if (!allCornersPlaced) return;
     setSaving(true);
@@ -304,12 +399,11 @@ export function CalibrationScreen({ onCalibrationComplete, onSkipCalibration, ha
       await fetch(`${API_BASE}/robot/calibrate/point`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ point: 'a1', freedrive_active: freedriveActive }),
+        body: JSON.stringify({ point: 'a1' }),
       });
     } catch { /* continue */ }
     setA1Calibrated(true);
     setCalibrationStep('h8');
-    // freedrive reste dans son état actuel - le backend gère la remontée de sécurité
   };
 
   const handleValidateH8 = async () => {
@@ -317,10 +411,15 @@ export function CalibrationScreen({ onCalibrationComplete, onSkipCalibration, ha
       await fetch(`${API_BASE}/robot/calibrate/point`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ point: 'h8', freedrive_active: freedriveActive }),
+        body: JSON.stringify({ point: 'h8' }),
       });
-      // Ne PAS désactiver le FreeDrive ici - il reste actif pour l'étape Z
+      await fetch(`${API_BASE}/robot/calibrate/freedrive`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enable: false }),
+      });
     } catch { /* continue */ }
+    setFreedriveActive(false);
     setH8Calibrated(true);
     setCalibrationStep('z');
   };
@@ -332,16 +431,12 @@ export function CalibrationScreen({ onCalibrationComplete, onSkipCalibration, ha
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ point: 'z' }),
       });
-      // calibrate/save coupe le freedrive, fait la remontée +10cm,
-      // puis va en position de démarrage - tout ça avant de retourner la réponse
       await fetch(`${API_BASE}/robot/calibrate/save`, { method: 'POST' });
     } catch { /* continue */ }
-    setFreedriveActive(false); // le backend a coupé le freedrive
     setZCalibrated(true);
-    // Petit délai visuel, puis navigation
     setTimeout(() => {
       onCalibrationComplete();
-    }, 800);
+    }, 500);
   };
 
   const handleToggleFreedrive = async () => {
@@ -668,7 +763,7 @@ export function CalibrationScreen({ onCalibrationComplete, onSkipCalibration, ha
               initial={{ scale: 0.9, y: 20 }}
               animate={{ scale: 1, y: 0 }}
               exit={{ scale: 0.9, y: 20 }}
-              className="bg-slate-800/90 rounded-2xl border border-slate-700 p-6 max-w-4xl w-full max-h-[90vh] overflow-y-auto"
+              className="bg-slate-800/90 rounded-2xl border border-slate-700 p-6 max-w-7xl w-full max-h-[90vh] overflow-y-auto"
             >
               {/* Header */}
               <div className="flex items-center justify-between mb-6">
@@ -754,9 +849,70 @@ export function CalibrationScreen({ onCalibrationComplete, onSkipCalibration, ha
                       <canvas
                         ref={canvasRef}
                         onClick={handleCanvasClick}
+                        onMouseMove={handleCanvasMouseMove}
+                        onMouseLeave={handleCanvasMouseLeave}
                         className={`max-w-full ${!allCornersPlaced ? 'cursor-crosshair' : 'cursor-default'}`}
                       />
                     </div>
+
+                    {/* Loupe */}
+                    {imageBase64 && (
+                      <div
+                        className="fixed pointer-events-none z-[9999] transition-opacity duration-100"
+                        style={{
+                          left: magnifier.x + 28,
+                          top: magnifier.y - CAL_MAG_SIZE - 28,
+                          opacity: magnifier.visible ? 1 : 0,
+                          transform: magnifier.x > window.innerWidth - CAL_MAG_SIZE - 50 ? 'translateX(calc(-100% - 56px))' : undefined,
+                        }}
+                      >
+                        <div className="relative">
+                          {/* Halo coloré */}
+                          <div
+                            className="absolute inset-0 rounded-full blur-xl opacity-50"
+                            style={{
+                              background: !allCornersPlaced
+                                ? CORNER_COLORS[CORNER_NAMES[Math.min(corners.length, 3)]]
+                                : '#ffffff',
+                              transform: 'scale(1.15)',
+                            }}
+                          />
+                          {/* Canvas loupe */}
+                          <canvas
+                            ref={magCanvasRef}
+                            width={CAL_MAG_SIZE}
+                            height={CAL_MAG_SIZE}
+                            className="rounded-full relative"
+                            style={{
+                              border: `2.5px solid ${
+                                !allCornersPlaced
+                                  ? CORNER_COLORS[CORNER_NAMES[Math.min(corners.length, 3)]]
+                                  : 'rgba(255,255,255,0.4)'
+                              }`,
+                              boxShadow: `0 0 0 1px rgba(0,0,0,0.6), 0 8px 32px rgba(0,0,0,0.7), 0 0 24px ${
+                                !allCornersPlaced
+                                  ? CORNER_COLORS[CORNER_NAMES[Math.min(corners.length, 3)]] + '60'
+                                  : 'rgba(255,255,255,0.15)'
+                              }`,
+                            }}
+                          />
+                          {/* Badge zoom */}
+                          <div
+                            className="absolute -bottom-6 left-1/2 -translate-x-1/2 text-[10px] font-bold px-2 py-0.5 rounded-full whitespace-nowrap backdrop-blur-sm bg-black/50 border"
+                            style={{
+                              color: !allCornersPlaced
+                                ? CORNER_COLORS[CORNER_NAMES[Math.min(corners.length, 3)]]
+                                : 'rgba(255,255,255,0.6)',
+                              borderColor: !allCornersPlaced
+                                ? CORNER_COLORS[CORNER_NAMES[Math.min(corners.length, 3)]] + '60'
+                                : 'rgba(255,255,255,0.15)',
+                            }}
+                          >
+                            ×{CAL_MAG_ZOOM} — {!allCornersPlaced ? CORNER_NAMES[Math.min(corners.length, 3)] : '✓'}
+                          </div>
+                        </div>
+                      </div>
+                    )}
 
                     {/* Boutons d'action */}
                     <div className="flex gap-3 justify-center flex-wrap">
@@ -907,6 +1063,19 @@ export function CalibrationScreen({ onCalibrationComplete, onSkipCalibration, ha
                 </motion.p>
               )}
 
+              {/* Numeric Keypad */}
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.4, duration: 0.4 }}
+                className="mt-6 mb-6"
+              >
+                <NumericKeypad
+                  onKeyPress={handleKeypadPress}
+                  onBackspace={handleKeypadBackspace}
+                />
+              </motion.div>
+
               {/* Skip Calibration Button - Under PIN inputs */}
               <motion.div
                 initial={{ opacity: 0, y: 10 }}
@@ -937,8 +1106,8 @@ export function CalibrationScreen({ onCalibrationComplete, onSkipCalibration, ha
                 </button>
                 <p className={`text-xs text-center mt-3 transition-colors ${hasCalibrated ? 'text-slate-400' : 'text-slate-600'}`}>
                   {hasCalibrated 
-                    ? ' Passez directement à la page de sécurité sans refaire la calibration'
-                    : ' Ce bouton sera disponible après votre première partie complète'
+                    ? '✨ Passez directement à la page de sécurité sans refaire la calibration'
+                    : '🔒 Ce bouton sera disponible après votre première partie complète'
                   }
                 </p>
               </motion.div>

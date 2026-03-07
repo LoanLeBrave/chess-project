@@ -1,4 +1,5 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
+import { Chess } from 'chess.js';
 
 export type RobotStatus = 'idle' | 'thinking' | 'moving' | 'error' | 'disconnected' | 'replacing';
 
@@ -128,6 +129,8 @@ export function useChessRobot(
   onMoveComplete: (move: { from: string; to: string; piece: string; player: 'human' | 'robot' }) => void
 ): UseChessRobotReturn {
   const [fen, setFen] = useState(INITIAL_FEN);
+  // Garder fenRef synchronisé à chaque changement de FEN
+  useEffect(() => { fenRef.current = fen; }, [fen]);
   const [isWhiteTurn, setIsWhiteTurn] = useState(true);
   const [isGameOver, setIsGameOver] = useState(false);
   const [gameResult, setGameResult] = useState<'win' | 'lose' | 'draw' | null>(null);
@@ -481,14 +484,30 @@ export function useChessRobot(
     }
   }, []);
 
-  // --- Legal moves via API ---
+  // --- Legal moves : backend en priorité, fallback local chess.js ---
   const getLegalMoves = useCallback(async (square: string): Promise<string[]> => {
+    // Calcul local immédiat depuis le FEN courant (toujours disponible)
+    const computeLocal = (): string[] => {
+      try {
+        const chess = new Chess(fenRef.current);
+        // cast en any pour éviter les problèmes de surcharge TypeScript verbose
+        const moves = chess.moves({ square: square as any, verbose: true }) as any[];
+        return moves.map((m: any) => m.to as string);
+      } catch {
+        return [];
+      }
+    };
+
     try {
       const res = await fetch(`${API_BASE}/game/legal-moves/${square}`);
+      if (!res.ok) return computeLocal();
       const data = await res.json();
-      return data.moves || [];
+      // Si le backend répond vide (partie non initialisée), fallback local
+      const backendMoves: string[] = data.moves || [];
+      return backendMoves.length > 0 ? backendMoves : computeLocal();
     } catch {
-      return [];
+      // Backend injoignable : calcul purement local
+      return computeLocal();
     }
   }, []);
 

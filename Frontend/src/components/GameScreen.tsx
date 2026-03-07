@@ -75,7 +75,7 @@ export function GameScreen({ difficulty, gameState, setGameState, onReturnToMenu
     setMoves(prev => [...prev, newMove]);
   };
 
-  const API_BASE = `${window.location.protocol}//${window.location.hostname}:8000`;
+  const API_BASE = `http://${window.location.hostname}:8000`;
 
   // Hook personnalise pour gerer la logique d'echecs
   const {
@@ -116,6 +116,27 @@ export function GameScreen({ difficulty, gameState, setGameState, onReturnToMenu
     startDemo,
     stopDemo,
   } = useChessRobot(addLog, addMove);
+
+  // État pour le replacement du plateau
+  const [isReplacingBoard, setIsReplacingBoard] = useState(false);
+
+  // Fonction pour replacer le plateau
+  const replaceBoard = async () => {
+    setIsReplacingBoard(true);
+    try {
+      const res = await fetch(`${API_BASE}/board/replace`, { method: 'POST' });
+      const data = await res.json();
+      if (data.success) {
+        addLog('info', 'Plateau replacé avec succès');
+      } else {
+        addLog('error', data.error || 'Erreur lors du replacement');
+      }
+    } catch (err) {
+      addLog('error', `Erreur replacement: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setIsReplacingBoard(false);
+    }
+  };
 
   // Initialiser la partie via l'API au montage
   useEffect(() => {
@@ -708,11 +729,11 @@ export function GameScreen({ difficulty, gameState, setGameState, onReturnToMenu
           <motion.div
             initial={{ y: 20 }}
             animate={{ y: 0 }}
-            className="bg-slate-900/98 backdrop-blur-xl border-2 border-cyan-500/50 rounded-2xl p-8 shadow-2xl shadow-cyan-500/40 max-w-xl w-full"
+            className="bg-gradient-to-br from-slate-800 via-slate-800 to-slate-900 backdrop-blur-xl border-2 border-cyan-400 rounded-2xl p-8 shadow-2xl shadow-cyan-500/50 max-w-xl w-full"
           >
             <div className="flex items-start gap-5 mb-6">
               <div className="flex-shrink-0">
-                <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-cyan-500 to-blue-500 flex items-center justify-center shadow-lg shadow-cyan-500/40">
+                <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-cyan-500 to-blue-500 flex items-center justify-center shadow-lg shadow-cyan-500/50">
                   <Pause className="w-8 h-8 text-white" strokeWidth={2.5} fill="currentColor" />
                 </div>
               </div>
@@ -720,16 +741,16 @@ export function GameScreen({ difficulty, gameState, setGameState, onReturnToMenu
                 <h3 className="text-white font-bold text-2xl mb-2">
                   Partie en pause
                 </h3>
-                <p className="text-cyan-100 text-base leading-relaxed">
+                <p className="text-cyan-50 text-base leading-relaxed">
                   Avant de reprendre la partie, veuillez vérifier que <span className="font-bold text-cyan-300">toutes les pièces sont correctement placées</span> sur l'échiquier.
                 </p>
               </div>
             </div>
 
-            <div className="bg-cyan-950/30 rounded-xl p-4 mb-6 border border-cyan-500/30">
+            <div className="bg-cyan-500/10 rounded-xl p-4 mb-6 border border-cyan-400/40">
               <div className="flex items-start gap-3">
                 <CheckCircle className="w-5 h-5 text-cyan-400 flex-shrink-0 mt-0.5" />
-                <div className="flex-1 space-y-2 text-sm text-slate-300">
+                <div className="flex-1 space-y-2 text-sm text-slate-200">
                   <p>• Le robot a relâché la pince et est en position de repos</p>
                   <p>• Vérifiez que chaque pièce est bien centrée sur sa case</p>
                   <p>• Assurez-vous qu'aucune pièce n'a été déplacée par erreur</p>
@@ -740,16 +761,65 @@ export function GameScreen({ difficulty, gameState, setGameState, onReturnToMenu
             <div className="flex items-center gap-3">
               <button
                 onClick={() => setShowResumeAlert(false)}
-                className="flex-1 px-5 py-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white font-semibold text-base transition-all duration-200 border border-slate-700 hover:border-slate-600"
+                className="flex-1 px-5 py-3 rounded-xl bg-slate-700 hover:bg-slate-600 text-slate-200 hover:text-white font-semibold text-base transition-all duration-200 border border-slate-600 hover:border-slate-500"
               >
                 Annuler
               </button>
               <button
                 onClick={handleManualResume}
-                className="flex-1 px-5 py-3 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-400 hover:to-blue-400 text-white font-bold text-base transition-all duration-200 shadow-lg shadow-cyan-500/30 hover:shadow-cyan-500/50 hover:scale-[1.02]"
+                className="flex-1 px-5 py-3 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-400 hover:to-blue-400 text-white font-bold text-base transition-all duration-200 shadow-lg shadow-cyan-500/40 hover:shadow-cyan-500/60 hover:scale-[1.02]"
               >
                 ✓ Tout est OK, reprendre
               </button>
+            </div>
+          </motion.div>
+        </motion.div>
+      )}
+
+      {/* Replacement Loading Modal */}
+      {isReplacingBoard && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm"
+        >
+          <motion.div
+            initial={{ scale: 0.9, y: 20 }}
+            animate={{ scale: 1, y: 0 }}
+            className="bg-slate-900/95 border-2 border-cyan-500/50 rounded-2xl p-8 shadow-2xl shadow-cyan-500/40 max-w-md w-full mx-4"
+          >
+            <div className="text-center">
+              <div className="w-20 h-20 mx-auto mb-6 rounded-2xl bg-gradient-to-br from-cyan-500 to-blue-500 flex items-center justify-center shadow-lg shadow-cyan-500/40">
+                <motion.div
+                  animate={{ rotate: 360 }}
+                  transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
+                >
+                  <RotateCcw className="w-10 h-10 text-white" />
+                </motion.div>
+              </div>
+              <h3 className="text-white font-bold text-2xl mb-2">
+                Replacement en cours
+              </h3>
+              <p className="text-cyan-100 text-base leading-relaxed mb-4">
+                Le robot UR7e replace toutes les pièces en position initiale...
+              </p>
+              <div className="flex items-center justify-center gap-2">
+                <motion.div
+                  className="w-2 h-2 rounded-full bg-cyan-400"
+                  animate={{ opacity: [0.3, 1, 0.3] }}
+                  transition={{ duration: 1.5, repeat: Infinity, delay: 0 }}
+                />
+                <motion.div
+                  className="w-2 h-2 rounded-full bg-cyan-400"
+                  animate={{ opacity: [0.3, 1, 0.3] }}
+                  transition={{ duration: 1.5, repeat: Infinity, delay: 0.2 }}
+                />
+                <motion.div
+                  className="w-2 h-2 rounded-full bg-cyan-400"
+                  animate={{ opacity: [0.3, 1, 0.3] }}
+                  transition={{ duration: 1.5, repeat: Infinity, delay: 0.4 }}
+                />
+              </div>
             </div>
           </motion.div>
         </motion.div>

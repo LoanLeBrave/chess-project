@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Play, Zap, Brain, Crown, Bot, ArrowLeft, User } from 'lucide-react';
+import { AlphabeticKeypad } from './AlphabeticKeypad';
 import type { DifficultyLevel } from '../App';
 
 interface StartScreenProps {
@@ -10,6 +11,25 @@ interface StartScreenProps {
 export function StartScreen({ onStartGame, onBack }: StartScreenProps) {
   const [selectedDifficulty, setSelectedDifficulty] = useState<DifficultyLevel>('beginner');
   const [playerName, setPlayerName] = useState('');
+
+  // Handle keypad key press
+  const handleKeyPress = (value: string) => {
+    if (playerName.length < 20) {
+      setPlayerName(prev => prev + value);
+    }
+  };
+
+  // Handle backspace from keypad
+  const handleBackspace = () => {
+    setPlayerName(prev => prev.slice(0, -1));
+  };
+
+  // Handle space from keypad
+  const handleSpace = () => {
+    if (playerName.length < 20 && playerName.length > 0) {
+      setPlayerName(prev => prev + ' ');
+    }
+  };
 
   const difficulties = [
     {
@@ -145,6 +165,15 @@ export function StartScreen({ onStartGame, onBack }: StartScreenProps) {
                 Bonne chance, <span className="text-cyan-400 font-semibold">{playerName}</span> !
               </p>
             )}
+            
+            {/* Alphabetic Keypad */}
+            <div className="mt-6 flex justify-center">
+              <AlphabeticKeypad
+                onKeyPress={handleKeyPress}
+                onBackspace={handleBackspace}
+                onSpace={handleSpace}
+              />
+            </div>
           </div>
         </div>
 

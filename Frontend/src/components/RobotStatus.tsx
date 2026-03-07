@@ -1,4 +1,4 @@
-import { Bot, Cpu, Activity, AlertCircle, WifiOff } from 'lucide-react';
+import { Bot, Cpu, Activity, AlertCircle, WifiOff, RotateCcw } from 'lucide-react';
 import type { RobotStatus as RobotStatusType } from '../hooks/useChessRobot';
 
 interface RobotStatusProps {
@@ -41,10 +41,17 @@ export function RobotStatus({ status }: RobotStatusProps) {
       bgColor: 'bg-orange-900/30',
       icon: WifiOff,
       description: 'Connexion au serveur perdue'
+    },
+    replacing: {
+      label: 'Replacement',
+      color: 'text-purple-400',
+      bgColor: 'bg-purple-900/30',
+      icon: RotateCcw,
+      description: 'Le robot replace les pièces'
     }
   };
 
-  const config = statusConfig[status];
+  const config = statusConfig[status] || statusConfig.idle;
   const Icon = config.icon;
 
   return (
