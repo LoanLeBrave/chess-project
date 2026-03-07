@@ -117,27 +117,6 @@ export function GameScreen({ difficulty, gameState, setGameState, onReturnToMenu
     stopDemo,
   } = useChessRobot(addLog, addMove);
 
-  // État pour le replacement du plateau
-  const [isReplacingBoard, setIsReplacingBoard] = useState(false);
-
-  // Fonction pour replacer le plateau
-  const replaceBoard = async () => {
-    setIsReplacingBoard(true);
-    try {
-      const res = await fetch(`${API_BASE}/board/replace`, { method: 'POST' });
-      const data = await res.json();
-      if (data.success) {
-        addLog('info', 'Plateau replacé avec succès');
-      } else {
-        addLog('error', data.error || 'Erreur lors du replacement');
-      }
-    } catch (err) {
-      addLog('error', `Erreur replacement: ${err instanceof Error ? err.message : String(err)}`);
-    } finally {
-      setIsReplacingBoard(false);
-    }
-  };
-
   // Initialiser la partie via l'API au montage
   useEffect(() => {
     initGame(difficulty);
