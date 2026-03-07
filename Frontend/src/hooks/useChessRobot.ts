@@ -129,6 +129,7 @@ export function useChessRobot(
   onMoveComplete: (move: { from: string; to: string; piece: string; player: 'human' | 'robot' }) => void
 ): UseChessRobotReturn {
   const [fen, setFen] = useState(INITIAL_FEN);
+  const fenRef = useRef(INITIAL_FEN);
   // Garder fenRef synchronisé à chaque changement de FEN
   useEffect(() => { fenRef.current = fen; }, [fen]);
   const [isWhiteTurn, setIsWhiteTurn] = useState(true);
