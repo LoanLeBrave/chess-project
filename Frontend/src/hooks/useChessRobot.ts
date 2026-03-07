@@ -79,6 +79,12 @@ export interface UseChessRobotReturn {
   enterCorrectionMode: () => Promise<number>;
   exitCorrectionMode: () => void;
   correctMove: (from: string, to: string) => Promise<boolean>;
+  isDemoMode: boolean;
+  demoCycle: number;
+  demoMoveCount: number;
+  demoMovesPerCycle: number;
+  startDemo: (movesPerCycle?: number, delayBetweenMoves?: number) => Promise<boolean>;
+  stopDemo: () => Promise<boolean>;
 }
 
 const API_BASE = `${window.location.protocol}//${window.location.hostname}:8000`;
@@ -142,12 +148,15 @@ export function useChessRobot(
   const [promotionColor, setPromotionColor] = useState<'white' | 'black' | null>(null);
   const [resumeConfirmation, setResumeConfirmation] = useState<ResumeConfirmation | null>(null);
   const [isCorrectionMode, setIsCorrectionMode] = useState(false);
+  const [isDemoMode, setIsDemoMode] = useState(false);
+  const [demoCycle, setDemoCycle] = useState(0);
+  const [demoMoveCount, setDemoMoveCount] = useState(0);
+  const [demoMovesPerCycle, setDemoMovesPerCycle] = useState(10);
 
   const wsRef = useRef<WebSocket | null>(null);
   const addLogRef = useRef(addLog);
   const onMoveCompleteRef = useRef(onMoveComplete);
-  // Ref pour accéder au FEN courant dans les callbacks sans stale closure
-  const fenRef = useRef(INITIAL_FEN);
+  const isDemoModeRef = useRef(false);
 
   // Mettre à jour les refs quand les callbacks changent
   useEffect(() => {
@@ -224,7 +233,7 @@ export function useChessRobot(
             }
           }
 
-          if (msg.type === 'game_over') {
+          if (msg.type === 'game_over' && !isDemoModeRef.current) {
             setIsGameOver(true);
             const result = msg.result as string;
             if (result.includes('Blancs')) {
@@ -304,8 +313,45 @@ export function useChessRobot(
 
           if (msg.type === 'board_replaced') {
             setIsReplacingBoard(false);
-            setFen(msg.fen);
-            addLogRef.current('info', 'Plateau replace avec succes');
+            if (!isDemoModeRef.current) {
+              setFen(msg.fen);
+              addLogRef.current('info', 'Plateau replace avec succes');
+            }
+          }
+
+          if (msg.type === 'demo_started') {
+            setIsDemoMode(true);
+            isDemoModeRef.current = true;
+            setDemoCycle(0);
+            setDemoMoveCount(0);
+            setDemoMovesPerCycle(msg.moves_per_cycle || 10);
+            addLogRef.current('info', `Mode démo démarré (${msg.moves_per_cycle} coups/cycle)`);
+          }
+
+          if (msg.type === 'demo_cycle_started') {
+            setDemoCycle(msg.cycle || 0);
+            setDemoMoveCount(0);
+            setFen(INITIAL_FEN);
+            setIsWhiteTurn(true);
+            setIsGameOver(false);
+            setGameResult(null);
+          }
+
+          if (msg.type === 'demo_move') {
+            setDemoMoveCount(msg.move_count || 0);
+          }
+
+          if (msg.type === 'demo_resetting') {
+            setIsReplacingBoard(true);
+          }
+
+          if (msg.type === 'demo_stopped') {
+            setIsDemoMode(false);
+            isDemoModeRef.current = false;
+            setDemoCycle(0);
+            setDemoMoveCount(0);
+            setIsReplacingBoard(false);
+            addLogRef.current('info', 'Mode démo arrêté');
           }
         } catch { /* ignore parse errors */ }
       };
@@ -617,6 +663,34 @@ export function useChessRobot(
     }
   }, []);
 
+  // --- Demo mode ---
+  const startDemo = useCallback(async (movesPerCycle = 10, delayBetweenMoves = 4.0): Promise<boolean> => {
+    try {
+      const res = await fetch(`${API_BASE}/game/demo/start`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ moves_per_cycle: movesPerCycle, delay_between_moves: delayBetweenMoves }),
+      });
+      const data = await res.json();
+      if (!data.success) addLogRef.current('error', data.error || 'Erreur démarrage démo');
+      return data.success;
+    } catch {
+      addLogRef.current('error', 'Erreur connexion API pour démo');
+      return false;
+    }
+  }, []);
+
+  const stopDemo = useCallback(async (): Promise<boolean> => {
+    try {
+      const res = await fetch(`${API_BASE}/game/demo/stop`, { method: 'POST' });
+      const data = await res.json();
+      return data.success;
+    } catch {
+      addLogRef.current('error', 'Erreur connexion API pour arrêt démo');
+      return false;
+    }
+  }, []);
+
   // --- Enter correction mode (undo + enable correction UI) ---
   const enterCorrectionMode = useCallback(async (): Promise<number> => {
     const count = await undoLastMove();
@@ -686,5 +760,11 @@ export function useChessRobot(
     enterCorrectionMode,
     exitCorrectionMode,
     correctMove,
+    isDemoMode,
+    demoCycle,
+    demoMoveCount,
+    demoMovesPerCycle,
+    startDemo,
+    stopDemo,
   };
 }

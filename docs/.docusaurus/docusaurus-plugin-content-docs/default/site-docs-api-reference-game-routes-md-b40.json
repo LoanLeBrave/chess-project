@@ -1,0 +1,28 @@
+{
+  "id": "api-reference/game-routes",
+  "title": "Routes de jeu",
+  "description": "POST /game/start",
+  "source": "@site/docs/api-reference/game-routes.md",
+  "sourceDirName": "api-reference",
+  "slug": "/api-reference/game-routes",
+  "permalink": "/api-reference/game-routes",
+  "draft": false,
+  "unlisted": false,
+  "tags": [],
+  "version": "current",
+  "sidebarPosition": 3,
+  "frontMatter": {
+    "id": "game-routes",
+    "title": "Routes de jeu",
+    "sidebar_position": 3
+  },
+  "sidebar": "mainSidebar",
+  "previous": {
+    "title": "WebSocket",
+    "permalink": "/api-reference/websocket"
+  },
+  "next": {
+    "title": "Routes robot",
+    "permalink": "/api-reference/robot-routes"
+  }
+}

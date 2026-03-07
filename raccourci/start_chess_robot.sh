@@ -16,14 +16,12 @@
 #
 # =============================================================================
 
-set -e
-
 # Configuration - Chemins adaptés à ton installation
 # =============================================================================
-PROJECT_DIR="/home/robot/ur_modbus/mappingEchec/chess-project"
-BACKEND_DIR="$PROJECT_DIR/Backend"
+PROJECT_DIR="/home/robot/robotFull/chess-project"
+BACKEND_DIR="$PROJECT_DIR/Backend/manipulation_robot"
 FRONTEND_DIR="$PROJECT_DIR/Frontend"
-VENV_DIR="$BACKEND_DIR/.venv"
+VENV_DIR="/home/robot/ur_modbus/.venv"
 
 API_HOST="0.0.0.0"
 API_PORT="8000"
@@ -116,28 +114,32 @@ check_prerequisites() {
 }
 
 setup_venv() {
-    if [ ! -d "$VENV_DIR" ]; then
-        print_info "Création de l'environnement virtuel Python..."
-        python3 -m venv "$VENV_DIR"
+    if [ ! -f "$VENV_DIR/bin/activate" ]; then
+        print_error "Venv introuvable: $VENV_DIR"
+        print_error "Vérifie que le chemin est correct."
+        exit 1
     fi
     source "$VENV_DIR/bin/activate"
-    print_success "Environnement virtuel activé"
+    print_success "Environnement virtuel activé ($VENV_DIR)"
 }
 
 install_python_deps() {
     print_info "Vérification des dépendances Python..."
     pip install --upgrade pip -q 2>/dev/null
-    
-    for dep in fastapi uvicorn websockets python-chess; do
+
+    for dep in fastapi uvicorn websockets python-chess opencv-python numpy python-dotenv; do
         if ! pip show "$dep" &> /dev/null; then
             print_info "Installation de $dep..."
             pip install "$dep" -q
         fi
     done
-    
-    # ur-rtde pour le robot
-    pip install ur-rtde -q 2>/dev/null || true
-    
+
+    # ur-rtde pour le robot UR5e (peut échouer si le paquet n'est pas dispo sur l'arch)
+    if ! pip show ur-rtde &> /dev/null; then
+        print_info "Installation de ur-rtde..."
+        pip install ur-rtde -q 2>/dev/null || print_warning "ur-rtde non installable (normal hors Pi)"
+    fi
+
     print_success "Dépendances Python OK"
 }
 
@@ -170,24 +172,64 @@ start_api() {
     
     cd "$BACKEND_DIR"
     source "$VENV_DIR/bin/activate"
-    
+
+    # Désactiver le buffering Python pour que les print() soient visibles immédiatement
+    export PYTHONUNBUFFERED=1
+
     if [ "$DEV_MODE" = true ]; then
-        uvicorn chess_robot_api:app --host $API_HOST --port $API_PORT --reload &
+        uvicorn api:app --host $API_HOST --port $API_PORT --reload &
     else
-        uvicorn chess_robot_api:app --host $API_HOST --port $API_PORT &
+        uvicorn api:app --host $API_HOST --port $API_PORT &
     fi
     
     local api_pid=$!
     echo $api_pid > "$API_PID_FILE"
-    sleep 2
-    
-    if kill -0 $api_pid 2>/dev/null; then
-        print_success "API démarrée (PID: $api_pid)"
-    else
-        print_error "Échec du démarrage de l'API"
-        return 1
+
+    # Attendre que l'API soit RÉELLEMENT prête :
+    #   - robot connecté (ou simulation confirmée)
+    #   - première capture caméra réussie
+    # On polle /ready qui retourne 200 seulement quand tout est opérationnel.
+    local max_wait=60
+    local waited=0
+    local bar_len=30
+
+    echo ""
+    echo -e "${BLUE}  Attente de l'initialisation complète (robot + caméra)...${NC}"
+
+    while [ $waited -lt $max_wait ]; do
+        if curl -sf "http://127.0.0.1:$API_PORT/ready" > /dev/null 2>&1; then
+            local full_bar=""
+            local i
+            for ((i=0; i<bar_len; i++)); do full_bar="${full_bar}█"; done
+            printf "\r  ${GREEN}[%s]${NC}  %ds — Prêt !          \n" "$full_bar" "$waited"
+            print_success "API + caméra prêtes (${waited}s)"
+            break
+        fi
+        if ! kill -0 $api_pid 2>/dev/null; then
+            echo ""
+            print_error "L'API s'est arrêtée de façon inattendue"
+            return 1
+        fi
+
+        # Barre de progression
+        local filled=$(( waited * bar_len / max_wait ))
+        local empty=$(( bar_len - filled ))
+        local bar=""
+        local i
+        for ((i=0; i<filled; i++)); do bar="${bar}█"; done
+        for ((i=0; i<empty;  i++)); do bar="${bar}░"; done
+        printf "\r  ${CYAN}[%s]${NC}  %ds / %ds" "$bar" "$waited" "$max_wait"
+
+        sleep 1
+        waited=$((waited + 1))
+    done
+
+    if [ $waited -ge $max_wait ]; then
+        echo ""
+        print_warning "Timeout ${max_wait}s dépassé — lancement du frontend quand même"
     fi
-    
+    echo ""
+
     cd - > /dev/null
 }
 

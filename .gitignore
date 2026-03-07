@@ -15,3 +15,5 @@ dist
 build
 node_modules/
 .github
+.env
+.vscode/

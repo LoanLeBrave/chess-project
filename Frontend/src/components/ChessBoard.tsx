@@ -94,7 +94,7 @@ export function ChessBoard({
   const [board, setBoard] = useState<BoardState>({});
   const [selectedSquare, setSelectedSquare] = useState<string | null>(null);
   const [legalMoves, setLegalMoves] = useState<string[]>([]);
-  const [lastMove, setLastMove] = useState<{ from: string; to: string } | null>(null);
+  const [lastMove, setLastMove] = useState<{ from: string; to: string; rookFrom?: string; rookTo?: string } | null>(null);
 
   const [showHelpOnClick, setShowHelpOnClick] = useState(true);
   const [showAllMoves, setShowAllMoves] = useState(false);
@@ -181,14 +181,22 @@ export function ChessBoard({
         setSelectedSquare(null);
         setLegalMoves([]);
       } else if (legalMoves.includes(square) || !showHelpOnClick) {
-        if (canMove) {
-          const success = await onMove(selectedSquare, square);
-          if (success) {
-            setLastMove({ from: selectedSquare, to: square });
-            setBestMove(null);
-            setShowAllMoves(false);
-            setAllWhiteMoves({});
+        const success = await onMove(selectedSquare, square);
+        if (success) {
+          const movedPiece = board[selectedSquare];
+          const isKing = movedPiece === 'K' || movedPiece === 'k';
+          const fileDiff = Math.abs(selectedSquare.charCodeAt(0) - square.charCodeAt(0));
+          let rookFrom: string | undefined;
+          let rookTo: string | undefined;
+          if (isKing && fileDiff === 2) {
+            const rank = selectedSquare[1];
+            if (square[0] === 'g') { rookFrom = `h${rank}`; rookTo = `f${rank}`; }
+            else if (square[0] === 'c') { rookFrom = `a${rank}`; rookTo = `d${rank}`; }
           }
+          setLastMove({ from: selectedSquare, to: square, rookFrom, rookTo });
+          setBestMove(null);
+          setShowAllMoves(false);
+          setAllWhiteMoves({});
         }
         setSelectedSquare(null);
         setLegalMoves([]);
@@ -319,7 +327,7 @@ export function ChessBoard({
               const isLight = isLightSquare(file, rank);
               const isSelected = selectedSquare === square;
               const isLegal = legalMoves.includes(square);
-              const isLast = lastMove && (lastMove.from === square || lastMove.to === square);
+              const isLast = lastMove && (lastMove.from === square || lastMove.to === square || lastMove.rookFrom === square || lastMove.rookTo === square);
               const hasMoves = hasMovesFrom(square);
               const isDest = isDestinationFor(square);
               const isBestF = isBestFrom(square);

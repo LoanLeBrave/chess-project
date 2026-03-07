@@ -9,8 +9,10 @@ import time
 import math
 import json
 import os
+import sys
 import asyncio
-from typing import List, Optional, Tuple
+import threading
+from typing import List, Optional, Set, Tuple
 import chess
 
 from rtde_control import RTDEControlInterface
@@ -54,6 +56,12 @@ class RobotController:
         # Pièces éliminées — stockées dans les cases du cimetière (grille 10x10)
         self.pieces_blanches_eliminees: List[PieceEliminee] = []
         self.pieces_noires_eliminees: List[PieceEliminee] = []
+
+        # Cases du cimetière occupées pendant la partie en cours.
+        # Vidé à chaque arrêt de partie (reset_tracking) et à chaque reset physique.
+        # Garantit que le robot ne posera jamais deux pièces sur la même case
+        # au cours d'une même partie, même si la vision est défaillante.
+        self._cemetery_permanently_occupied: Set[str] = set()
 
         # Callback pour logs
         self.log_callback = None
@@ -103,58 +111,130 @@ class RobotController:
             await self.log_callback(log_type, message)
 
     def reset_tracking(self):
-        """Réinitialise le suivi des pièces éliminées"""
+        """Réinitialise le suivi des pièces éliminées entre deux parties."""
         self.pieces_blanches_eliminees.clear()
         self.pieces_noires_eliminees.clear()
+        self.reset_cemetery_tracking()
         self.is_paused = False
+
+    def reset_cemetery_tracking(self):
+        """Vide le tracking permanent du cimetière.
+        À appeler UNIQUEMENT après que le robot a physiquement remis toutes
+        les pièces à leur position initiale (replace_board ou reset_plateau).
+        """
+        self._cemetery_permanently_occupied.clear()
 
     def init_robot(self):
         """Initialise la connexion et charge la calibration"""
+        _SEP = "=" * 60
+
+        # --- Calibration (rapide, pas de réseau) ---
         try:
-            # Charger la calibration
             if not os.path.exists(FICHIER_CALIBRATION):
-                print(f" Fichier calibration introuvable: {FICHIER_CALIBRATION}")
+                print(f"⚠  Fichier calibration introuvable: {FICHIER_CALIBRATION}")
+                self._print_simulation_banner("Calibration manquante")
                 return False
 
             with open(FICHIER_CALIBRATION, 'r') as f:
                 data = json.load(f)
                 self.calib_origin = data["origin"]
                 self.calib_rotation = data["rotation"]
-                if "camera_scale" in data:
-                    self.calib_scale = data["camera_scale"]
-                else:
-                    self.calib_scale = data["board_size"] / 20.0
-
+                self.calib_scale = data.get("camera_scale", data.get("board_size", 20.0) / 20.0)
                 self.is_calibrated = True
-                print(f" Calibration chargée (Scale: {self.calib_scale:.4f})")
+                print(f"✓ Calibration chargée (scale={self.calib_scale:.4f})")
 
-            # Charger la position de départ (home)
             if os.path.exists(FICHIER_POSITION_DEPART):
                 with open(FICHIER_POSITION_DEPART, 'r') as f:
-                    data = json.load(f)
-                    self.position_depart = data.get("position_depart")
-                    print("Position de départ chargée")
-
-            # Connexion au robot
-            print(f"Connexion robot {ROBOT_IP}...")
-            self.rtde_c = RTDEControlInterface(ROBOT_IP)
-            self.rtde_r = RTDEReceiveInterface(ROBOT_IP)
-            
-            # Initialisation du gripper
-            self.gripper = RobotiqGripper(self.rtde_c)
-            self.gripper.activate()
-            self.gripper.set_force(50)
-            self.gripper.set_speed(150)
-            self.gripper.move(GRIPPER_OUVERTURE)
-
-            self.connected = True
-            print(" Robot connecté et prêt!")
-            return True
+                    self.position_depart = json.load(f).get("position_depart")
+                print("✓ Position de départ chargée")
 
         except Exception as e:
-            print(f" Erreur initialisation: {e}")
+            print(f"✗ Erreur lecture calibration: {e}")
+            self._print_simulation_banner(str(e))
+            return False
+
+        # --- Connexion RTDE (bloquante — on tourne dans un thread) ---
+        MAX_WAIT    = 20.0   # secondes avant d'abandonner
+        REPORT_EACH = 5.0    # afficher un point de progression toutes les N secondes
+
+        print(_SEP)
+        print(f"  Connexion au robot UR5e  ({ROBOT_IP})")
+        print(f"  Timeout : {MAX_WAIT:.0f}s")
+        print(_SEP)
+        sys.stdout.flush()
+
+        result   = {"ok": False, "error": None}
+        rtde_c_r = [None, None, None]   # [rtde_c, rtde_r, gripper]
+
+        def _connect():
+            try:
+                rtde_c_r[0] = RTDEControlInterface(ROBOT_IP)
+                rtde_c_r[1] = RTDEReceiveInterface(ROBOT_IP)
+                g = RobotiqGripper(rtde_c_r[0])
+                g.activate()
+                g.set_force(50)
+                g.set_speed(150)
+                g.move(GRIPPER_OUVERTURE)
+                rtde_c_r[2] = g
+                result["ok"] = True
+            except Exception as e:
+                result["error"] = e
+
+        t = threading.Thread(target=_connect, daemon=True)
+        t.start()
+
+        frames  = ["⠋","⠙","⠹","⠸","⠼","⠴","⠦","⠧","⠇","⠏"]
+        bar_len = 30
+        step    = 0.15
+        elapsed = 0.0
+
+        while t.is_alive() and elapsed < MAX_WAIT:
+            pct    = min(elapsed / MAX_WAIT, 1.0)
+            filled = int(pct * bar_len)
+            bar    = "█" * filled + "░" * (bar_len - filled)
+            frame  = frames[int(elapsed / step) % len(frames)]
+            sys.stdout.write(f"\r  {frame} [{bar}]  {elapsed:4.0f}s / {MAX_WAIT:.0f}s")
+            sys.stdout.flush()
+            time.sleep(step)
+            elapsed += step
+
+        # Effacer la ligne du spinner
+        sys.stdout.write("\r" + " " * 60 + "\r")
+        sys.stdout.flush()
+
+        t.join(timeout=2.0)
+
+        if result["ok"]:
+            self.rtde_c, self.rtde_r, self.gripper = rtde_c_r
+            self.connected = True
+            bar = "█" * bar_len
+            print(f"  ✓ [{bar}]  OK en {elapsed:.1f}s")
+            print(f"✓ Robot connecté et prêt !")
+            print(_SEP)
+            sys.stdout.flush()
+            return True
+        else:
+            err_msg = str(result["error"]) if result["error"] else f"timeout {MAX_WAIT:.0f}s"
+            bar = "░" * bar_len
+            print(f"  ✗ [{bar}]  Échec ({elapsed:.0f}s)")
+            print(f"✗ Connexion échouée : {err_msg}")
+            sys.stdout.flush()
+            self._print_simulation_banner(err_msg)
             self.connected = False
             return False
+
+    def _print_simulation_banner(self, reason: str = ""):
+        _SEP = "=" * 60
+        print(_SEP)
+        print("  ⚠   MODE SIMULATION")
+        if reason:
+            print(f"  Raison : {reason}")
+        print()
+        print("  Le frontend se lance normalement.")
+        print("  Le robot ne sera PAS contrôlé.")
+        print("  La caméra et la vision fonctionnent normalement.")
+        print(_SEP)
+        sys.stdout.flush()
 
     def get_position(self):
         """Retourne la position actuelle du TCP via l'interface de réception"""
@@ -247,23 +327,22 @@ class RobotController:
         Retourne la prochaine case libre du cimetière pour la couleur donnée.
         Les blancs capturés vont en rangée 0, les noirs capturés en rangée 9.
 
-        vision_occupied : cases jugées physiquement occupées par la vision
-                          (pièces placées manuellement par un joueur).
+        Priorité des blocages (du plus fiable au moins fiable) :
+        1. _cemetery_permanently_occupied : toutes les cases où le robot a déjà
+           posé une pièce depuis le dernier reset physique — source de vérité absolue.
+        2. vision_occupied : pièces détectées par la caméra (fiabilité variable).
         """
         cells = CIMETIERE_BLANCS if is_white else CIMETIERE_NOIRS
-        # Cases déjà utilisées par le robot lors de cette partie
-        used = {
-            p.case_cimetiere
-            for p in (self.pieces_blanches_eliminees if is_white else self.pieces_noires_eliminees)
-        }
-        # Cases supplémentaires occupées physiquement (détectées par la vision)
+
+        # Cases supplémentaires occupées physiquement (détectées par la vision),
+        # utilisées comme filet de sécurité secondaire uniquement.
         physically_blocked = vision_occupied or set()
 
         for cell in cells:
-            if cell in used:
-                continue
+            if cell in self._cemetery_permanently_occupied:
+                continue  # Le robot a déjà posé quelque chose ici — interdit absolu
             if cell in physically_blocked:
-                continue  # Un humain a posé quelque chose ici
+                continue  # La vision détecte quelque chose ici (humain ou erreur vision)
             return cell
         return None  # Ne devrait pas arriver en partie normale (max 15 captures)
 
@@ -744,6 +823,12 @@ class RobotController:
         else:
             self.pieces_noires_eliminees.append(elim)
 
+        # Marquer la case comme définitivement occupée : cette information survit
+        # aux reset_tracking() inter-parties et garantit qu'aucun coup futur
+        # ne viendra poser une pièce sur cette case tant que le plateau n'est pas
+        # physiquement remis à zéro via reset_plateau().
+        self._cemetery_permanently_occupied.add(case_cimetiere)
+
         return True
 
     async def reset_plateau(self):
@@ -803,9 +888,11 @@ class RobotController:
                     await self.log("warning", "Reset interrompu par pause")
                     return {"success": False, "message": "Interrompu par pause"}
 
-            # Clear les listes
+            # Clear les listes et le tracking permanent : le plateau physique est remis
+            # à zéro, donc toutes les cases du cimetière sont à nouveau disponibles.
             self.pieces_blanches_eliminees.clear()
             self.pieces_noires_eliminees.clear()
+            self.reset_cemetery_tracking()
 
             await self.log("info", "✓ Reset des pièces terminé")
             return {"success": True, "message": "Toutes les pièces replacées"}

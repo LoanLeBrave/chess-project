@@ -1,0 +1,28 @@
+{
+  "id": "features/pause-resume",
+  "title": "Pause / Reprise",
+  "description": "Le système supporte la mise en pause à tout moment pendant une partie, y compris au milieu d'un mouvement robot.",
+  "source": "@site/docs/features/pause-resume.md",
+  "sourceDirName": "features",
+  "slug": "/features/pause-resume",
+  "permalink": "/features/pause-resume",
+  "draft": false,
+  "unlisted": false,
+  "tags": [],
+  "version": "current",
+  "sidebarPosition": 2,
+  "frontMatter": {
+    "id": "pause-resume",
+    "title": "Pause / Reprise",
+    "sidebar_position": 2
+  },
+  "sidebar": "mainSidebar",
+  "previous": {
+    "title": "Flux de jeu",
+    "permalink": "/features/game-flow"
+  },
+  "next": {
+    "title": "Roque",
+    "permalink": "/features/castling"
+  }
+}

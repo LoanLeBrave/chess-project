@@ -1,0 +1,28 @@
+{
+  "id": "robot/calibration",
+  "title": "Calibration",
+  "description": "La calibration permet d'aligner les coordonnées robot avec les cases de l'échiquier physique. Elle se fait via l'interface CalibrationScreen dans le frontend.",
+  "source": "@site/docs/robot/calibration.md",
+  "sourceDirName": "robot",
+  "slug": "/robot/calibration",
+  "permalink": "/robot/calibration",
+  "draft": false,
+  "unlisted": false,
+  "tags": [],
+  "version": "current",
+  "sidebarPosition": 3,
+  "frontMatter": {
+    "id": "calibration",
+    "title": "Calibration",
+    "sidebar_position": 3
+  },
+  "sidebar": "mainSidebar",
+  "previous": {
+    "title": "Pince Robotiq",
+    "permalink": "/robot/gripper"
+  },
+  "next": {
+    "title": "Marqueurs ArUco",
+    "permalink": "/chess-vision/aruco"
+  }
+}

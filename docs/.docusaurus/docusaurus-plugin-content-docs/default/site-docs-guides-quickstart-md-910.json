@@ -1,0 +1,28 @@
+{
+  "id": "guides/quickstart",
+  "title": "Démarrage rapide",
+  "description": "Ce guide permet de lancer le système Chess Robot en moins de 5 minutes.",
+  "source": "@site/docs/guides/quickstart.md",
+  "sourceDirName": "guides",
+  "slug": "/guides/quickstart",
+  "permalink": "/guides/quickstart",
+  "draft": false,
+  "unlisted": false,
+  "tags": [],
+  "version": "current",
+  "sidebarPosition": 1,
+  "frontMatter": {
+    "id": "quickstart",
+    "title": "Démarrage rapide",
+    "sidebar_position": 1
+  },
+  "sidebar": "mainSidebar",
+  "previous": {
+    "title": "Routes classement",
+    "permalink": "/api-reference/leaderboard-routes"
+  },
+  "next": {
+    "title": "Guide de calibration",
+    "permalink": "/guides/calibration"
+  }
+}

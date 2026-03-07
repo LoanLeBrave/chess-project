@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Eye, EyeOff, Camera, CheckCircle, AlertTriangle, X, ArrowLeft, RotateCcw, Pencil, Pause } from 'lucide-react';
+import { Eye, EyeOff, Camera, CheckCircle, AlertTriangle, X, ArrowLeft, RotateCcw, Pencil, Pause, Play, Square } from 'lucide-react';
 import { ChessBoard } from './ChessBoard';
 import { ControlPanel } from './ControlPanel';
 import { MoveHistory } from './MoveHistory';
@@ -107,6 +107,14 @@ export function GameScreen({ difficulty, gameState, setGameState, onReturnToMenu
     enterCorrectionMode,
     exitCorrectionMode,
     correctMove,
+    replaceBoard,
+    isReplacingBoard,
+    isDemoMode,
+    demoCycle,
+    demoMoveCount,
+    demoMovesPerCycle,
+    startDemo,
+    stopDemo,
   } = useChessRobot(addLog, addMove);
 
   // État pour le replacement du plateau
@@ -352,17 +360,15 @@ export function GameScreen({ difficulty, gameState, setGameState, onReturnToMenu
 
   const executeRestart = async (replace: boolean) => {
     setShowRestartModal(false);
-    
-    // Reset UI state immediately
-    setElapsedTime(0);
-    setLogs([]);
-    setMoves([]);
 
     if (replace) {
       addLog('info', 'Replacement du plateau avant la nouvelle partie…');
       await replaceBoard();
     }
-    
+
+    setElapsedTime(0);
+    setLogs([]);
+    setMoves([]);
     resetGame();
     await initGame(difficulty);
     addLog('info', 'Nouvelle partie démarrée');
@@ -392,6 +398,14 @@ export function GameScreen({ difficulty, gameState, setGameState, onReturnToMenu
   const handleCorrectionMove = useCallback(async (from: string, to: string): Promise<boolean> => {
     return await correctMove(from, to);
   }, [correctMove]);
+
+  const handleStartDemo = async () => {
+    await startDemo(10, 4.0);
+  };
+
+  const handleStopDemo = async () => {
+    await stopDemo();
+  };
 
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
@@ -433,12 +447,47 @@ export function GameScreen({ difficulty, gameState, setGameState, onReturnToMenu
               </span>
             </p>
           </div>
-          <div className="text-right">
-            <div className="text-3xl font-bold text-cyan-400 font-mono">
-              {formatTime(elapsedTime)}
+          {isDemoMode ? (
+            <div className="flex items-center gap-3">
+              <div className="text-right">
+                <div className="flex items-center justify-end gap-2 mb-0.5">
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-bold bg-purple-600 text-white animate-pulse">
+                    DÉMO EN COURS
+                  </span>
+                </div>
+                <div className="text-sm text-slate-300">
+                  Cycle <span className="text-purple-400 font-bold">{demoCycle}</span>
+                  {' · '}Coup <span className="text-purple-400 font-bold">{demoMoveCount}/{demoMovesPerCycle}</span>
+                </div>
+              </div>
+              <button
+                onClick={handleStopDemo}
+                className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold bg-red-600 hover:bg-red-500 text-white transition-colors shadow-lg shadow-red-900/40"
+              >
+                <Square className="w-4 h-4" />
+                Arrêter
+              </button>
             </div>
-            <div className="text-xs text-slate-500">Temps écoulé</div>
-          </div>
+          ) : (
+            <div className="flex items-center gap-4">
+              {!isGameOver && (
+                <button
+                  onClick={handleStartDemo}
+                  className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold bg-purple-600 hover:bg-purple-500 text-white border border-purple-500 transition-colors shadow-lg shadow-purple-900/40"
+                  title="Démarrer le mode démo (robot joue seul en boucle)"
+                >
+                  <Play className="w-4 h-4" />
+                  Mode Démo
+                </button>
+              )}
+              <div className="text-right">
+                <div className="text-3xl font-bold text-cyan-400 font-mono">
+                  {formatTime(elapsedTime)}
+                </div>
+                <div className="text-xs text-slate-500 text-right">Temps écoulé</div>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Main Grid - Optimized for single screen */}

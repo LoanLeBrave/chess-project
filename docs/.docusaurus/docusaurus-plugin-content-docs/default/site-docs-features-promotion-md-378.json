@@ -1,0 +1,28 @@
+{
+  "id": "features/promotion",
+  "title": "Promotion",
+  "description": "La promotion survient quand un pion atteint la dernière rangée (rang 8 pour les blancs, rang 1 pour les noirs).",
+  "source": "@site/docs/features/promotion.md",
+  "sourceDirName": "features",
+  "slug": "/features/promotion",
+  "permalink": "/features/promotion",
+  "draft": false,
+  "unlisted": false,
+  "tags": [],
+  "version": "current",
+  "sidebarPosition": 4,
+  "frontMatter": {
+    "id": "promotion",
+    "title": "Promotion",
+    "sidebar_position": 4
+  },
+  "sidebar": "mainSidebar",
+  "previous": {
+    "title": "Roque",
+    "permalink": "/features/castling"
+  },
+  "next": {
+    "title": "Remplacement des pièces",
+    "permalink": "/features/replacement"
+  }
+}

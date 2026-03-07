@@ -1,0 +1,28 @@
+{
+  "id": "chess-vision/aruco",
+  "title": "Marqueurs ArUco",
+  "description": "Les marqueurs ArUco sont des codes QR visuels utilisés pour identifier les pièces d'échecs et calibrer l'échiquier.",
+  "source": "@site/docs/chess-vision/aruco.md",
+  "sourceDirName": "chess-vision",
+  "slug": "/chess-vision/aruco",
+  "permalink": "/chess-vision/aruco",
+  "draft": false,
+  "unlisted": false,
+  "tags": [],
+  "version": "current",
+  "sidebarPosition": 1,
+  "frontMatter": {
+    "id": "aruco",
+    "title": "Marqueurs ArUco",
+    "sidebar_position": 1
+  },
+  "sidebar": "mainSidebar",
+  "previous": {
+    "title": "Calibration",
+    "permalink": "/robot/calibration"
+  },
+  "next": {
+    "title": "Détection de la grille",
+    "permalink": "/chess-vision/grid"
+  }
+}
