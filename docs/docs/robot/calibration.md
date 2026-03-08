@@ -10,77 +10,106 @@ La calibration permet d'aligner les coordonnées robot avec les cases de l'échi
 
 ## Procédure de calibration
 
-### 1. Mode FreeDrive
+u### 1. Déverrouillage et mise en position initiale
+
+Avant d'accéder à la calibration, un code PIN est demandé. Une fois déverrouillé, l'API exécute automatiquement un **auto-level** : la pince se verticalise et se ferme pour entrer dans les trous de calibration.
+
+```http
+POST /robot/calibrate/auto-level
+```
+
+### 2. Mode FreeDrive
 
 Le FreeDrive permet de guider le robot manuellement sans résistance.
 
 ```http
-POST /robot/freedrive
+POST /robot/calibrate/freedrive
 Content-Type: application/json
 
 {"enable": true}
 ```
 
+Le FreeDrive libère les 6 degrés de liberté en translation (X, Y, Z) tout en bloquant les rotations, ce qui maintient la pince verticale pendant le guidage manuel.
+
 :::warning
-En mode FreeDrive, les boutons de déplacement Z sont désactivés pour éviter les mouvements involontaires.
+En mode FreeDrive, les boutons de déplacement Z de l'interface sont désactivés pour éviter les conflits de commande.
 :::
 
-### 2. Calibration XY
+### 3. Calibration du point A1
 
-Le robot est guidé manuellement vers les 4 coins de l'échiquier pour définir l'origine et l'orientation.
+L'échiquier possède un **trou physique** positionné à environ 1 cm de la case A1 (coin bas-gauche). La pince doit y être insérée :
 
-Points de calibration :
-- **a1** — coin bas-gauche
-- **h1** — coin bas-droit
-- **a8** — coin haut-gauche
-- **h8** — coin haut-droit
-
-### 3. Calibration Z
-
-La hauteur Z est ajustée via les boutons `Z+` / `Z-` dans l'interface.
+1. Activer le FreeDrive
+2. Guider manuellement la pince dans le trou près de A1
+3. Cliquer **Valider position A1**
 
 ```http
-POST /robot/move-z
+POST /robot/calibrate/point
 Content-Type: application/json
 
-{"direction": "up", "step": 5}   // déplacement de 5mm vers le haut
+{"point": "a1", "freedrive_active": true}
 ```
 
-Les boutons Z sont **désactivés pendant le FreeDrive** :
+Le robot enregistre la position TCP, **remonte de 10 cm** automatiquement, et reste en FreeDrive.
 
-```tsx
-// CalibrationScreen.tsx
-<button
-  onClick={() => moveZ('up')}
-  disabled={isFreeDriveActive}
-  className={isFreeDriveActive ? 'opacity-50 cursor-not-allowed' : ''}
->
-  Z+
-</button>
-```
+### 4. Calibration du point H8
 
-### 4. Sauvegarde
+L'échiquier possède un second **trou physique** positionné à environ 1 cm de la case H8 (coin haut-droit) :
 
-Les coordonnées calibrées sont sauvegardées dans `config.py` et rechargées au prochain démarrage.
+1. Guider manuellement la pince dans le trou près de H8 (FreeDrive toujours actif)
+2. Cliquer **Calibrer** (enregistre H8 et déclenche la sauvegarde)
 
 ```http
-POST /robot/save-calibration
+POST /robot/calibrate/point
 Content-Type: application/json
 
-{
-  "board_origin": [x, y, z, rx, ry, rz],
-  "case_size": 0.055
-}
+{"point": "h8", "freedrive_active": true}
 ```
+
+Ces deux points permettent de calculer l'origine, l'orientation et l'échelle de l'échiquier par un algorithme à 2 points.
+
+### 5. Calibration de la hauteur Z (surface du plateau)
+
+Toujours en FreeDrive, la hauteur minimale du plateau est calibrée :
+
+1. Descendre manuellement la pince jusqu'à environ **1 cm au-dessus de la surface du plateau**
+2. Cliquer **Enregistrer Z**
+
+```http
+POST /robot/calibrate/point
+Content-Type: application/json
+
+{"point": "z"}
+```
+
+:::tip
+Cette hauteur est utilisée comme référence absolue. Les hauteurs par type de pièce (`HAUTEUR_PIECES` dans `config.py`) s'ajoutent ensuite à cette valeur de base.
+:::
+
+### 6. Sauvegarde
+
+La sauvegarde est déclenchée automatiquement après l'enregistrement de H8 ou manuellement via :
+
+```http
+POST /robot/calibrate/save
+```
+
+L'algorithme calcule :
+- **Origine** : centre géométrique entre A1 et H8
+- **Rotation** : angle de l'échiquier par rapport au repère robot
+- **Échelle** : taille réelle des cases à partir de la distance mesurée
+- **Hauteur Z** : surface du plateau
+
+Les résultats sont sauvegardés dans `robot_calibration.json` et rechargés au prochain démarrage. Le robot remonte de 10 cm puis retourne en position d'attente.
 
 ## Points de calibration critiques
 
 | Point | Description | Impact |
 |-------|-------------|--------|
-| `BOARD_ORIGIN` | Coin a1 de l'échiquier | Décalage de toutes les cases |
-| `CASE_SIZE` | Taille d'une case en m | Espacement entre cases |
-| `Z_APPROCHE` | Hauteur de transit | Collision avec pièces voisines |
-| `HAUTEUR_PIECES[type]` | Z de prise par type | Mauvaise prise de pièce |
+| `origin` | Centre de l'échiquier (mi-chemin A1-H8) | Décalage de toutes les cases |
+| `rotation` | Angle d'orientation de l'échiquier | Toutes les cases mal orientées |
+| `board_size` | Taille totale du plateau (calculée) | Espacement entre cases |
+| `HAUTEUR_PIECES[type]` | Offset Z par type de pièce | Mauvaise prise de pièce |
 
 ## Vérification
 
@@ -92,21 +121,15 @@ Après calibration, il est recommandé de :
 
 ## Recalibration partielle
 
-Si seule la hauteur Z a changé (ex: plateau légèrement différent), il suffit de recalibrer le Z sans refaire les XY :
-
-```http
-POST /robot/update-z
-Content-Type: application/json
-
-{"z_approach": -0.080, "z_depose": -0.150}
-```
+Si seule la hauteur Z a changé (ex: plateau légèrement décalé), relancer uniquement l'étape Z sans refaire A1 et H8. Les points A1/H8 existants dans `robot_calibration.json` sont conservés.
 
 ## Endpoints de calibration
 
 | Endpoint | Méthode | Description |
 |----------|---------|-------------|
-| `/robot/freedrive` | POST | Activer/désactiver FreeDrive |
-| `/robot/move-z` | POST | Déplacer Z d'un step |
-| `/robot/move-joint` | POST | Déplacer un joint |
-| `/robot/save-calibration` | POST | Sauvegarder la calibration |
-| `/robot/get-position` | GET | Lire la position TCP actuelle |
+| `/robot/calibrate/freedrive` | POST | Activer/désactiver FreeDrive |
+| `/robot/calibrate/auto-level` | POST | Verticaliser la pince et la fermer |
+| `/robot/calibrate/point` | POST | Enregistrer un point (a1, h8, z) |
+| `/robot/calibrate/save` | POST | Calculer la géométrie et sauvegarder |
+| `/robot/calibrate/move-z/start` | POST | Démarrer un déplacement Z continu |
+| `/robot/calibrate/move-z/stop` | POST | Stopper le déplacement Z |

@@ -65,12 +65,13 @@ Le frontend est accessible sur `http://localhost:5173`.
 
 ### Calibration (si première installation)
 
-1. Activer **FreeDrive**
-2. Guider le robot vers le coin a1 de l'échiquier
-3. Cliquer **Enregistrer a1**
-4. Répéter pour h1, a8, h8
-5. Ajuster le Z avec les boutons `Z+` / `Z-`
-6. Cliquer **Sauvegarder**
+1. Entrer le **code PIN** de calibration (la pince se verticalise automatiquement)
+2. Activer **FreeDrive**
+3. Guider la pince dans le **trou de calibration près de A1** (coin bas-gauche) → cliquer **Valider A1**
+4. Guider la pince dans le **trou de calibration près de H8** (coin haut-droit) → cliquer **Calibrer**
+5. Descendre la pince à **~1 cm au-dessus de la surface du plateau** → cliquer **Enregistrer Z**
+
+Voir le [guide de calibration complet](../guides/calibration) pour les détails.
 
 ### Lancer une partie
 

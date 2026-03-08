@@ -109,7 +109,7 @@ ROBOT_SPEED_SLOW   = 0.1   # m/s — vitesse lente (approche d'une pièce)
 ## Paramètres de connexion
 
 ```python
-ROBOT_IP = "192.168.1.100"   # adresse IP du UR5e sur le réseau local
+ROBOT_IP = "192.168.1.100"   # adresse IP du UR7e sur le réseau local
 ```
 
 ## Fichier de données leaderboard

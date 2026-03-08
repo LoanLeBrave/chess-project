@@ -36,10 +36,13 @@ http://<raspberry-pi-ip>:8000
 |---------|----------|-------------|
 | `POST` | `/robot/connect` | Connecter le robot |
 | `POST` | `/robot/disconnect` | Déconnecter le robot |
-| `POST` | `/robot/freedrive` | Activer/désactiver FreeDrive |
-| `POST` | `/robot/move-z` | Déplacer l'axe Z |
+| `POST` | `/robot/calibrate/freedrive` | Activer/désactiver FreeDrive |
+| `POST` | `/robot/calibrate/auto-level` | Verticaliser et fermer la pince |
+| `POST` | `/robot/calibrate/point` | Enregistrer un point de calibration (a1, h8, z) |
+| `POST` | `/robot/calibrate/save` | Calculer la géométrie et sauvegarder |
+| `POST` | `/robot/calibrate/move-z/start` | Démarrer déplacement Z continu |
+| `POST` | `/robot/calibrate/move-z/stop` | Stopper déplacement Z |
 | `GET` | `/robot/position` | Lire la position TCP |
-| `POST` | `/robot/save-calibration` | Sauvegarder la calibration |
 
 ### Vision
 

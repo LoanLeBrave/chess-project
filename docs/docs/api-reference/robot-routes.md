@@ -39,9 +39,9 @@ Ferme proprement la connexion RTDE.
 
 ---
 
-## `POST /robot/freedrive`
+## `POST /robot/calibrate/freedrive`
 
-Active ou désactive le mode FreeDrive (guidage manuel).
+Active ou désactive le mode FreeDrive (guidage manuel) pendant la calibration.
 
 **Corps :**
 ```json
@@ -57,27 +57,78 @@ Active ou désactive le mode FreeDrive (guidage manuel).
 ```
 
 :::warning
-En FreeDrive, les boutons de mouvement Z dans l'interface sont automatiquement désactivés.
+En FreeDrive, les boutons de mouvement Z dans l'interface sont automatiquement désactivés pour éviter les conflits de commande.
 :::
 
 ---
 
-## `POST /robot/move-z`
+## `POST /robot/calibrate/auto-level`
 
-Déplace l'axe Z d'un step (pour la calibration).
+Verticalise la pince et la ferme pour qu'elle puisse entrer dans les trous de calibration. Appelé automatiquement après la saisie du PIN.
+
+**Corps :** aucun
+
+---
+
+## `POST /robot/calibrate/point`
+
+Enregistre la position TCP actuelle comme point de calibration.
 
 **Corps :**
 ```json
 {
-  "direction": "up",
-  "step": 5
+  "point": "a1",
+  "freedrive_active": true
 }
 ```
 
 | Paramètre | Valeurs | Description |
 |-----------|---------|-------------|
-| `direction` | `"up"`, `"down"` | Sens du mouvement |
-| `step` | entier (mm) | Amplitude du mouvement |
+| `point` | `"a1"`, `"h8"`, `"z"` | Point à enregistrer |
+| `freedrive_active` | booléen | Si true, le FreeDrive est réactivé après la montée de sécurité |
+
+Après enregistrement de `a1` ou `h8`, le robot **remonte de 10 cm** automatiquement.
+
+---
+
+## `POST /robot/calibrate/save`
+
+Calcule la géométrie de l'échiquier à partir des points A1, H8 et Z enregistrés, puis sauvegarde dans `robot_calibration.json`.
+
+**Corps :** aucun
+
+**Réponse :**
+```json
+{
+  "status": "ok",
+  "message": "Calibration sauvegardée (rotation=X.XXdeg)",
+  "origin": [-0.0416, 0.4695, 0.1454],
+  "rotation": 3.1652,
+  "board_size": 0.2686
+}
+```
+
+---
+
+## `POST /robot/calibrate/move-z/start`
+
+Démarre un déplacement Z continu (maintenir le bouton appuyé dans l'interface).
+
+**Corps :**
+```json
+{
+  "direction": "down",
+  "velocity": 0.01
+}
+```
+
+---
+
+## `POST /robot/calibrate/move-z/stop`
+
+Stoppe le déplacement Z en cours.
+
+**Corps :** aucun
 
 ---
 
@@ -94,30 +145,6 @@ Lit la position TCP actuelle du robot.
   "rx": 3.14,
   "ry": 0.0,
   "rz": 0.0
-}
-```
-
----
-
-## `POST /robot/save-calibration`
-
-Sauvegarde les paramètres de calibration.
-
-**Corps :**
-```json
-{
-  "board_origin": [0.412, -0.231, -0.089, 3.14, 0.0, 0.0],
-  "case_size": 0.055,
-  "z_approach": -0.080,
-  "z_depose": -0.150
-}
-```
-
-**Réponse :**
-```json
-{
-  "status": "ok",
-  "message": "Calibration sauvegardée"
 }
 ```
 
