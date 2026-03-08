@@ -6,46 +6,77 @@ sidebar_position: 2
 
 # Détection de la grille
 
-La grille 10×10 est détectée à partir des marqueurs ArUco placés aux coins de l'échiquier.
+La grille 10×10 est définie par une calibration manuelle : l'utilisateur clique sur les quatre coins du plateau depuis l'interface de calibration. Ces coordonnées sont ensuite utilisées pour calculer une transformation de perspective appliquée à chaque frame de la caméra.
 
-## Marqueurs de coin
+## Calibration manuelle des coins
 
-Quatre marqueurs ArUco spéciaux (IDs 40-43 par convention) sont placés aux coins de l'échiquier physique :
+### Processus
+
+1. **Capture d'une photo** — l'utilisateur déclenche `POST /camera/capture` depuis l'écran de calibration, qui retourne l'image en base64.
+2. **Clic sur les 4 coins** — l'utilisateur clique sur le canvas dans l'ordre suivant :
 
 ```
-ID=40  ID=41
-   ┌─────────┐
-   │         │
-   │         │
-   └─────────┘
-ID=43  ID=42
+TL (A8)    TR (H8)
+   ┌─────────────┐
+   │             │
+   │   échiquier │
+   │             │
+   └─────────────┘
+BL (A1)    BR (H1)
 ```
 
-Ces marqueurs permettent de calculer la transformation de perspective.
+3. **Aperçu temps réel** — dès que les 4 coins sont placés, le frontend superpose la grille 10×10 sur l'image via interpolation bilinéaire.
+4. **Sauvegarde** — `POST /camera/calibrate/save` envoie les coordonnées au backend.
+
+### Coordonnées transmises
+
+```json
+{
+  "corners": {
+    "TL": { "x": 312, "y": 148 },
+    "TR": { "x": 987, "y": 152 },
+    "BR": { "x": 991, "y": 831 },
+    "BL": { "x": 308, "y": 827 }
+  },
+  "source_image": "/tmp/capture_xxx.jpg"
+}
+```
+
+Les coordonnées sont en pixels dans l'image originale (avant mise à l'échelle d'affichage).
 
 ## Transformation perspective
 
+À partir des 4 coins cliqués, le backend calcule une matrice d'homographie qui redresse le plateau en une image carrée de 1000×1000 px :
+
 ```python
-# Coordonnées des marqueurs de coin dans l'image
+size = EXTRACTED_BOARD_SIZE   # 1000 px
+inner = size // GRID_SIZE     # 100 px (1 cellule = 100 px)
+
 src_points = np.float32([
-    corner_tl,   # coin haut-gauche (a8)
-    corner_tr,   # coin haut-droit (h8)
-    corner_br,   # coin bas-droit (h1)
-    corner_bl,   # coin bas-gauche (a1)
+    [TL.x, TL.y],  # coin haut-gauche (a8)
+    [TR.x, TR.y],  # coin haut-droit  (h8)
+    [BR.x, BR.y],  # coin bas-droit   (h1)
+    [BL.x, BL.y],  # coin bas-gauche  (a1)
 ])
 
-# Coordonnées normalisées de destination
+# L'échiquier 8×8 occupe les cellules 1-8 de la grille 10×10.
+# La cellule 0 et la cellule 9 forment la bordure cimetière.
 dst_points = np.float32([
-    [0, 0],
-    [GRID_SIZE, 0],
-    [GRID_SIZE, GRID_SIZE],
-    [0, GRID_SIZE],
+    [inner,            inner           ],   # → A8
+    [size - 1 - inner, inner           ],   # → H8
+    [size - 1 - inner, size - 1 - inner],   # → H1
+    [inner,            size - 1 - inner],   # → A1
 ])
 
 M = cv2.getPerspectiveTransform(src_points, dst_points)
+board_img = cv2.warpPerspective(image, M, (size, size))
 ```
 
-Une fois la matrice `M` calculée, chaque marqueur de pièce peut être localisé sur la grille normalisée.
+La matrice `M` est calculée une seule fois lors de la calibration et réutilisée pour toutes les frames suivantes.
+
+### Persistance
+
+Les coins sont sauvegardés dans `board_calibration.json` et rechargés au démarrage du backend via `FIXED_BOARD_CORNERS = load_board_corners()`. Après une nouvelle calibration, le pipeline de vision est réinitialisé automatiquement.
 
 ## Mapping grille → case
 
@@ -69,10 +100,6 @@ def grid_pos_to_square(col: int, row: int) -> str:
 
 ## Tolérance et robustesse
 
-### Marqueurs partiellement visibles
-
-Si un marqueur est partiellement hors-champ ou obscurci, le pipeline peut quand même fonctionner avec 3 coins sur 4 en utilisant une homographie partielle.
-
 ### Stabilisation temporelle
 
 L'état de la grille est moyenné sur plusieurs frames pour réduire le bruit :
@@ -88,7 +115,7 @@ if all(frame[square] == new_state for frame in recent_frames[-STABILITY_FRAMES:]
 
 ## Contraste et éclairage
 
-La détection ArUco est sensible aux conditions d'éclairage. Paramètres recommandés :
+La détection ArUco des pièces est sensible aux conditions d'éclairage. Paramètres recommandés :
 
 ```python
 # chess_vision/config.py
@@ -110,8 +137,7 @@ GET /vision/debug-frame
 ```
 
 Retourne une image JPEG avec :
-- Les marqueurs ArUco encadrés
-- La grille 10×10 superposée
+- La grille 10×10 superposée sur le plateau redressé
 - Les IDs des pièces détectées sur chaque case
 
 ```http

@@ -43,7 +43,7 @@ const sidebars: SidebarsConfig = {
     },
     {
       type: 'category',
-      label: 'Robot UR5e',
+      label: 'Robot UR7e',
       collapsed: true,
       items: [
         'robot/movements',

@@ -82,11 +82,12 @@ ID_TO_PIECE = {
 
 ## Localisation sur la grille
 
-Après détection, les centres des marqueurs sont mappés sur la grille 10×10 :
+Après détection, les centres des marqueurs sont mappés sur la grille 10×10 via la matrice de perspective calculée lors de la calibration manuelle (voir [Détection de la grille](./grid.md)) :
 
 ```python
 def marker_to_square(cx, cy, grid_corners):
-    # Transformation perspective depuis les 4 coins de l'échiquier
+    # grid_corners = coins cliqués manuellement lors de la calibration
+    # (stockés dans board_calibration.json, chargés dans FIXED_BOARD_CORNERS)
     M = cv2.getPerspectiveTransform(grid_corners, normalized_corners)
     col, row = apply_transform(M, cx, cy)
     return grid_to_square_name(col, row)

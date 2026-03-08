@@ -4,9 +4,9 @@ title: Introduction
 sidebar_position: 1
 ---
 
-# Chess Robot — Documentation
-
-Bienvenue dans la documentation du **Chess Robot**, un projet intégrant un bras robotique UR7e capable de jouer aux échecs de manière autonome contre un joueur humain.
+# Documentation du projet Chess Robot
+Bienvenue dans la documentation du **Chess Robot**, un projet intégrant un bras robotique UR7e capable de jouer aux échecs de manière autonome contre un joueur humain. 
+Avant de vous plonger dans les détails techniques du projet, nous vous invitons à parcourir la fiche des **concepts clés** pour comprendre les notions de base qui y sont abordées : **[Concepts clés](/concepts)**.
 
 ## Présentation du projet
 
@@ -54,6 +54,7 @@ Consultez le [guide de démarrage rapide](/guides/quickstart) pour lancer le sys
 
 ## Navigation
 
+- **[Concepts clés](/concepts)** — Stockfish, niveaux de difficulté, ACPL, ArUco... les notions importantes expliquées simplement
 - **[Architecture](/architecture/overview)** — Vue d'ensemble des composants et de leurs interactions
 - **[Modules principaux](/core/chess-manager)** — Documentation détaillée de chaque module Python
 - **[Fonctionnalités](/features/game-flow)** — Flux de jeu, pause/reprise, roque, promotion...

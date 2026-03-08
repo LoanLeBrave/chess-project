@@ -32,7 +32,7 @@ Définit les structures de données :
 
 ### `robot_controller.py`
 Gère le contrôle physique du robot :
-- Connexion RTDE au robot UR5e
+- Connexion RTDE au robot UR7e
 - Contrôle du gripper Robotiq
 - Mouvements de prise/pose de pièces
 - Gestion des zones d'élimination

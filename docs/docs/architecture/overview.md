@@ -35,7 +35,7 @@ L'interface utilisateur React communique avec le backend via :
 
 ### 4. Couche matérielle
 
-- **UR5e** via RTDE (`rtde_control`, `rtde_receive`) — commandes de mouvement
+- **UR7e** via RTDE (`rtde_control`, `rtde_receive`) — commandes de mouvement
 - **Robotiq gripper** — prise/release des pièces
 - **Caméra Raspberry Pi** — capture vidéo continue
 

@@ -19,15 +19,17 @@ La calibration est une étape critique pour que le robot dépose les pièces pr�
 
 - Interface web ChessRobot ouverte
 - Accès physique au robot
-- Une pièce test (idéalement un pion)
+- L'échiquier physique avec ses **deux trous de calibration** (près de A1 et H8)
 
 ## Étape 1 : Connexion
 
 1. Ouvrir l'interface → **Calibration**
 2. Cliquer **Connecter le robot**
 3. Le statut passe à "Connecté ✓"
+4. Entrer le **code PIN** de calibration
+5. La pince se verticalise et se ferme automatiquement (prête à entrer dans les trous)
 
-## Étape 2 : Calibration XY (origine de l'échiquier)
+## Étape 2 : Calibration du point A1
 
 ### Activer FreeDrive
 
@@ -35,70 +37,67 @@ La calibration est une étape critique pour que le robot dépose les pièces pr�
 [Activer FreeDrive]
 ```
 
-Le robot peut maintenant être guidé à la main.
+Le robot peut maintenant être guidé à la main. Les rotations restent bloquées : la pince reste verticale.
 
-### Positionner sur a1
+### Positionner sur le trou A1
 
-1. Guider le bras jusqu'au **centre de la case a1** (coin bas-gauche)
-2. La pince doit être au-dessus de la case, orientée vers le bas
-3. Cliquer **Enregistrer position a1**
+1. Guider le bras jusqu'au **trou de calibration situé près de la case A1** (coin bas-gauche de l'échiquier)
+2. Insérer la pince dans le trou — elle doit s'y loger sans forcer
+3. Cliquer **Valider position A1**
 
-### Optionnel : vérifier h8
-
-Pour s'assurer que l'orientation est correcte :
-1. Guider jusqu'au centre de **h8** (coin haut-droit)
-2. Vérifier que le système calcule correctement
+Le robot enregistre la position, **remonte automatiquement de 10 cm**, et reste en FreeDrive.
 
 :::tip
-Si le robot va dans la mauvaise direction lors d'un déplacement, l'axe X ou Y est inversé dans `config.py`. Modifier le signe du vecteur BOARD_ORIGIN.
+L'échiquier possède deux trous physiques usinés dans le plateau, l'un près de A1 et l'autre près de H8. Ce sont ces trous — et non le centre des cases — qui servent de références de calibration.
 :::
 
-### Désactiver FreeDrive
+## Étape 3 : Calibration du point H8
 
-```
-[Désactiver FreeDrive]
-```
+Sans désactiver le FreeDrive :
 
-## Étape 3 : Calibration Z
+1. Guider le bras jusqu'au **trou de calibration situé près de la case H8** (coin haut-droit de l'échiquier)
+2. Insérer la pince dans le trou
+3. Cliquer **Calibrer**
 
-La hauteur Z doit être ajustée pour que la pince saisisse les pièces correctement.
+Le système enregistre les deux points A1 et H8 et calcule automatiquement :
+- L'**origine** de l'échiquier (centre géométrique)
+- L'**orientation** (angle du plateau par rapport au robot)
+- L'**échelle** (taille réelle des cases)
 
-### Procédure
+## Étape 4 : Calibration de la hauteur du plateau (Z)
 
-1. Placer un **pion** sur la case a1
-2. Utiliser **Z-** pour descendre le robot jusqu'à la pince
-3. Arrêter quand la pince est à **5mm au-dessus** de la tête du pion
-4. Cliquer **Enregistrer Z**
+Toujours en FreeDrive, calibrer la hauteur minimale :
+
+1. Descendre manuellement la pince jusqu'à environ **1 cm au-dessus de la surface du plateau**
+2. Cliquer **Enregistrer Z**
 
 :::warning
-Les boutons Z sont désactivés quand FreeDrive est actif. Désactivez d'abord FreeDrive.
+Ne pas poser la pince directement sur le plateau. Une position à ~1 cm de la surface suffit comme référence de hauteur minimale.
 :::
+
+La calibration est alors sauvegardée. Le robot remonte automatiquement et retourne en position d'attente.
 
 ### Hauteurs par pièce
 
-Si vous avez des pièces de tailles différentes, ajustez les hauteurs dans `config.py` :
+La hauteur Z calibrée est la hauteur de référence du plateau. Les hauteurs de prise sont ensuite ajustées par type de pièce dans `config.py` :
 
 ```python
 HAUTEUR_PIECES = {
-    chess.PAWN:   -0.150,  # ajuster selon vos pièces
-    chess.ROOK:   -0.145,
-    chess.KNIGHT: -0.148,
-    chess.BISHOP: -0.148,
-    chess.QUEEN:  -0.140,
-    chess.KING:   -0.140,
+    chess.PAWN:   0.005,   # +5mm au-dessus du plateau
+    chess.ROOK:   0.008,   # +8mm
+    chess.KNIGHT: 0.010,   # +10mm
+    chess.BISHOP: 0.012,   # +12mm
+    chess.QUEEN:  0.015,   # +15mm
+    chess.KING:   0.018,   # +18mm
 }
 ```
 
-## Étape 4 : Test de calibration
+## Étape 5 : Test de calibration
 
 ### Test simple
 
 1. Placer un pion en **e4**
-2. Dans le terminal backend :
-```python
-await robot._prendre_piece("e4")
-await robot._poser_piece("e5")
-```
+2. Lancer un déplacement e4 → e5 via l'interface
 3. Vérifier que le pion est bien en e5
 
 ### Test complet
@@ -108,42 +107,28 @@ Lancer une partie courte et observer :
 - La pièce ne tombe-t-elle pas à côté ?
 - Les captures fonctionnent-elles ?
 
-## Étape 5 : Sauvegarder
-
-```
-[Sauvegarder la calibration]
-```
-
-La calibration est écrite dans `config.py` et sera rechargée au prochain démarrage.
-
 ## Problèmes courants
 
 ### Décalage constant dans une direction
 
 Le robot rate toutes les cases avec un décalage fixe (ex: 5mm à gauche).
 
-**Solution :** Ajuster `BOARD_ORIGIN` dans `config.py` :
-```python
-BOARD_ORIGIN[0] += 0.005  # +5mm en X
-```
+**Solution :** Refaire la calibration A1 et H8. Si le problème persiste, vérifier que les trous de calibration sont bien propres et que la pince s'insère correctement.
 
 ### Cases au bord rateées, centre OK
 
-Le `CASE_SIZE` est légèrement incorrect.
+L'échelle calculée est légèrement incorrecte — la distance mesurée entre les deux trous ne correspond pas à la distance théorique.
 
-**Solution :** Mesurer physiquement la taille d'une case et mettre à jour :
-```python
-CASE_SIZE = 0.057  # au lieu de 0.055
-```
+**Solution :** Vérifier que la pince est bien centrée dans chaque trou lors de la calibration, puis recalibrer.
 
 ### Pince ne saisit pas la pièce
 
-La hauteur Z est trop haute.
+La hauteur Z de référence est trop haute, ou l'offset de la pièce dans `HAUTEUR_PIECES` est trop grand.
 
-**Solution :** Descendre Z de quelques mm dans les `HAUTEUR_PIECES`.
+**Solution :** Recalibrer le Z en descendant légèrement plus bas, ou réduire la valeur dans `HAUTEUR_PIECES` pour ce type de pièce.
 
 ### Pièce renversée lors de la prise
 
 La hauteur Z est trop basse, la pince pousse la pièce.
 
-**Solution :** Monter Z de 2-3mm.
+**Solution :** Augmenter la valeur dans `HAUTEUR_PIECES` pour ce type de pièce de 2-3mm.
