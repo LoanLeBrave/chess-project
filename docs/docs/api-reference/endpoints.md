@@ -14,6 +14,21 @@ Le backend expose une API REST sur le port **8000** et un WebSocket sur `/ws`.
 http://<raspberry-pi-ip>:8000
 ```
 
+## Documentation Interactive (Swagger & OpenAPI)
+
+L'API utilise **FastAPI**, ce qui permet de générer automatiquement une documentation interactive et testable. C'est l'outil idéal pour explorer tous les points d'entrée (endpoints) disponibles, voir les schémas de données requis (JSON) et tester les requêtes en direct sans passer par le frontend.
+
+Deux interfaces sont disponibles :
+
+- **Swagger UI** : `http://<raspberry-pi-ip>:8000/docs`
+  - Permet de tester les endpoints directement ("Try it out").
+  - Affiche les exemples de requêtes et les modèles Pydantic.
+  - Regroupe les endpoints par catégorie (Game, Robot, Vision, etc.).
+- **ReDoc** : `http://<raspberry-pi-ip>:8000/redoc`
+  - Documentation plus épurée et orientée lecture seule.
+
+Le schéma complet au format OpenAPI est disponible sur `http://<raspberry-pi-ip>:8000/openapi.json`.
+
 ## Endpoints par catégorie
 
 ### Jeu
