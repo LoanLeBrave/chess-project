@@ -159,12 +159,17 @@ export function ChessBoard({
 
   const handleSquareClick = async (square: string) => {
     if (isGameOver) return;
-    if (!isCorrectionMode && (robotStatus !== 'idle' || !isWhiteTurn)) return;
+
+    const canMove = isCorrectionMode
+      ? !isGameOver
+      : (robotStatus === 'idle' && isWhiteTurn);
+
+    const canSelect = isCorrectionMode || isWhiteTurn;
 
     const piece = board[square];
 
     if (selectedSquare === null) {
-      if (piece && ['K', 'Q', 'R', 'B', 'N', 'P'].includes(piece)) {
+      if (canSelect && piece && ['K', 'Q', 'R', 'B', 'N', 'P'].includes(piece)) {
         setSelectedSquare(square);
         if (showHelpOnClick) {
           const moves = await getLegalMoves(square);
@@ -195,7 +200,7 @@ export function ChessBoard({
         }
         setSelectedSquare(null);
         setLegalMoves([]);
-      } else if (piece && ['K', 'Q', 'R', 'B', 'N', 'P'].includes(piece)) {
+      } else if (canSelect && piece && ['K', 'Q', 'R', 'B', 'N', 'P'].includes(piece)) {
         setSelectedSquare(square);
         if (showHelpOnClick) {
           const moves = await getLegalMoves(square);
@@ -344,8 +349,21 @@ export function ChessBoard({
                 >
                   {isLegal && showHelpOnClick && (
                     piece
-                      ? <div className="absolute inset-1 rounded-full border-[4px] border-black/40 pointer-events-none" />
-                      : <div className="absolute w-[28%] h-[28%] bg-black/30 rounded-full pointer-events-none" />
+                      ? <div style={{
+                          position: 'absolute', inset: 4, borderRadius: '50%',
+                          border: '5px solid rgba(0,0,0,0.6)',
+                          pointerEvents: 'none', zIndex: 10,
+                        }} />
+                      : <div style={{
+                          position: 'absolute', inset: 0,
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          pointerEvents: 'none', zIndex: 10,
+                        }}>
+                          <div style={{
+                            width: '36%', height: '36%', borderRadius: '50%',
+                            backgroundColor: 'rgba(0,0,0,0.5)',
+                          }} />
+                        </div>
                   )}
                   {isBestT && !piece && (
                     <div className="absolute inset-0 flex items-center justify-center pointer-events-none">

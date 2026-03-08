@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { motion } from 'motion/react';
 import { Star, Send, Home, MessageSquare } from 'lucide-react';
+import { AlphabeticKeypad } from './AlphabeticKeypad';
 
 interface FeedbackScreenProps {
   onReturnToMenu: () => void;
@@ -21,6 +22,25 @@ export function FeedbackScreen({
   const [hoveredRating, setHoveredRating] = useState(0);
   const [comment, setComment] = useState('');
   const [submitted, setSubmitted] = useState(false);
+
+  // Handle keypad key press
+  const handleKeyPress = (value: string) => {
+    if (comment.length < 500) {
+      setComment(prev => prev + value);
+    }
+  };
+
+  // Handle backspace from keypad
+  const handleBackspace = () => {
+    setComment(prev => prev.slice(0, -1));
+  };
+
+  // Handle space from keypad
+  const handleSpace = () => {
+    if (comment.length < 500) {
+      setComment(prev => prev + ' ');
+    }
+  };
 
   const handleSubmit = async () => {
     // Envoi du feedback à l'API
@@ -226,6 +246,15 @@ export function FeedbackScreen({
           />
           <div className="text-right text-slate-500 text-sm mt-2">
             {comment.length}/500
+          </div>
+          
+          {/* Alphabetic Keypad */}
+          <div className="mt-4 flex justify-center">
+            <AlphabeticKeypad
+              onKeyPress={handleKeyPress}
+              onBackspace={handleBackspace}
+              onSpace={handleSpace}
+            />
           </div>
         </div>
 

@@ -1599,10 +1599,13 @@ async def get_game_history():
 
 # --- LEADERBOARD ---
 @app.get("/leaderboard", tags=["Leaderboard"])
-async def get_leaderboard(limit: Optional[int] = None): return manager.leaderboard.get_leaderboard(limit=limit)
+async def get_leaderboard(limit: Optional[int] = None):
+    """Retourne le classement agrégé par joueur"""
+    return {"leaderboard": manager.leaderboard.get_leaderboard(limit=limit)}
 
 @app.post("/leaderboard/add-game", tags=["Leaderboard"])
 async def add_game_to_leaderboard(data: LeaderboardAddRequest):
+    """Enregistre une nouvelle partie"""
     return {"success": manager.leaderboard.add_game(**data.model_dump())}
 
 # --- FEEDBACK ---

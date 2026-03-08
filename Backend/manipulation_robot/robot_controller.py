@@ -21,7 +21,7 @@ from robotiq_gripper_control import RobotiqGripper
 
 from config import (
     ROBOT_IP, VITESSE, ACCELERATION,
-    GRIPPER_OUVERTURE,
+    GRIPPER_OUVERTURE, GRIPPER_OUVERTURE_CHEVALIER,
     DELTA_TRANSIT, DELTA_RELACHE_BASE,
     FICHIER_CALIBRATION, FICHIER_POSITION_DEPART,
     PIECE_TYPE_MAP, HAUTEUR_PIECES,
@@ -514,7 +514,7 @@ class RobotController:
 
     async def execute_move(self, from_sq: str, to_sq: str, is_capture: bool, captured_piece=None,
                            precise_pick_coords=None, castling_rook: Optional[Tuple[str, str]] = None,
-                           capture_sq: Optional[str] = None):
+                           capture_sq: Optional[str] = None, moving_piece_type=None):
         """
         Exécute un mouvement complet sur le robot.
         Retourne True si succès, False si interrompu par pause.
@@ -531,6 +531,11 @@ class RobotController:
             return False
 
         try:
+            # Mettre à jour le type de pièce courante AVANT tout mouvement
+            # (nécessaire pour l'ouverture du gripper et le calcul de hauteur Z)
+            if moving_piece_type is not None:
+                self.piece_courante = moving_piece_type
+
             # Position de depart : coords precises camera si dispo, sinon centre geometrique
             if precise_pick_coords:
                 cx1, cy1 = precise_pick_coords
@@ -631,9 +636,10 @@ class RobotController:
             if not await self._move_tcp(p_above):
                 return False
 
-            # 3. Ouvrir le gripper
+            # 3. Ouvrir le gripper (ouverture élargie pour le chevalier)
             if self.connected:
-                self.gripper.move(GRIPPER_OUVERTURE)
+                ouverture = GRIPPER_OUVERTURE_CHEVALIER if self.piece_courante == chess.KNIGHT else GRIPPER_OUVERTURE
+                self.gripper.move(ouverture)
             if not await self._wait_with_pause_check(0.05):
                 return False
 
@@ -724,9 +730,10 @@ class RobotController:
         if not await self._move_tcp(p_above_pick):
             return False
 
-        # 3. Ouvrir le gripper
+        # 3. Ouvrir le gripper (ouverture élargie pour le chevalier)
         if self.connected:
-            self.gripper.move(GRIPPER_OUVERTURE)
+            ouverture = GRIPPER_OUVERTURE_CHEVALIER if self.piece_courante == chess.KNIGHT else GRIPPER_OUVERTURE
+            self.gripper.move(ouverture)
         if not await self._wait_with_pause_check(0.05):
             return False
 

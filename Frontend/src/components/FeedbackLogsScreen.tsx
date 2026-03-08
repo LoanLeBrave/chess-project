@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Lock, Unlock, Star, Trash2, Download, RefreshCw, ArrowLeft, UserCircle, Calendar, Clock, MessageSquare } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { NumericKeypad } from './NumericKeypad';
 
 interface FeedbackLogsScreenProps {
   onBack: () => void;
@@ -130,6 +131,25 @@ export function FeedbackLogsScreen({ onBack }: FeedbackLogsScreenProps) {
     if (e.key === 'Backspace' && !pin[index] && index > 0) {
       const prevInput = document.getElementById(`feedback-pin-${index - 1}`);
       prevInput?.focus();
+    }
+  };
+
+  // Handle keypad press
+  const handleKeypadPress = (value: string) => {
+    // Find first empty position
+    const emptyIndex = pin.findIndex(d => d === '');
+    if (emptyIndex !== -1) {
+      handlePinChange(emptyIndex, value);
+    }
+  };
+
+  // Handle backspace from keypad
+  const handleKeypadBackspace = () => {
+    // Find last filled position
+    const lastFilledIndex = [...pin].reverse().findIndex(d => d !== '');
+    if (lastFilledIndex !== -1) {
+      const actualIndex = pin.length - 1 - lastFilledIndex;
+      handlePinChange(actualIndex, '');
     }
   };
 
@@ -436,6 +456,19 @@ export function FeedbackLogsScreen({ onBack }: FeedbackLogsScreenProps) {
                   {error}
                 </motion.p>
               )}
+
+              {/* Numeric Keypad */}
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.4, duration: 0.4 }}
+                className="mt-6"
+              >
+                <NumericKeypad
+                  onKeyPress={handleKeypadPress}
+                  onBackspace={handleKeypadBackspace}
+                />
+              </motion.div>
             </motion.div>
           </motion.div>
         )}
