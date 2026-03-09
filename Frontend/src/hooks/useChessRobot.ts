@@ -85,6 +85,7 @@ export interface UseChessRobotReturn {
   demoMovesPerCycle: number;
   startDemo: (movesPerCycle?: number, delayBetweenMoves?: number) => Promise<boolean>;
   stopDemo: () => Promise<boolean>;
+  gotoTurn: (turn: number) => Promise<boolean>;
 }
 
 const API_BASE = `${window.location.protocol}//${window.location.hostname}:8000`;
@@ -126,7 +127,8 @@ function fenToBoard(fen: string): { [key: string]: string } {
  */
 export function useChessRobot(
   addLog: (type: 'info' | 'warning' | 'error' | 'robot' | 'player', message: string) => void,
-  onMoveComplete: (move: { from: string; to: string; piece: string; player: 'human' | 'robot' }) => void
+  onMoveComplete: (move: { from: string; to: string; piece: string; player: 'human' | 'robot' }) => void,
+  onGotoTurnComplete?: (turn: number, fen: string) => void
 ): UseChessRobotReturn {
   const [fen, setFen] = useState(INITIAL_FEN);
   const fenRef = useRef(INITIAL_FEN);
@@ -157,6 +159,7 @@ export function useChessRobot(
   const wsRef = useRef<WebSocket | null>(null);
   const addLogRef = useRef(addLog);
   const onMoveCompleteRef = useRef(onMoveComplete);
+  const onGotoTurnCompleteRef = useRef(onGotoTurnComplete);
   const isDemoModeRef = useRef(false);
 
   // Mettre à jour les refs quand les callbacks changent
@@ -167,6 +170,10 @@ export function useChessRobot(
   useEffect(() => {
     onMoveCompleteRef.current = onMoveComplete;
   }, [onMoveComplete]);
+
+  useEffect(() => {
+    onGotoTurnCompleteRef.current = onGotoTurnComplete;
+  }, [onGotoTurnComplete]);
 
   // --- WebSocket ---
   useEffect(() => {
@@ -303,6 +310,18 @@ export function useChessRobot(
           if (msg.type === 'move_undone') {
             setFen(msg.fen);
             setIsWhiteTurn(msg.fen.split(' ')[1] === 'w');
+          }
+
+          if (msg.type === 'goto_turn_complete') {
+            setFen(msg.fen);
+            setIsWhiteTurn(msg.fen.split(' ')[1] === 'w');
+            setIsGameOver(false);
+            setGameResult(null);
+            setRobotStatus('idle');
+            setIsReplacingBoard(false);
+            if (onGotoTurnCompleteRef.current) {
+              onGotoTurnCompleteRef.current(msg.turn, msg.fen);
+            }
           }
 
           if (msg.type === 'promotion_required') {
@@ -692,6 +711,26 @@ export function useChessRobot(
     }
   }, []);
 
+  // --- Goto turn (retour arrière physique à un tour donné) ---
+  const gotoTurn = useCallback(async (turn: number): Promise<boolean> => {
+    try {
+      addLogRef.current('info', `Retour au tour ${turn} en cours...`);
+      const res = await fetch(`${API_BASE}/game/goto-turn`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ turn }),
+      });
+      const data = await res.json();
+      if (!data.success) {
+        addLogRef.current('error', data.error || 'Échec du retour arrière');
+      }
+      return data.success;
+    } catch {
+      addLogRef.current('error', 'Erreur connexion API pour retour arrière');
+      return false;
+    }
+  }, []);
+
   // --- Enter correction mode (undo + enable correction UI) ---
   const enterCorrectionMode = useCallback(async (): Promise<number> => {
     const count = await undoLastMove();
@@ -767,5 +806,6 @@ export function useChessRobot(
     demoMovesPerCycle,
     startDemo,
     stopDemo,
+    gotoTurn,
   };
 }

@@ -901,6 +901,72 @@ class RobotController:
             await self.log("error", f"Erreur lors du reset: {e}")
             return {"success": False, "message": str(e)}
 
+    async def execute_goto_turn(self, undo_steps: list) -> dict:
+        """
+        Exécute physiquement la séquence de retour arrière.
+        Chaque étape annule un coup en ordre inverse (du plus récent au plus ancien).
+        """
+        if not self.connected:
+            return {"success": True, "message": "Mode simulation"}
+
+        try:
+            for step in reversed(undo_steps):
+                if self.is_paused:
+                    return {"success": False, "message": "Interrompu par pause"}
+
+                from_sq         = step["from_sq"]
+                to_sq           = step["to_sq"]
+                piece_type      = step["piece_type"]
+                rook_from       = step["rook_from"]
+                rook_to         = step["rook_to"]
+                was_capture     = step["was_capture"]
+                elim_record     = step["captured_elim_record"]
+                ep_capture_sq   = step["ep_capture_sq"]
+
+                # 1. Remettre la pièce de to_sq → from_sq
+                self.piece_courante = piece_type
+                cx_to, cy_to = self.get_square_center(to_sq)
+                p_to = self.cam_to_robot(cx_to, cy_to, use_piece_height=True)
+                cx_from, cy_from = self.get_square_center(from_sq)
+                p_from = self.cam_to_robot(cx_from, cy_from, use_piece_height=True)
+
+                await self.log("robot", f"Undo: {to_sq} → {from_sq}")
+                success = await self._sequence_pick_and_place(p_to, p_from)
+                if not success:
+                    return {"success": False, "message": "Interrompu"}
+
+                # 2. Restaurer la pièce capturée depuis le cimetière
+                if was_capture and elim_record:
+                    restore_sq = ep_capture_sq if ep_capture_sq else to_sq
+                    self.piece_courante = PIECE_TYPE_MAP.get(elim_record.piece_symbol.upper(), chess.PAWN)
+                    cx_cem, cy_cem = self.get_square_center(elim_record.case_cimetiere)
+                    p_cem = self.cam_to_robot(cx_cem, cy_cem, use_piece_height=True)
+                    cx_r, cy_r = self.get_square_center(restore_sq)
+                    p_restore = self.cam_to_robot(cx_r, cy_r, use_piece_height=True)
+                    await self.log("robot", f"Undo: restaure {elim_record.piece_symbol} {elim_record.case_cimetiere} → {restore_sq}")
+                    success = await self._sequence_pick_and_place(p_cem, p_restore)
+                    if not success:
+                        return {"success": False, "message": "Interrompu"}
+
+                # 3. Remettre la tour en place si c'était un roque
+                if rook_from and rook_to:
+                    self.piece_courante = chess.ROOK
+                    cx_rf, cy_rf = self.get_square_center(rook_from)
+                    p_rf = self.cam_to_robot(cx_rf, cy_rf, use_piece_height=True)
+                    cx_rt, cy_rt = self.get_square_center(rook_to)
+                    p_rt = self.cam_to_robot(cx_rt, cy_rt, use_piece_height=True)
+                    await self.log("robot", f"Undo roque: tour {rook_from} → {rook_to}")
+                    success = await self._sequence_pick_and_place(p_rf, p_rt)
+                    if not success:
+                        return {"success": False, "message": "Interrompu"}
+
+            await self.log("info", "✓ Séquence de retour arrière terminée")
+            return {"success": True}
+
+        except Exception as e:
+            await self.log("error", f"Erreur execute_goto_turn: {e}")
+            return {"success": False, "message": str(e)}
+
     def get_pieces_eliminees(self):
         """Retourne la liste des pièces éliminées"""
         return {

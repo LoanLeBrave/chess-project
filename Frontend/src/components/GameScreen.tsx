@@ -115,7 +115,11 @@ export function GameScreen({ difficulty, gameState, setGameState, onReturnToMenu
     demoMovesPerCycle,
     startDemo,
     stopDemo,
-  } = useChessRobot(addLog, addMove);
+    gotoTurn,
+  } = useChessRobot(addLog, addMove, (turn: number) => {
+    // Tronquer l'historique des coups au nombre de demi-coups joués
+    setMoves(prev => prev.slice(0, turn));
+  });
 
   // Initialiser la partie via l'API au montage
   useEffect(() => {
@@ -595,7 +599,11 @@ export function GameScreen({ difficulty, gameState, setGameState, onReturnToMenu
           <div className="flex flex-col gap-3 min-h-0">
             <RobotStatus status={robotStatus} />
             <div className="flex-1 min-h-0">
-              <MoveHistory moves={moves} />
+              <MoveHistory
+                moves={moves}
+                onGotoTurn={!isGameOver ? gotoTurn : undefined}
+                isRobotBusy={robotStatus === 'moving' || robotStatus === 'thinking' || isReplacingBoard}
+              />
             </div>
           </div>
         </div>
