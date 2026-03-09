@@ -55,6 +55,9 @@ export function CalibrationScreen({ onCalibrationComplete, onSkipCalibration, ha
   const imageRef = useRef<HTMLImageElement | null>(null);
   const magCanvasRef = useRef<HTMLCanvasElement>(null);
   const [magnifier, setMagnifier] = useState<{ visible: boolean; x: number; y: number }>({ visible: false, x: 0, y: 0 });
+  // Compteur de génération : chaque appel à handleCapture incrémente ce compteur.
+  // La boucle de retry vérifie qu'elle est toujours la génération courante avant de continuer.
+  const captureGenRef = useRef(0);
 
   // Board calibration state
   const [calibrationStep, setCalibrationStep] = useState<'a1' | 'h8' | 'z'>('a1');
@@ -246,36 +249,58 @@ export function CalibrationScreen({ onCalibrationComplete, onSkipCalibration, ha
   };
 
   const handleCapture = async () => {
+    captureGenRef.current += 1;
+    const myGen = captureGenRef.current;
+
     setCapturing(true);
     setCameraError('');
     setCorners([]);
-    try {
-      const resp = await fetch(`${API_BASE}/camera/capture`, { method: 'POST' });
-      const data = await resp.json();
-      if (!data.success) throw new Error(data.error || 'Echec capture');
 
-      setImageBase64(data.image_base64);
-      setImagePath(data.image_path);
-      setImageSize({ width: data.width, height: data.height });
+    const RETRY_DELAY_MS = 700;
 
-      const img = new Image();
-      img.onload = () => {
-        imageRef.current = img;
-        const canvas = canvasRef.current;
-        if (canvas) {
-          const maxWidth = Math.min(1400, globalThis.innerWidth - 40);
-          const ratio = data.height / data.width;
-          canvas.width = maxWidth;
-          canvas.height = maxWidth * ratio;
-          const ctx = canvas.getContext('2d');
-          if (ctx) ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+    while (captureGenRef.current === myGen) {
+      try {
+        const resp = await fetch(`${API_BASE}/camera/capture`, { method: 'POST' });
+        const data = await resp.json();
+
+        if (captureGenRef.current !== myGen) break;
+
+        if (!data.success) {
+          // Caméra occupée par le pipeline vision → retry silencieux
+          await new Promise(r => setTimeout(r, RETRY_DELAY_MS));
+          continue;
         }
-      };
-      img.src = `data:image/jpeg;base64,${data.image_base64}`;
-    } catch (e: unknown) {
-      setCameraError(e instanceof Error ? e.message : 'Erreur inconnue');
+
+        setImageBase64(data.image_base64);
+        setImagePath(data.image_path);
+        setImageSize({ width: data.width, height: data.height });
+
+        const img = new Image();
+        img.onload = () => {
+          imageRef.current = img;
+          const canvas = canvasRef.current;
+          if (canvas) {
+            const ratio = data.height / data.width;
+            // Laisser ~320px pour le header, onglets, boutons, gaps
+            const maxHeight = globalThis.innerHeight * 0.58;
+            const maxWidth = Math.min(1400, globalThis.innerWidth - 40, maxHeight / ratio);
+            canvas.width = maxWidth;
+            canvas.height = maxWidth * ratio;
+            const ctx = canvas.getContext('2d');
+            if (ctx) ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+          }
+        };
+        img.src = `data:image/jpeg;base64,${data.image_base64}`;
+        break; // succès
+
+      } catch {
+        if (captureGenRef.current === myGen) {
+          await new Promise(r => setTimeout(r, RETRY_DELAY_MS));
+        }
+      }
     }
-    setCapturing(false);
+
+    if (captureGenRef.current === myGen) setCapturing(false);
   };
 
   const handleCanvasClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
