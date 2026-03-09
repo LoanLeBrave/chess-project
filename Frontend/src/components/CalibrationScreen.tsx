@@ -737,9 +737,9 @@ export function CalibrationScreen({ onCalibrationComplete, onSkipCalibration, ha
                   </div>
                   <div className="flex-1">
                     <h3 className="text-white font-bold text-base mb-1.5">
-                      ⚠️ Avant de commencer la calibration
+                       Avant de commencer la calibration
                     </h3>
-                    <p className="text-white text-sm leading-relaxed">
+                    <p className="text-orange-300/90 text-sm leading-relaxed">
                       Veuillez retirer les 2 tours proches du trou de calibration de l'échiquier avant de commencer la calibration. 
                       Cela permet d'éviter que le robot entre en collision avec les tours pendant les déplacements de calibration du plateau.
                     </p>
