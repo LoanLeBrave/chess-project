@@ -1267,9 +1267,12 @@ async def calibrate_freedrive(data: dict):
     enable = data.get("enable", True)
     try:
         if enable:
-            # Freedrive contraint sur X et Y uniquement
+            # Recharger le script d'abord pour s'assurer que le controleur est pret
+            # (sinon freedriveMode echoue silencieusement si le script n'est pas actif)
+            manager.robot.rtde_c.reuploadScript()
+            time.sleep(0.15)
             manager.robot.rtde_c.freedriveMode([1, 1, 1, 0, 0, 0])
-            await manager.log("info", "Mode FreeDrive active (X/Y)")
+            await manager.log("info", "Mode FreeDrive active (X/Y/Z)")
         else:
             manager.robot.rtde_c.endFreedriveMode()
             time.sleep(0.1)
