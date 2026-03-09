@@ -69,6 +69,7 @@ export function CalibrationScreen({ onCalibrationComplete, onSkipCalibration, ha
 
   // Modal states
   const [showRecalibrateCameraModal, setShowRecalibrateCameraModal] = useState(false);
+  const [showCameraCalibPrompt, setShowCameraCalibPrompt] = useState(false);
 
   const CORRECT_PIN = '1303';
 
@@ -411,7 +412,13 @@ export function CalibrationScreen({ onCalibrationComplete, onSkipCalibration, ha
       if (!data.success) throw new Error(data.error || 'Echec sauvegarde');
 
       setCameraCalibCompleted(true);
-      setActiveTab('board');
+      // Si le robot est déjà calibré (on vient de la modale post-calibration robot),
+      // terminer directement le flow global
+      if (zCalibrated) {
+        onCalibrationComplete();
+      } else {
+        setActiveTab('board');
+      }
     } catch (e: unknown) {
       setCameraError(e instanceof Error ? e.message : 'Erreur inconnue');
     }
@@ -456,8 +463,9 @@ export function CalibrationScreen({ onCalibrationComplete, onSkipCalibration, ha
     // Le backend désactive le freedrive dans /calibrate/save, on sync l'état UI
     setFreedriveActive(false);
     setZCalibrated(true);
+    // Proposer la calibration caméra avant de continuer
     setTimeout(() => {
-      onCalibrationComplete();
+      setShowCameraCalibPrompt(true);
     }, 500);
   };
 
@@ -1147,6 +1155,84 @@ export function CalibrationScreen({ onCalibrationComplete, onSkipCalibration, ha
         }}
         onCancel={() => setShowRecalibrateCameraModal(false)}
       />
+
+      {/* Camera Calibration Prompt — après fin de calibration robot */}
+      <AnimatePresence>
+        {showCameraCalibPrompt && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4"
+          >
+            <motion.div
+              initial={{ scale: 0.9, y: 20 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.9, y: 20 }}
+              className="bg-gradient-to-br from-slate-800 to-slate-900 border-2 border-cyan-500/50 rounded-2xl shadow-2xl max-w-md w-full overflow-hidden"
+            >
+              {/* Header */}
+              <div className="bg-gradient-to-r from-cyan-600/20 via-sky-600/20 to-cyan-600/20 p-6 border-b border-cyan-500/30">
+                <div className="flex items-center gap-4">
+                  <div className="flex-shrink-0 w-14 h-14 rounded-xl bg-cyan-500/20 border-2 border-cyan-400 flex items-center justify-center">
+                    <Camera className="w-7 h-7 text-cyan-400" strokeWidth={2.5} />
+                  </div>
+                  <div className="flex-1">
+                    <h2 className="text-2xl font-bold text-white mb-1">Calibration terminée !</h2>
+                    <p className="text-cyan-300 text-sm font-medium">Calibration du robot effectuée avec succès</p>
+                  </div>
+                  <div className="flex-shrink-0 w-8 h-8 rounded-full bg-green-500/20 border border-green-400 flex items-center justify-center">
+                    <CheckCircle className="w-5 h-5 text-green-400" />
+                  </div>
+                </div>
+              </div>
+
+              {/* Body */}
+              <div className="p-6 space-y-4">
+                <div className="bg-slate-700/50 border border-cyan-500/20 rounded-xl p-4">
+                  <p className="text-white text-base leading-relaxed">
+                    Souhaitez-vous calibrer la <span className="text-cyan-400 font-semibold">caméra</span> maintenant ?
+                  </p>
+                  <p className="text-slate-400 text-sm mt-2 leading-relaxed">
+                    La calibration caméra est nécessaire pour que le robot détecte correctement les pièces sur le plateau.
+                    Si la caméra a déjà été calibrée et n'a pas bougé, vous pouvez passer.
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-2 bg-amber-500/10 border border-amber-500/30 rounded-lg px-3 py-2">
+                  <AlertTriangle className="w-4 h-4 text-amber-400 flex-shrink-0" />
+                  <p className="text-amber-300 text-xs">
+                    Ne pas calibrer la caméra peut entraîner des erreurs de détection des pièces.
+                  </p>
+                </div>
+              </div>
+
+              {/* Actions */}
+              <div className="px-6 pb-6 flex gap-3">
+                <button
+                  onClick={() => {
+                    setShowCameraCalibPrompt(false);
+                    onCalibrationComplete();
+                  }}
+                  className="flex-1 px-4 py-3 rounded-xl text-sm font-medium bg-slate-700 hover:bg-slate-600 text-slate-300 hover:text-white transition-colors"
+                >
+                  Passer
+                </button>
+                <button
+                  onClick={() => {
+                    setShowCameraCalibPrompt(false);
+                    setActiveTab('camera');
+                  }}
+                  className="flex-1 px-4 py-3 rounded-xl text-sm font-bold bg-cyan-600 hover:bg-cyan-500 text-white transition-colors flex items-center justify-center gap-2"
+                >
+                  <Camera className="w-4 h-4" />
+                  Calibrer la caméra
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
