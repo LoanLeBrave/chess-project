@@ -399,7 +399,7 @@ export function CalibrationScreen({ onCalibrationComplete, onSkipCalibration, ha
       await fetch(`${API_BASE}/robot/calibrate/point`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ point: 'a1' }),
+        body: JSON.stringify({ point: 'a1', freedrive_active: freedriveActive }),
       });
     } catch { /* continue */ }
     setA1Calibrated(true);
@@ -408,15 +408,11 @@ export function CalibrationScreen({ onCalibrationComplete, onSkipCalibration, ha
 
   const handleValidateH8 = async () => {
     try {
+      // freedrive_active: false -> backend désactive freedrive pour moveL mais ne le réactive pas (étape Z)
       await fetch(`${API_BASE}/robot/calibrate/point`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ point: 'h8' }),
-      });
-      await fetch(`${API_BASE}/robot/calibrate/freedrive`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ enable: false }),
+        body: JSON.stringify({ point: 'h8', freedrive_active: false }),
       });
     } catch { /* continue */ }
     setFreedriveActive(false);
