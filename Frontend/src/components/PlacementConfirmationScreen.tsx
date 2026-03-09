@@ -61,7 +61,10 @@ export function PlacementConfirmationScreen({ onConfirm, onBack }: Readonly<Plac
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const imageRef = useRef<HTMLImageElement | null>(null);
-  // Compteur de génération pour le replacement : évite deux boucles de retry simultanées
+  // Compteur de génération pour loadData : si l'utilisateur clique "Actualiser" pendant un retry,
+  // la boucle précédente s'arrête immédiatement.
+  const loadDataGenRef = useRef(0);
+  // Compteur de génération pour le replacement
   const replaceBoardGenRef = useRef(0);
 
   // ── Dessin du canvas ─────────────────────────────────────────────────────────
@@ -164,43 +167,68 @@ export function PlacementConfirmationScreen({ onConfirm, onBack }: Readonly<Plac
 
   // ── Chargement des données ───────────────────────────────────────────────────
   const loadData = async () => {
+    loadDataGenRef.current += 1;
+    const myGen = loadDataGenRef.current;
+
     setIsLoading(true);
     setImageReady(false);
     imageRef.current = null;
     setError('');
+
+    const RETRY_DELAY_MS = 700;
+
     try {
-      const [captureRes, calibRes, missingRes] = await Promise.all([
-        fetch(`${API_BASE}/camera/capture`, { method: 'POST' }),
+      // Calibration et pièces manquantes : pas de conflit caméra, on les charge une seule fois
+      const [calibRes, missingRes] = await Promise.all([
         fetch(`${API_BASE}/camera/calibration`),
         fetch(`${API_BASE}/vision/hybrid/missing`),
       ]);
 
-      type CaptureData = { success: boolean; image_base64: string; width: number; height: number; error?: string };
+      if (loadDataGenRef.current !== myGen) return;
+
       type CalibData   = { success: boolean; corners?: Corners; error?: string };
       type MissingData = { camera_pieces_count: number; missing_pieces: MissingPiece[] };
 
-      const [captureData, calibData, missingData] = await Promise.all([
-        captureRes.json(),
+      const [calibData, missingData] = await Promise.all([
         calibRes.json(),
         missingRes.json(),
-      ]) as [CaptureData, CalibData, MissingData];
+      ]) as [CalibData, MissingData];
+
+      if (loadDataGenRef.current !== myGen) return;
 
       setMissingPieces(missingData.missing_pieces ?? []);
-
       if (calibData.success && calibData.corners) {
         setCorners(calibData.corners);
       }
 
-      if (captureData.success && captureData.image_base64) {
-        setImageSize({ width: captureData.width, height: captureData.height });
-        setImageBase64(captureData.image_base64);
-      } else {
-        setError(captureData.error ?? 'Échec de la capture caméra.');
+      // Capture caméra : retry silencieux si la caméra est occupée par chess_vision
+      while (loadDataGenRef.current === myGen) {
+        try {
+          const captureRes = await fetch(`${API_BASE}/camera/capture`, { method: 'POST' });
+          const captureData = await captureRes.json() as { success: boolean; image_base64: string; width: number; height: number; error?: string };
+
+          if (loadDataGenRef.current !== myGen) break;
+
+          if (!captureData.success) {
+            await new Promise(r => setTimeout(r, RETRY_DELAY_MS));
+            continue;
+          }
+
+          setImageSize({ width: captureData.width, height: captureData.height });
+          setImageBase64(captureData.image_base64);
+          break; // succès
+        } catch {
+          if (loadDataGenRef.current === myGen) {
+            await new Promise(r => setTimeout(r, RETRY_DELAY_MS));
+          }
+        }
       }
     } catch (err) {
-      setError(`Impossible de contacter le serveur : ${err instanceof Error ? err.message : String(err)}`);
+      if (loadDataGenRef.current === myGen) {
+        setError(`Impossible de contacter le serveur : ${err instanceof Error ? err.message : String(err)}`);
+      }
     } finally {
-      setIsLoading(false);
+      if (loadDataGenRef.current === myGen) setIsLoading(false);
     }
   };
 
