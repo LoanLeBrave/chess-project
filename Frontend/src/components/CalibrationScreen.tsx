@@ -64,7 +64,7 @@ export function CalibrationScreen({ onCalibrationComplete, onSkipCalibration, ha
   const [a1Calibrated, setA1Calibrated] = useState(false);
   const [h8Calibrated, setH8Calibrated] = useState(false);
   const [zCalibrated, setZCalibrated] = useState(false);
-  const [freedriveActive, setFreedriveActive] = useState(false);
+  const [freedriveActive, setFreedriveActive] = useState(true);
   const [homeSaved, setHomeSaved] = useState(false);
 
   // Modal states
@@ -210,6 +210,17 @@ export function CalibrationScreen({ onCalibrationComplete, onSkipCalibration, ha
   useEffect(() => {
     drawCanvas();
   }, [drawCanvas]);
+
+  // Active le freedrive automatiquement quand on arrive sur l'onglet board après déverrouillage
+  useEffect(() => {
+    if (!isUnlocked || activeTab !== 'board' || a1Calibrated) return;
+    fetch(`${API_BASE}/robot/calibrate/freedrive`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enable: true }),
+    }).catch(() => {});
+    setFreedriveActive(true);
+  }, [isUnlocked, activeTab]);
 
   const drawGrid = (ctx: CanvasRenderingContext2D, pts: Corner[], scale: number) => {
     const tl = { x: pts[0].x * scale, y: pts[0].y * scale };
