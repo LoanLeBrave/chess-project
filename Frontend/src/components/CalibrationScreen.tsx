@@ -408,14 +408,13 @@ export function CalibrationScreen({ onCalibrationComplete, onSkipCalibration, ha
 
   const handleValidateH8 = async () => {
     try {
-      // freedrive_active: false -> backend désactive freedrive pour moveL mais ne le réactive pas (étape Z)
+      // freedrive_active: freedriveActive -> backend réactive le freedrive après la remontée
       await fetch(`${API_BASE}/robot/calibrate/point`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ point: 'h8', freedrive_active: false }),
+        body: JSON.stringify({ point: 'h8', freedrive_active: freedriveActive }),
       });
     } catch { /* continue */ }
-    setFreedriveActive(false);
     setH8Calibrated(true);
     setCalibrationStep('z');
   };
@@ -429,6 +428,8 @@ export function CalibrationScreen({ onCalibrationComplete, onSkipCalibration, ha
       });
       await fetch(`${API_BASE}/robot/calibrate/save`, { method: 'POST' });
     } catch { /* continue */ }
+    // Le backend désactive le freedrive dans /calibrate/save, on sync l'état UI
+    setFreedriveActive(false);
     setZCalibrated(true);
     setTimeout(() => {
       onCalibrationComplete();
