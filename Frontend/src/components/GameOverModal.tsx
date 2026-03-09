@@ -11,6 +11,7 @@ interface GameOverModalProps {
   playerName: string;
   onReplacePieces: () => void;
   onProvideFeedback: () => void;
+  isReplacingBoard: boolean;
 }
 
 interface Confetti {
@@ -47,7 +48,8 @@ export function GameOverModal({
   elapsedTime,
   playerName,
   onReplacePieces,
-  onProvideFeedback
+  onProvideFeedback,
+  isReplacingBoard
 }: GameOverModalProps) {
   const [confetti, setConfetti] = useState<Confetti[]>([]);
   const [robotParticles, setRobotParticles] = useState<RobotParticle[]>([]);
@@ -395,40 +397,75 @@ export function GameOverModal({
           transition={{ delay: 0.7 }}
           className="space-y-3"
         >
-          {/* First Row - Primary Actions */}
-          <div className="flex gap-4">
-            <button
-              onClick={onReplacePieces}
-              className="
-                flex-1 px-6 py-4 rounded-xl font-bold text-lg
-                bg-gradient-to-r from-blue-500 to-cyan-600
-                hover:from-blue-400 hover:to-cyan-500
-                text-white shadow-lg shadow-blue-500/30
-                hover:shadow-blue-400/50 hover:scale-105
-                transition-all duration-300
-                flex items-center justify-center gap-2
-              "
-            >
-              <RotateCcw className="w-5 h-5" />
-              Remplacer les pièces
-            </button>
+          {isReplacingBoard ? (
+            /* Replacement in Progress */
+            <div className="bg-slate-800/50 rounded-xl p-6 border border-cyan-500/50">
+              <div className="flex items-center justify-center gap-4">
+                <motion.div
+                  animate={{ rotate: 360 }}
+                  transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
+                >
+                  <RotateCcw className="w-8 h-8 text-cyan-400" />
+                </motion.div>
+                <div>
+                  <p className="text-white font-bold text-lg">Replacement en cours...</p>
+                  <p className="text-slate-400 text-sm">Le robot UR7e replace les pièces</p>
+                </div>
+              </div>
+              <div className="flex items-center justify-center gap-2 mt-4">
+                <motion.div
+                  className="w-2 h-2 rounded-full bg-cyan-400"
+                  animate={{ opacity: [0.3, 1, 0.3] }}
+                  transition={{ duration: 1.5, repeat: Infinity, delay: 0 }}
+                />
+                <motion.div
+                  className="w-2 h-2 rounded-full bg-cyan-400"
+                  animate={{ opacity: [0.3, 1, 0.3] }}
+                  transition={{ duration: 1.5, repeat: Infinity, delay: 0.2 }}
+                />
+                <motion.div
+                  className="w-2 h-2 rounded-full bg-cyan-400"
+                  animate={{ opacity: [0.3, 1, 0.3] }}
+                  transition={{ duration: 1.5, repeat: Infinity, delay: 0.4 }}
+                />
+              </div>
+            </div>
+          ) : (
+            /* Normal Buttons */
+            <div className="flex gap-4">
+              <button
+                onClick={onReplacePieces}
+                className="
+                  flex-1 px-6 py-4 rounded-xl font-bold text-lg
+                  bg-gradient-to-r from-blue-500 to-cyan-600
+                  hover:from-blue-400 hover:to-cyan-500
+                  text-white shadow-lg shadow-blue-500/30
+                  hover:shadow-blue-400/50 hover:scale-105
+                  transition-all duration-300
+                  flex items-center justify-center gap-2
+                "
+              >
+                <RotateCcw className="w-5 h-5" />
+                Remplacer les pièces
+              </button>
 
-            <button
-              onClick={onProvideFeedback}
-              className="
-                flex-1 px-6 py-4 rounded-xl font-bold text-lg
-                bg-gradient-to-r from-green-500 to-emerald-600
-                hover:from-green-400 hover:to-emerald-500
-                text-white shadow-lg shadow-green-500/30
-                hover:shadow-green-400/50 hover:scale-105
-                transition-all duration-300
-                flex items-center justify-center gap-2
-              "
-            >
-              <MessageSquare className="w-5 h-5" />
-              Donner mon avis
-            </button>
-          </div>
+              <button
+                onClick={onProvideFeedback}
+                className="
+                  flex-1 px-6 py-4 rounded-xl font-bold text-lg
+                  bg-gradient-to-r from-green-500 to-emerald-600
+                  hover:from-green-400 hover:to-emerald-500
+                  text-white shadow-lg shadow-green-500/30
+                  hover:shadow-green-400/50 hover:scale-105
+                  transition-all duration-300
+                  flex items-center justify-center gap-2
+                "
+              >
+                <MessageSquare className="w-5 h-5" />
+                Donner mon avis
+              </button>
+            </div>
+          )}
         </motion.div>
       </motion.div>
     </div>
