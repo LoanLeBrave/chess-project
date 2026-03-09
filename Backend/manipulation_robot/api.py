@@ -1380,22 +1380,21 @@ async def calibrate_point(data: dict):
 
         # Remontee de securite apres A1 ou H8
         if point in ('a1', 'h8'):
-            # Desactiver freedrive avant le moveL
-            if was_freedrive:
-                try:
-                    manager.robot.rtde_c.endFreedriveMode()
-                    time.sleep(0.1)
-                    manager.robot.rtde_c.reuploadScript()
-                    time.sleep(0.1)
-                except:
-                    pass
+            # Toujours desactiver freedrive avant le moveL (sinon moveL echoue)
+            try:
+                manager.robot.rtde_c.endFreedriveMode()
+                time.sleep(0.1)
+                manager.robot.rtde_c.reuploadScript()
+                time.sleep(0.1)
+            except:
+                pass
 
             safe_pose = list(pose)
             safe_pose[2] += 0.1  # +10cm en Z
             manager.robot.rtde_c.moveL(safe_pose, 0.5, 0.3)
             await manager.log("info", "Remontee de securite effectuee")
 
-            # Reactiver freedrive si il etait actif
+            # Reactiver freedrive seulement si demande (A1 oui, H8 non)
             if was_freedrive:
                 try:
                     manager.robot.rtde_c.freedriveMode([1, 1, 1, 0, 0, 0])
