@@ -189,8 +189,10 @@ export function CameraCalibrationScreen({ onComplete, onCancel }: CameraCalibrat
         // Configurer le canvas
         const canvas = canvasRef.current;
         if (canvas) {
-          const maxWidth = Math.min(1400, globalThis.innerWidth - 40);
           const ratio = data.height / data.width;
+          // Laisser ~320px pour le header, instructions, boutons, gaps et padding
+          const maxHeight = globalThis.innerHeight * 0.58;
+          const maxWidth = Math.min(1400, globalThis.innerWidth - 40, maxHeight / ratio);
           canvas.width = maxWidth;
           canvas.height = maxWidth * ratio;
           const ctx = canvas.getContext('2d');
