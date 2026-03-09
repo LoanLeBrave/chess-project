@@ -61,6 +61,8 @@ export function PlacementConfirmationScreen({ onConfirm, onBack }: Readonly<Plac
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const imageRef = useRef<HTMLImageElement | null>(null);
+  // Compteur de génération pour le replacement : évite deux boucles de retry simultanées
+  const replaceBoardGenRef = useRef(0);
 
   // ── Dessin du canvas ─────────────────────────────────────────────────────────
   const drawCanvas = useCallback(() => {
@@ -206,22 +208,44 @@ export function PlacementConfirmationScreen({ onConfirm, onBack }: Readonly<Plac
 
   // ── Replacement des pièces ───────────────────────────────────────────────────
   const handleReplaceBoard = async () => {
+    replaceBoardGenRef.current += 1;
+    const myGen = replaceBoardGenRef.current;
+
     setIsReplacingBoard(true);
     setError('');
-    try {
-      const res = await fetch(`${API_BASE}/board/replace`, { method: 'POST' });
-      const data = await res.json() as { success: boolean; error?: string };
-      if (!data.success) {
-        setError(data.error ?? 'Erreur lors du replacement.');
-      } else {
-        // Recharger les données après replacement
+
+    const RETRY_DELAY_MS = 700;
+
+    while (replaceBoardGenRef.current === myGen) {
+      try {
+        const res = await fetch(`${API_BASE}/board/replace`, { method: 'POST' });
+        const data = await res.json() as { success: boolean; error?: string };
+
+        if (replaceBoardGenRef.current !== myGen) break;
+
+        if (!data.success) {
+          // "Déjà en cours" = une opération tourne déjà, inutile de réessayer
+          if (data.error?.includes('en cours')) {
+            setError(data.error);
+            break;
+          }
+          // Camera occupée par chess_vision → retry silencieux
+          await new Promise(r => setTimeout(r, RETRY_DELAY_MS));
+          continue;
+        }
+
+        // Succès : recharger les données
         await loadData();
+        break;
+
+      } catch {
+        if (replaceBoardGenRef.current === myGen) {
+          await new Promise(r => setTimeout(r, RETRY_DELAY_MS));
+        }
       }
-    } catch (err) {
-      setError(`Impossible de replacer : ${err instanceof Error ? err.message : String(err)}`);
-    } finally {
-      setIsReplacingBoard(false);
     }
+
+    if (replaceBoardGenRef.current === myGen) setIsReplacingBoard(false);
   };
 
   // ── Confirmation ─────────────────────────────────────────────────────────────
