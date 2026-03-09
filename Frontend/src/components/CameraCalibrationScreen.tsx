@@ -37,6 +37,9 @@ export function CameraCalibrationScreen({ onComplete, onCancel }: CameraCalibrat
   const imageRef = useRef<HTMLImageElement | null>(null);
   const magCanvasRef = useRef<HTMLCanvasElement>(null);
   const [magnifier, setMagnifier] = useState<{ visible: boolean; x: number; y: number }>({ visible: false, x: 0, y: 0 });
+  // Compteur de génération : chaque appel à handleCapture incrémente ce compteur.
+  // La boucle de retry vérifie qu'elle est toujours la génération courante avant de continuer.
+  const captureGenRef = useRef(0);
 
   const currentCornerIdx = corners.length;
   const allCornersPlaced = corners.length === 4;
@@ -170,40 +173,60 @@ export function CameraCalibrationScreen({ onComplete, onCancel }: CameraCalibrat
   };
 
   const handleCapture = async () => {
+    captureGenRef.current += 1;
+    const myGen = captureGenRef.current;
+
     setCapturing(true);
     setError('');
     setCorners([]);
-    try {
-      const resp = await fetch(`${API_BASE}/camera/capture`, { method: 'POST' });
-      const data = await resp.json();
-      if (!data.success) throw new Error(data.error || 'Echec capture');
 
-      setImageBase64(data.image_base64);
-      setImagePath(data.image_path);
-      setImageSize({ width: data.width, height: data.height });
+    const RETRY_DELAY_MS = 700;
 
-      // Charger l'image dans un element img pour le canvas
-      const img = new Image();
-      img.onload = () => {
-        imageRef.current = img;
-        // Configurer le canvas
-        const canvas = canvasRef.current;
-        if (canvas) {
-          const ratio = data.height / data.width;
-          // Laisser ~320px pour le header, instructions, boutons, gaps et padding
-          const maxHeight = globalThis.innerHeight * 0.58;
-          const maxWidth = Math.min(1400, globalThis.innerWidth - 40, maxHeight / ratio);
-          canvas.width = maxWidth;
-          canvas.height = maxWidth * ratio;
-          const ctx = canvas.getContext('2d');
-          if (ctx) ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+    while (captureGenRef.current === myGen) {
+      try {
+        const resp = await fetch(`${API_BASE}/camera/capture`, { method: 'POST' });
+        const data = await resp.json();
+
+        if (captureGenRef.current !== myGen) break; // une nouvelle capture a été lancée entre temps
+
+        if (!data.success) {
+          // La caméra est probablement occupée par le pipeline vision → on réessaie silencieusement
+          await new Promise(r => setTimeout(r, RETRY_DELAY_MS));
+          continue;
         }
-      };
-      img.src = `data:image/jpeg;base64,${data.image_base64}`;
-    } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : 'Erreur inconnue');
+
+        setImageBase64(data.image_base64);
+        setImagePath(data.image_path);
+        setImageSize({ width: data.width, height: data.height });
+
+        // Charger l'image dans un element img pour le canvas
+        const img = new Image();
+        img.onload = () => {
+          imageRef.current = img;
+          const canvas = canvasRef.current;
+          if (canvas) {
+            const ratio = data.height / data.width;
+            // Laisser ~320px pour le header, instructions, boutons, gaps et padding
+            const maxHeight = globalThis.innerHeight * 0.58;
+            const maxWidth = Math.min(1400, globalThis.innerWidth - 40, maxHeight / ratio);
+            canvas.width = maxWidth;
+            canvas.height = maxWidth * ratio;
+            const ctx = canvas.getContext('2d');
+            if (ctx) ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+          }
+        };
+        img.src = `data:image/jpeg;base64,${data.image_base64}`;
+        break; // succès → on sort de la boucle
+
+      } catch {
+        // Erreur réseau inattendue → on réessaie aussi
+        if (captureGenRef.current === myGen) {
+          await new Promise(r => setTimeout(r, RETRY_DELAY_MS));
+        }
+      }
     }
-    setCapturing(false);
+
+    if (captureGenRef.current === myGen) setCapturing(false);
   };
 
   const handleCanvasClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
