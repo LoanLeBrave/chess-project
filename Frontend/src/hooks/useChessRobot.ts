@@ -548,25 +548,36 @@ export function useChessRobot(
 
   // --- Replace board via API ---
   const replaceBoard = useCallback(async (): Promise<boolean> => {
-    try {
-      setIsReplacingBoard(true);
-      setRobotStatus('replacing');
-      const res = await fetch(`${API_BASE}/game/replace-board`, { method: 'POST' });
-      const data = await res.json();
-      if (data.success) {
-        addLogRef.current('info', 'Replacement du plateau demarre');
-        return true;
-      } else {
-        addLogRef.current('error', data.error || 'Erreur lors du replacement');
-        setIsReplacingBoard(false);
-        setRobotStatus('idle');
-        return false;
+    setIsReplacingBoard(true);
+    setRobotStatus('replacing');
+
+    const RETRY_DELAY_MS = 700;
+
+    while (true) {
+      try {
+        const res = await fetch(`${API_BASE}/game/replace-board`, { method: 'POST' });
+        const data = await res.json();
+
+        if (data.success) {
+          addLogRef.current('info', 'Replacement du plateau demarre');
+          return true;
+        }
+
+        // "Déjà en cours" = ne pas réessayer
+        if (data.error?.includes('en cours')) {
+          addLogRef.current('error', data.error);
+          setIsReplacingBoard(false);
+          setRobotStatus('idle');
+          return false;
+        }
+
+        // Caméra occupée par chess_vision → retry silencieux
+        await new Promise(r => setTimeout(r, RETRY_DELAY_MS));
+
+      } catch {
+        // Erreur réseau → retry
+        await new Promise(r => setTimeout(r, RETRY_DELAY_MS));
       }
-    } catch {
-      addLogRef.current('error', 'Erreur connexion API pour replacement');
-      setIsReplacingBoard(false);
-      setRobotStatus('error');
-      return false;
     }
   }, []);
 
