@@ -727,19 +727,19 @@ export function CalibrationScreen({ onCalibrationComplete, onSkipCalibration, ha
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: 0.3 }}
-                className="bg-gradient-to-r from-orange-600/20 via-amber-600/20 to-orange-600/20 border-2 border-orange-500/50 rounded-xl p-4 backdrop-blur-sm"
+                className="bg-orange-500 rounded-xl p-4 shadow-lg"
               >
                 <div className="flex items-start gap-4">
                   <div className="flex-shrink-0">
-                    <div className="w-12 h-12 rounded-xl bg-orange-500/20 border-2 border-orange-400 flex items-center justify-center">
-                      <AlertTriangle className="w-6 h-6 text-orange-400" strokeWidth={2.5} />
+                    <div className="w-12 h-12 rounded-xl bg-white/20 border-2 border-white/40 flex items-center justify-center">
+                      <AlertTriangle className="w-6 h-6 text-white" strokeWidth={2.5} />
                     </div>
                   </div>
                   <div className="flex-1">
-                    <h3 className="text-white font-bold text-base mb-1.5">
-                      ⚠️ Avant de commencer la calibration
+                    <h3 className="text-white font-bold text-base mb-1.5 uppercase tracking-wide">
+                       Avant de commencer la calibration
                     </h3>
-                    <p className="text-white text-sm leading-relaxed">
+                    <p className="text-white text-sm leading-relaxed font-medium">
                       Veuillez retirer les 2 tours proches du trou de calibration de l'échiquier avant de commencer la calibration. 
                       Cela permet d'éviter que le robot entre en collision avec les tours pendant les déplacements de calibration du plateau.
                     </p>

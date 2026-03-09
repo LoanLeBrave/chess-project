@@ -333,6 +333,35 @@ export function GameScreen({ difficulty, gameState, setGameState, onReturnToMenu
     onReturnToMenu();
   };
 
+  // Track replacement from GameOver modal
+  const [isReplacingFromGameOver, setIsReplacingFromGameOver] = useState(false);
+
+  // Handler pour replacer les pièces depuis le GameOverModal
+  const handleReplacePiecesFromGameOver = async () => {
+    setIsReplacingFromGameOver(true);
+    addLog('info', 'Replacement des pièces...');
+    await replaceBoard();
+  };
+
+  // Auto-navigate to feedback after replacement from GameOver
+  useEffect(() => {
+    if (isReplacingFromGameOver && !isReplacingBoard) {
+      // Replacement is complete, navigate to feedback
+      setIsReplacingFromGameOver(false);
+      handleGoToFeedbackFromGameOver();
+    }
+  }, [isReplacingFromGameOver, isReplacingBoard]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Handler pour aller au feedback depuis le GameOverModal
+  const handleGoToFeedbackFromGameOver = () => {
+    onGoToFeedback({
+      result: gameResult || 'draw',
+      acplScore,
+      totalMoves: moves.filter(m => m.player === 'human').length,
+      elapsedTime
+    });
+  };
+
   const handleNewGame = async () => {
     setShowRestartModal(true);
   };
@@ -580,8 +609,9 @@ export function GameScreen({ difficulty, gameState, setGameState, onReturnToMenu
         totalMoves={moves.length}
         elapsedTime={elapsedTime}
         playerName={playerName}
-        onReturnToMenu={handleStop}
-        onViewLeaderboard={handleViewLeaderboard}
+        onReplacePieces={handleReplacePiecesFromGameOver}
+        onProvideFeedback={handleGoToFeedbackFromGameOver}
+        isReplacingBoard={isReplacingBoard}
       />
 
       {/* Score Modal for Manual Stop */}

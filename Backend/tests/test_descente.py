@@ -16,7 +16,7 @@ ROBOT_IP = "192.168.0.11"
 ACCELERATION = 0.3
 
 print("\n" + "=" * 60)
-print("🔬 TEST DE DESCENTE - DIAGNOSTIC")
+print(" TEST DE DESCENTE - DIAGNOSTIC")
 print("=" * 60)
 
 # Connexion

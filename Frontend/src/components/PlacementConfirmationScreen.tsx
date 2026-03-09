@@ -378,16 +378,6 @@ export function PlacementConfirmationScreen({ onConfirm, onBack }: Readonly<Plac
                 Retour
               </button>
 
-              {/* Bouton debug pour passer la vérification */}
-              <button
-                onClick={onConfirm}
-                className="flex items-center gap-2 px-4 py-2.5 bg-purple-600/50 hover:bg-purple-600 text-purple-200 text-sm rounded-lg transition-all duration-300 border border-purple-500/50"
-                title="Mode debug - passer directement"
-              >
-                <Play className="w-4 h-4" />
-                Debug: Passer
-              </button>
-
               <button
                 onClick={() => { void handleReplaceBoard(); }}
                 disabled={isLoading || isReplacingBoard || isConfirming}
