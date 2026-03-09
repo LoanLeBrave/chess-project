@@ -333,6 +333,22 @@ export function GameScreen({ difficulty, gameState, setGameState, onReturnToMenu
     onReturnToMenu();
   };
 
+  // Handler pour replacer les pièces depuis le GameOverModal
+  const handleReplacePiecesFromGameOver = async () => {
+    addLog('info', 'Replacement des pièces...');
+    await replaceBoard();
+  };
+
+  // Handler pour aller au feedback depuis le GameOverModal
+  const handleGoToFeedbackFromGameOver = () => {
+    onGoToFeedback({
+      result: gameResult || 'draw',
+      acplScore,
+      totalMoves: moves.filter(m => m.player === 'human').length,
+      elapsedTime
+    });
+  };
+
   const handleNewGame = async () => {
     setShowRestartModal(true);
   };
@@ -580,8 +596,8 @@ export function GameScreen({ difficulty, gameState, setGameState, onReturnToMenu
         totalMoves={moves.length}
         elapsedTime={elapsedTime}
         playerName={playerName}
-        onReturnToMenu={handleStop}
-        onViewLeaderboard={handleViewLeaderboard}
+        onReplacePieces={handleReplacePiecesFromGameOver}
+        onProvideFeedback={handleGoToFeedbackFromGameOver}
       />
 
       {/* Score Modal for Manual Stop */}

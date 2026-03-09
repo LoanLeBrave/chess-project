@@ -1,4 +1,4 @@
-import { Trophy, Frown, TrendingDown, Clock, Target } from 'lucide-react';
+import { Trophy, Frown, TrendingDown, Clock, Target, RotateCcw, MessageSquare } from 'lucide-react';
 import { motion } from 'motion/react';
 import { useEffect, useState } from 'react';
 
@@ -9,8 +9,8 @@ interface GameOverModalProps {
   totalMoves: number;
   elapsedTime: number;
   playerName: string;
-  onReturnToMenu: () => void;
-  onViewLeaderboard: () => void;
+  onReplacePieces: () => void;
+  onProvideFeedback: () => void;
 }
 
 interface Confetti {
@@ -46,8 +46,8 @@ export function GameOverModal({
   totalMoves,
   elapsedTime,
   playerName,
-  onReturnToMenu,
-  onViewLeaderboard
+  onReplacePieces,
+  onProvideFeedback
 }: GameOverModalProps) {
   const [confetti, setConfetti] = useState<Confetti[]>([]);
   const [robotParticles, setRobotParticles] = useState<RobotParticle[]>([]);
@@ -393,36 +393,42 @@ export function GameOverModal({
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.7 }}
-          className="flex gap-4"
+          className="space-y-3"
         >
-          <button
-            onClick={onViewLeaderboard}
-            className="
-              flex-1 px-6 py-4 rounded-xl font-bold text-lg
-              bg-gradient-to-r from-yellow-500 to-amber-600
-              hover:from-yellow-400 hover:to-amber-500
-              text-white shadow-lg shadow-yellow-500/30
-              hover:shadow-yellow-400/50 hover:scale-105
-              transition-all duration-300
-              flex items-center justify-center gap-2
-            "
-          >
-            <Trophy className="w-5 h-5" />
-            Voir le classement
-          </button>
+          {/* First Row - Primary Actions */}
+          <div className="flex gap-4">
+            <button
+              onClick={onReplacePieces}
+              className="
+                flex-1 px-6 py-4 rounded-xl font-bold text-lg
+                bg-gradient-to-r from-blue-500 to-cyan-600
+                hover:from-blue-400 hover:to-cyan-500
+                text-white shadow-lg shadow-blue-500/30
+                hover:shadow-blue-400/50 hover:scale-105
+                transition-all duration-300
+                flex items-center justify-center gap-2
+              "
+            >
+              <RotateCcw className="w-5 h-5" />
+              Remplacer les pièces
+            </button>
 
-          <button
-            onClick={onReturnToMenu}
-            className="
-              flex-1 px-6 py-4 rounded-xl font-bold text-lg
-              bg-slate-700 hover:bg-slate-600
-              text-white
-              transition-all duration-300
-              hover:scale-105
-            "
-          >
-            Retour au menu
-          </button>
+            <button
+              onClick={onProvideFeedback}
+              className="
+                flex-1 px-6 py-4 rounded-xl font-bold text-lg
+                bg-gradient-to-r from-green-500 to-emerald-600
+                hover:from-green-400 hover:to-emerald-500
+                text-white shadow-lg shadow-green-500/30
+                hover:shadow-green-400/50 hover:scale-105
+                transition-all duration-300
+                flex items-center justify-center gap-2
+              "
+            >
+              <MessageSquare className="w-5 h-5" />
+              Donner mon avis
+            </button>
+          </div>
         </motion.div>
       </motion.div>
     </div>
