@@ -212,13 +212,20 @@ export function CalibrationScreen({ onCalibrationComplete, onSkipCalibration, ha
   }, [drawCanvas]);
 
   // Active le freedrive automatiquement quand on arrive sur l'onglet board après déverrouillage
+  // Même séquence que le toggle manuel qui fonctionne : disable d'abord (reset état robot), puis enable
   useEffect(() => {
     if (!isUnlocked || activeTab !== 'board' || a1Calibrated) return;
     fetch(`${API_BASE}/robot/calibrate/freedrive`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ enable: true }),
-    }).catch(() => {});
+      body: JSON.stringify({ enable: false }),
+    }).then(() =>
+      fetch(`${API_BASE}/robot/calibrate/freedrive`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enable: true }),
+      })
+    ).catch(() => {});
     setFreedriveActive(true);
   }, [isUnlocked, activeTab]);
 
