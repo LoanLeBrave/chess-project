@@ -2,8 +2,6 @@
 __pycache__/
 *.pyc
 .DS_Store
-
-# Fichiers de calibration locaux (propres à chaque machine/déploiement)
 Backend/chess_vision/board_calibration.json
 Backend/manipulation_robot/robot_calibration.json
 Backend/manipulation_robot/position_depart_robot.json
@@ -17,4 +15,3 @@ node_modules/
 .github
 .env
 .vscode/
-manipulation_robot/.env
