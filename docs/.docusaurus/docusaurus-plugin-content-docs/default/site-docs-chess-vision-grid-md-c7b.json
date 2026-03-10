@@ -1,7 +1,7 @@
 {
   "id": "chess-vision/grid",
   "title": "Détection de la grille",
-  "description": "La grille 10×10 est détectée à partir des marqueurs ArUco placés aux coins de l'échiquier.",
+  "description": "La grille 10×10 est définie par une calibration manuelle : l'utilisateur clique sur les quatre coins du plateau depuis l'interface de calibration. Ces coordonnées sont ensuite utilisées pour calculer une transformation de perspective appliquée à chaque frame de la caméra.",
   "source": "@site/docs/chess-vision/grid.md",
   "sourceDirName": "chess-vision",
   "slug": "/chess-vision/grid",

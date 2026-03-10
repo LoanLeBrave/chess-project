@@ -17,3 +17,4 @@ node_modules/
 .github
 .env
 .vscode/
+manipulation_robot/.env

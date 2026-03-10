@@ -5,7 +5,7 @@
  */
 export default {
   "title": "Chess Robot — Documentation",
-  "tagline": "Robot UR5e joueur d'échecs autonome",
+  "tagline": "Robot UR7e joueur d'échecs autonome",
   "favicon": "img/logo_doc.png",
   "future": {
     "v4": {
@@ -75,6 +75,11 @@ export default {
           "sidebarId": "mainSidebar",
           "position": "left",
           "label": "Documentation"
+        },
+        {
+          "to": "/concepts",
+          "position": "left",
+          "label": "Concepts clés"
         },
         {
           "href": "https://github.com/LoanLeBrave/chess-project",
