@@ -31,6 +31,7 @@ from board_reset_manager import BoardResetManager
 from config import FICHIER_CALIBRATION, FICHIER_POSITION_DEPART, ACCESS_PIN
 from calibration import TwoPointCalibration
 from hybrid_board_manager import HybridBoardManager
+from game_logger import GameLogger
 
 # Ajouter le chemin chess_vision au path pour les imports
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
@@ -53,6 +54,9 @@ class VisionFlipRequest(BaseModel):
 
 class VisionGameRequest(BaseModel):
     enabled: bool = Field(True, description="Active la détection automatique des coups")
+
+class GotoTurnRequest(BaseModel):
+    turn: int = Field(..., ge=0, description="Numéro du demi-coup cible (0 = position initiale)")
 
 class ConfirmPlacementRequest(BaseModel):
     use_camera: bool = Field(True, description="Utilise la vision comme référence logique")
@@ -370,17 +374,37 @@ class ApplicationManager:
         self.demo_mode: bool = False
         self.demo_task: Optional[asyncio.Task] = None
         self.startup_time: Optional[float] = None
+        self.game_logger = GameLogger()
 
     async def broadcast(self, message: dict):
         for client in self.websocket_clients[:]:
             try: await client.send_json(message)
             except: self.websocket_clients.remove(client)
 
+        # Journalisation persistante des événements importants
+        msg_type = message.get("type")
+        if msg_type == "move":
+            self.game_logger.log_move(
+                player=message.get("player", "?"),
+                from_sq=message.get("from", "?"),
+                to_sq=message.get("to", "?"),
+                san=message.get("san", "?"),
+                fen_after=message.get("fen", ""),
+                evaluation=message.get("evaluation"),
+                cpl=message.get("cpl"),
+            )
+        elif msg_type == "game_over":
+            self.game_logger.end_game(
+                result=message.get("result", {}).get("result", "unknown"),
+                board=self.chess.board,
+            )
+
     def set_status(self, status: str, message: str = ""):
         self.status = status
         asyncio.create_task(self.broadcast({"type": "status", "status": status, "message": message}))
 
     async def log(self, log_type: str, message: str):
+        self.game_logger.log_message(log_type, message)
         await self.broadcast({"type": "log", "logType": log_type, "message": message, "timestamp": datetime.now().isoformat()})
 
     async def _demo_loop(self, moves_per_cycle: int, delay: float):
@@ -515,6 +539,11 @@ async def _check_vision_move():
         try:
             is_capture = delta["type"] == "capture"
             await manager.log("info", f"Coup detecte: {from_sq} -> {to_sq}" + (" (capture)" if is_capture else ""))
+            manager.game_logger.log_vision_snapshot(
+                label=f"Détection coup {from_sq}→{to_sq} (delta={delta['type']})",
+                stable_board=dict(manager.vision.stable_board),
+                raw_board=dict(manager.vision.raw_board),
+            )
             result = await manager.chess.play_vision_move(from_sq, to_sq)
             
             if result.get("success"):
@@ -945,6 +974,7 @@ async def get_status():
 async def new_game(config: GameConfig):
     """Démarre une nouvelle partie"""
     hybrid_manager.reset()
+    manager.game_logger.start_game(config.difficulty)
     result = manager.chess.new_game(config.difficulty)
     await manager.log("info", f"Nouvelle partie - Difficulté: {config.difficulty}")
     await manager.broadcast({
@@ -1009,6 +1039,7 @@ async def stop_game():
             pass
 
     # 5. Reset virtuel uniquement (aucun déplacement physique)
+    manager.game_logger.end_game("abandoned", board=manager.chess.board)
     manager.chess.board.reset()
     manager.robot.reset_tracking()
 
@@ -1016,6 +1047,29 @@ async def stop_game():
     await manager.log("info", "Partie arrêtée — tous les processus de jeu stoppés")
     await manager.broadcast({"type": "game_stopped"})
     return {"success": True}
+
+@app.post("/game/goto-turn", tags=["Game"])
+async def goto_turn(request: GotoTurnRequest):
+    """
+    Revient physiquement à l'état du plateau après `turn` demi-coups.
+    Le robot déplace les pièces pour reconstituer la position cible.
+    Interdit si le robot est occupé ou si des promotions sont dans la plage.
+    """
+    if manager.status in ("moving", "thinking", "replacing"):
+        return {"success": False, "error": f"Robot occupé ({manager.status}), réessayez dans un instant"}
+
+    # Arrêter la vision pour éviter des fausses détections pendant le replacement
+    was_started = manager.vision.game_started
+    manager.vision.game_started = False
+    manager.vision._buffers.clear()
+
+    result = await manager.chess.goto_turn(request.turn)
+
+    if result.get("success") and was_started:
+        manager.vision.game_started = True
+
+    return result
+
 
 @app.post("/robot/reset-cemetery", tags=["Robot"])
 async def reset_cemetery():

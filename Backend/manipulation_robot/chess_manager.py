@@ -349,6 +349,135 @@ class ChessManager:
         await self.broadcast({"type": "move_undone", "fen": self.board.fen(), "moves_undone": n})
         return {"success": True, "fen": self.board.fen(), "moves_undone": n}
 
+    async def goto_turn(self, turn_number: int) -> dict:
+        """
+        Revient physiquement à l'état du plateau après `turn_number` demi-coups.
+        turn_number=0 → position initiale, turn_number=N → après N coups joués.
+        """
+        all_moves = list(self.board.move_stack)
+        total_moves = len(all_moves)
+
+        if turn_number < 0 or turn_number > total_moves:
+            return {"success": False, "error": f"Tour invalide: {turn_number} (0–{total_moves})"}
+        if turn_number == total_moves:
+            return {"success": True, "message": "Déjà à ce tour", "fen": self.board.fen()}
+
+        # Vérifier l'absence de promotions dans la plage à annuler
+        check_board = chess.Board()
+        for m in all_moves[:turn_number]:
+            check_board.push(m)
+        for move in all_moves[turn_number:]:
+            if move.promotion:
+                return {
+                    "success": False,
+                    "error": "Retour impossible : une promotion est présente dans les coups à annuler. Replacement manuel requis."
+                }
+            check_board.push(move)
+
+        # --- Reconstruction de l'état cible ---
+        target_board = chess.Board()
+        white_captures_before = 0
+        black_captures_before = 0
+
+        for move in all_moves[:turn_number]:
+            if target_board.is_capture(move):
+                captured = target_board.piece_at(move.to_square)
+                if captured is None:  # en passant
+                    ep_sq = move.to_square - 8 if target_board.turn == chess.WHITE else move.to_square + 8
+                    captured = target_board.piece_at(ep_sq)
+                if captured:
+                    if captured.color == chess.WHITE:
+                        white_captures_before += 1
+                    else:
+                        black_captures_before += 1
+            target_board.push(move)
+
+        # --- Construction de la séquence d'annulation ---
+        sim_board = target_board.copy()
+        white_idx = white_captures_before
+        black_idx = black_captures_before
+        undo_steps = []
+
+        for move in all_moves[turn_number:]:
+            was_capture = sim_board.is_capture(move)
+            elim_record = None
+            ep_capture_sq = None
+
+            if was_capture:
+                captured = sim_board.piece_at(move.to_square)
+                if captured is None:  # en passant
+                    ep_raw = move.to_square - 8 if sim_board.turn == chess.WHITE else move.to_square + 8
+                    captured = sim_board.piece_at(ep_raw)
+                    if captured:
+                        ep_capture_sq = chess.square_name(ep_raw)
+                if captured:
+                    if captured.color == chess.WHITE:
+                        elim_record = self.robot.pieces_blanches_eliminees[white_idx]
+                        white_idx += 1
+                    else:
+                        elim_record = self.robot.pieces_noires_eliminees[black_idx]
+                        black_idx += 1
+
+            # Roque : identifier le déplacement inverse de la tour
+            rook_from = rook_to = None
+            if sim_board.is_castling(move):
+                to_name = chess.square_name(move.to_square)
+                rank = to_name[1]
+                if to_name[0] == 'g':   # petit roque
+                    rook_from, rook_to = f'f{rank}', f'h{rank}'
+                else:                   # grand roque
+                    rook_from, rook_to = f'd{rank}', f'a{rank}'
+
+            moving_piece = sim_board.piece_at(move.from_square)
+            undo_steps.append({
+                "from_sq": chess.square_name(move.from_square),
+                "to_sq": chess.square_name(move.to_square),
+                "piece_type": moving_piece.piece_type if moving_piece else chess.PAWN,
+                "was_capture": was_capture,
+                "captured_elim_record": elim_record,
+                "ep_capture_sq": ep_capture_sq,
+                "rook_from": rook_from,
+                "rook_to": rook_to,
+            })
+            sim_board.push(move)
+
+        await self.log("info", f"Retour au tour {turn_number} — {len(undo_steps)} coup(s) à annuler")
+        self.set_status("replacing", f"Retour au tour {turn_number}")
+
+        result = await self.robot.execute_goto_turn(undo_steps)
+
+        if not result.get("success"):
+            self.set_status("error", "Échec du retour arrière")
+            return result
+
+        # Mise à jour état virtuel
+        self.board = target_board
+        self._interrupted_move = None
+        self._pre_human_eval = None
+        self.robot.pieces_blanches_eliminees = list(
+            self.robot.pieces_blanches_eliminees[:white_captures_before]
+        )
+        self.robot.pieces_noires_eliminees = list(
+            self.robot.pieces_noires_eliminees[:black_captures_before]
+        )
+        self.robot._cemetery_permanently_occupied = {
+            p.case_cimetiere for p in
+            self.robot.pieces_blanches_eliminees + self.robot.pieces_noires_eliminees
+        }
+
+        # Réinitialiser la vision pour repartir proprement
+        if self.vision_service:
+            self.vision_service.camera_baseline = None
+            self.vision_service._buffers.clear()
+            self.vision_service._stability_counter = 0
+
+        self.set_status("idle")
+        fen = self.board.fen()
+        turn_str = "Blancs" if self.board.turn == chess.WHITE else "Noirs"
+        await self.log("info", f"✓ Retour au tour {turn_number} — {turn_str} à jouer")
+        await self.broadcast({"type": "goto_turn_complete", "turn": turn_number, "fen": fen})
+        return {"success": True, "fen": fen, "turn": turn_number}
+
     def _get_precise_coords(self, square: str):
         """
         Retourne les coordonnees precises (x, y) de la piece sur `square`
