@@ -577,15 +577,12 @@ async def _check_vision_move():
                 manager.vision._buffers.clear()
                 manager.vision._stability_counter = 0
 
-                # Attendre que les pieces se stabilisent physiquement,
-                # puis prendre un nouveau snapshot camera comme baseline
+                # Dériver la baseline depuis reference_board (état validé par python-chess)
+                # et non depuis un snapshot caméra frais, qui pourrait avoir absorbé
+                # un coup humain joué pendant le tour robot → delta invisible au cycle suivant.
                 await asyncio.sleep(0.5)
-                manager.vision.update()  # capture fraiche
-                if manager.vision.stable_board:
-                    # Baseline hybride : camera + pieces encore simulees
-                    manager.vision.camera_baseline = hybrid_manager.get_hybrid_baseline(
-                        manager.vision.stable_board
-                    )
+                if manager.vision.reference_board:
+                    manager.vision.camera_baseline = dict(manager.vision.reference_board)
             else:
                 await manager.log("warning", f"Echec: {result.get('error')}")
         finally:
