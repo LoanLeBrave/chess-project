@@ -25,6 +25,7 @@ from pydantic import BaseModel, Field
 from models import MoveRequest, GameConfig
 from robot_controller import RobotController
 from chess_manager import ChessManager
+from kpi_tracker import kpi_tracker
 from leaderboard_manager import LeaderboardManager
 from feedback_manager import FeedbackManager
 from board_reset_manager import BoardResetManager
@@ -250,7 +251,10 @@ class VisionService:
         return {"from": None, "to": None, "type": "unclear", "dis": dis, "app": app}
 
     def update(self) -> bool:
+        _t0 = time.time()
         game_state = self._capture_and_analyze() if self.active_mode else self._read_game_state()
+        if self.active_mode and game_state is not None:
+            kpi_tracker.record_image_processing(time.time() - _t0)
         if game_state is None: return False
         ts = game_state.get("metadata", {}).get("timestamp")
         if ts == self.last_timestamp: return False
@@ -289,6 +293,8 @@ class VisionService:
         else:
             self._stability_counter = 0
         self.stable_board, self.confidence = new_stable, new_conf
+        if self.reference_board:
+            kpi_tracker.record_detection(len(self.stable_board), len(self.reference_board))
         return True
 
     def _get_cemetery_map(self) -> dict:
@@ -976,6 +982,7 @@ async def new_game(config: GameConfig):
     hybrid_manager.reset()
     manager.game_logger.start_game(config.difficulty)
     result = manager.chess.new_game(config.difficulty)
+    kpi_tracker.record_game_start()
     await manager.log("info", f"Nouvelle partie - Difficulté: {config.difficulty}")
     await manager.broadcast({
         "type": "game_started",
@@ -1017,6 +1024,7 @@ async def stop_game():
             pass
 
     # 2. Désactiver la détection vision pour éviter tout nouveau coup automatique
+    kpi_tracker.record_game_end(False)
     manager.vision.game_started = False
     manager.vision._buffers.clear()
     manager.vision._stability_counter = 0
@@ -1701,6 +1709,248 @@ async def websocket_endpoint(websocket: WebSocket):
     try:
         while True: await websocket.receive_text()
     except WebSocketDisconnect: manager.websocket_clients.remove(websocket)
+
+# ============================================================================
+#                          TABLEAU DE BORD KPI
+# ============================================================================
+
+_KPI_HTML = """<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Chess Robot — KPI</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#0f172a;color:#e2e8f0;font-family:'Segoe UI',system-ui,sans-serif;padding:24px;min-height:100vh}
+h1{font-size:1.4rem;font-weight:700;color:#f1f5f9;margin-bottom:4px}
+.sub{color:#64748b;font-size:.8rem;margin-bottom:24px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:16px}
+.card{background:#1e293b;border-radius:12px;padding:20px;border:1px solid #334155}
+.card-title{font-size:.72rem;color:#94a3b8;text-transform:uppercase;letter-spacing:.06em;margin-bottom:12px}
+.metric{font-size:2.4rem;font-weight:700;line-height:1;margin-bottom:4px}
+.metric-sub{font-size:.8rem;color:#94a3b8;margin-bottom:10px}
+.target-row{display:flex;align-items:center;gap:8px;margin-bottom:10px;font-size:.78rem;color:#64748b}
+.badge{padding:2px 8px;border-radius:99px;font-weight:600;font-size:.72rem;white-space:nowrap}
+.ok{background:#14532d;color:#86efac}.warn{background:#713f12;color:#fde68a}.bad{background:#7f1d1d;color:#fca5a5}.na{background:#374151;color:#9ca3af}
+.sparkwrap{margin:4px 0 12px;background:#0f172a;border-radius:8px;padding:6px 8px}
+svg.spark{width:100%;height:52px;display:block}
+.details{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.det{background:#0f172a;border-radius:8px;padding:8px 10px}
+.det-label{font-size:.68rem;color:#64748b;margin-bottom:2px}
+.det-val{font-size:.9rem;font-weight:600}
+.green{color:#4ade80}.yellow{color:#facc15}.red{color:#f87171}.gray{color:#94a3b8}
+.footer{display:flex;align-items:center;gap:8px;margin-top:24px;font-size:.75rem;color:#64748b}
+.pulse{width:8px;height:8px;border-radius:50%;background:#22c55e;animation:p 2s infinite}
+@keyframes p{0%,100%{opacity:1}50%{opacity:.25}}
+</style>
+</head>
+<body>
+<h1>♟ Chess Robot — Tableau de bord KPI</h1>
+<p class="sub" id="lastUpdate">Chargement…</p>
+<div class="grid">
+
+  <!-- 1. Traitement image -->
+  <div class="card">
+    <div class="card-title">Temps de traitement image</div>
+    <div class="metric gray" id="img-avg">—</div>
+    <div class="metric-sub">ms en moyenne</div>
+    <div class="target-row">Cible : &lt; 500 ms &nbsp;<span class="badge na" id="img-badge">N/A</span></div>
+    <div class="sparkwrap"><svg class="spark" id="sp-img" viewBox="0 0 240 52"></svg></div>
+    <div class="details">
+      <div class="det"><div class="det-label">Dernière mesure</div><div class="det-val" id="img-last">—</div></div>
+      <div class="det"><div class="det-label">Échantillons</div><div class="det-val" id="img-n">—</div></div>
+    </div>
+  </div>
+
+  <!-- 2. Temps coup robot -->
+  <div class="card">
+    <div class="card-title">Temps moyen par coup robot</div>
+    <div class="metric gray" id="mv-avg">—</div>
+    <div class="metric-sub">secondes par coup</div>
+    <div class="target-row">Cible : &lt; 10 s &nbsp;<span class="badge na" id="mv-badge">N/A</span></div>
+    <div class="sparkwrap"><svg class="spark" id="sp-mv" viewBox="0 0 240 52"></svg></div>
+    <div class="details">
+      <div class="det"><div class="det-label">Stockfish (moy.)</div><div class="det-val" id="mv-stock">—</div></div>
+      <div class="det"><div class="det-label">Physique (moy.)</div><div class="det-val" id="mv-phys">—</div></div>
+      <div class="det"><div class="det-label">Coups analysés</div><div class="det-val" id="mv-n">—</div></div>
+    </div>
+  </div>
+
+  <!-- 3. Parties complètes -->
+  <div class="card">
+    <div class="card-title">Taux de parties complètes</div>
+    <div class="metric gray" id="gc-rate">—</div>
+    <div class="metric-sub">des parties menées à terme</div>
+    <div class="target-row">Cible : ≥ 90 % &nbsp;<span class="badge na" id="gc-badge">N/A</span></div>
+    <div class="details">
+      <div class="det"><div class="det-label">Démarrées</div><div class="det-val" id="gc-start">—</div></div>
+      <div class="det"><div class="det-label">Complètes</div><div class="det-val green" id="gc-comp">—</div></div>
+      <div class="det"><div class="det-label">Abandonnées</div><div class="det-val red" id="gc-aband">—</div></div>
+    </div>
+  </div>
+
+  <!-- 4. Détection pièces -->
+  <div class="card">
+    <div class="card-title">Taux de détection des pièces</div>
+    <div class="metric gray" id="det-avg">—</div>
+    <div class="metric-sub">des pièces correctement détectées</div>
+    <div class="target-row">Cible : 100 % &nbsp;<span class="badge na" id="det-badge">N/A</span></div>
+    <div class="sparkwrap"><svg class="spark" id="sp-det" viewBox="0 0 240 52"></svg></div>
+    <div class="details">
+      <div class="det"><div class="det-label">Dernière frame</div><div class="det-val" id="det-last">—</div></div>
+      <div class="det"><div class="det-label">Échantillons</div><div class="det-val" id="det-n">—</div></div>
+    </div>
+  </div>
+
+  <!-- 5. Saisie gripper -->
+  <div class="card">
+    <div class="card-title">Taux de saisie réussie (gripper)</div>
+    <div class="metric gray" id="gr-rate">—</div>
+    <div class="metric-sub">des mouvements gripper réussis</div>
+    <div class="target-row">Cible : ≥ 95 % &nbsp;<span class="badge na" id="gr-badge">N/A</span></div>
+    <div class="details">
+      <div class="det"><div class="det-label">Tentatives</div><div class="det-val" id="gr-att">—</div></div>
+      <div class="det"><div class="det-label">Succès</div><div class="det-val green" id="gr-suc">—</div></div>
+    </div>
+  </div>
+
+</div>
+<div class="footer"><div class="pulse"></div>Mise à jour toutes les 2 s &nbsp;·&nbsp; <span id="upTime">—</span></div>
+
+<script>
+function spark(id, vals, color, target, fixedMax) {
+  const svg = document.getElementById(id);
+  if (!svg || vals.length < 2) { if(svg) svg.innerHTML=''; return; }
+  svg.innerHTML = '';
+  const W=240, H=52, P=3;
+  const mn=0, mx=fixedMax || Math.max(...vals)*1.15 || 1;
+  const xs = (W-P*2)/(vals.length-1);
+  const ys = (H-P*2)/(mx-mn);
+  const ns = (v,i) => [P+i*xs, H-P-(v-mn)*ys];
+  const pts = vals.map(ns);
+  if (target !== null && target >= mn && target <= mx) {
+    const ty = H-P-(target-mn)*ys;
+    const l = document.createElementNS('http://www.w3.org/2000/svg','line');
+    l.setAttribute('x1',P); l.setAttribute('x2',W-P);
+    l.setAttribute('y1',ty); l.setAttribute('y2',ty);
+    l.setAttribute('stroke','#ef4444'); l.setAttribute('stroke-width','1');
+    l.setAttribute('stroke-dasharray','4 2'); l.setAttribute('opacity','0.55');
+    svg.appendChild(l);
+  }
+  const area = document.createElementNS('http://www.w3.org/2000/svg','path');
+  area.setAttribute('d', `M${pts[0][0]} ${H-P} L${pts.map(p=>p.join(' ')).join(' L')} L${pts[pts.length-1][0]} ${H-P}Z`);
+  area.setAttribute('fill',color); area.setAttribute('opacity','0.15');
+  svg.appendChild(area);
+  const line = document.createElementNS('http://www.w3.org/2000/svg','path');
+  line.setAttribute('d',`M${pts.map(p=>p.join(' ')).join(' L')}`);
+  line.setAttribute('fill','none'); line.setAttribute('stroke',color);
+  line.setAttribute('stroke-width','2'); line.setAttribute('stroke-linecap','round');
+  svg.appendChild(line);
+  const dot = document.createElementNS('http://www.w3.org/2000/svg','circle');
+  dot.setAttribute('cx',pts[pts.length-1][0]); dot.setAttribute('cy',pts[pts.length-1][1]);
+  dot.setAttribute('r','3'); dot.setAttribute('fill',color);
+  svg.appendChild(dot);
+}
+
+function badge(id, val, tgt, higher) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  if (val===null||val===undefined) { el.className='badge na'; el.textContent='N/A'; return; }
+  const ok   = higher ? val>=tgt    : val<=tgt;
+  const warn = higher ? val>=tgt*.8 : val<=tgt*1.4;
+  if (ok)   { el.className='badge ok';   el.textContent='✓ OK'; }
+  else if(warn){ el.className='badge warn'; el.textContent='⚠ Proche'; }
+  else      { el.className='badge bad';  el.textContent='✗ Hors cible'; }
+}
+
+function colorOf(val, tgt, higher) {
+  if (val===null||val===undefined) return 'gray';
+  return (higher ? val>=tgt : val<=tgt) ? 'green' : 'red';
+}
+
+function setMetric(id, text, cls) {
+  const el = document.getElementById(id);
+  if (el) { el.textContent=text; el.className='metric '+cls; }
+}
+
+function setText(id, text) { const e=document.getElementById(id); if(e) e.textContent=text; }
+
+function fmt_ms(v) { return v!=null ? v.toFixed(0)+' ms' : '—'; }
+function fmt_s(v)  { return v!=null ? v.toFixed(2)+' s' : '—'; }
+function fmt_pct(v){ return v!=null ? v.toFixed(1)+' %' : '—'; }
+
+async function refresh() {
+  try {
+    const r = await fetch('/kpi/data');
+    if (!r.ok) return;
+    const d = await r.json();
+
+    // 1. Image
+    const img = d.image_processing;
+    setMetric('img-avg', fmt_ms(img.avg_ms), colorOf(img.avg_ms, img.target_ms, false));
+    setText('img-last', fmt_ms(img.last_ms));
+    setText('img-n', img.samples);
+    badge('img-badge', img.avg_ms, img.target_ms, false);
+    if (img.history.length>1) spark('sp-img', img.history, '#3b82f6', img.target_ms, null);
+
+    // 2. Move time
+    const mv = d.move_time;
+    setMetric('mv-avg', fmt_s(mv.avg_total_s), colorOf(mv.avg_total_s, mv.target_s, false));
+    setText('mv-stock', fmt_s(mv.avg_stockfish_s));
+    setText('mv-phys', fmt_s(mv.avg_physical_s));
+    setText('mv-n', mv.samples);
+    badge('mv-badge', mv.avg_total_s, mv.target_s, false);
+    if (mv.history.length>1) spark('sp-mv', mv.history.map(m=>m.t), '#a855f7', mv.target_s, null);
+
+    // 3. Game completion
+    const gc = d.game_completion;
+    setMetric('gc-rate', fmt_pct(gc.rate_pct), colorOf(gc.rate_pct, gc.target_pct, true));
+    setText('gc-start', gc.games_started);
+    setText('gc-comp',  gc.games_completed);
+    setText('gc-aband', gc.games_abandoned);
+    badge('gc-badge', gc.rate_pct, gc.target_pct, true);
+
+    // 4. Detection
+    const det = d.piece_detection;
+    setMetric('det-avg', fmt_pct(det.avg_rate_pct), colorOf(det.avg_rate_pct, det.target_pct*.95, true));
+    setText('det-last', fmt_pct(det.last_rate_pct));
+    setText('det-n', det.samples);
+    badge('det-badge', det.avg_rate_pct, det.target_pct*.95, true);
+    if (det.history && det.history.length>1) spark('sp-det', det.history, '#22d3ee', 95, 105);
+
+    // 5. Grip
+    const gr = d.grip_success;
+    setMetric('gr-rate', fmt_pct(gr.rate_pct), colorOf(gr.rate_pct, gr.target_pct, true));
+    setText('gr-att', gr.attempts);
+    setText('gr-suc', gr.successes);
+    badge('gr-badge', gr.rate_pct, gr.target_pct, true);
+
+    const now = new Date();
+    setText('upTime', now.toLocaleTimeString('fr-FR'));
+    setText('lastUpdate', 'Dernière mise à jour : ' + now.toLocaleString('fr-FR'));
+  } catch(e) { console.warn('KPI refresh error:', e); }
+}
+
+refresh();
+setInterval(refresh, 2000);
+</script>
+</body>
+</html>"""
+
+
+@app.get("/kpi", tags=["KPI"], include_in_schema=False)
+async def kpi_dashboard():
+    """Tableau de bord KPI en temps réel (page HTML autonome)."""
+    from fastapi.responses import HTMLResponse
+    return HTMLResponse(content=_KPI_HTML)
+
+
+@app.get("/kpi/data", tags=["KPI"])
+async def kpi_data():
+    """Retourne le snapshot JSON de tous les KPI."""
+    return kpi_tracker.get_snapshot()
+
 
 if __name__ == "__main__":
     import uvicorn
