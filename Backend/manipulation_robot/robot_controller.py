@@ -28,6 +28,7 @@ from config import (
     CIMETIERE_BLANCS, CIMETIERE_NOIRS,
 )
 from models import PieceEliminee
+from kpi_tracker import kpi_tracker
 
 MOVE_TIMEOUT = 45.0  # secondes — timeout par mouvement robot
 
@@ -530,6 +531,7 @@ class RobotController:
             await self.log("error", "Robot non calibré !")
             return False
 
+        _track_grip = self.connected  # N'enregistre que si le robot est réellement piloté
         try:
             # Mettre à jour le type de pièce courante AVANT tout mouvement
             # (nécessaire pour l'ouverture du gripper et le calcul de hauteur Z)
@@ -607,10 +609,14 @@ class RobotController:
             if self.position_depart and not self.is_paused:
                 await self._move_tcp(self.position_depart)
 
+            if _track_grip:
+                kpi_tracker.record_grip(True)
             return True
 
         except Exception as e:
             await self.log("error", f"Erreur mouvement: {e}")
+            if _track_grip:
+                kpi_tracker.record_grip(False)
             return False
 
     async def _prendre_piece(self, case: str):

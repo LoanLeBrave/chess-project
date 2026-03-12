@@ -14,6 +14,7 @@ import time
 
 from config import DIFFICULTY_PRESETS, POSITION_INITIALE, PIECE_TYPE_MAP, STOCKFISH_PATHS, DELTA_TRANSIT
 from robot_controller import RobotController
+from kpi_tracker import kpi_tracker
 
 
 class ChessManager:
@@ -288,6 +289,7 @@ class ChessManager:
 
             if self.board.is_game_over():
                 result = self.get_game_result()
+                kpi_tracker.record_game_end(True)
                 await self.broadcast({"type": "game_over", "result": result})
             elif player == "human":
                 self.set_status("thinking", "Tour du robot...")
@@ -608,6 +610,7 @@ class ChessManager:
         # Vérifier fin de partie
         if self.board.is_game_over():
             result = self.get_game_result()
+            kpi_tracker.record_game_end(True)
             await self.broadcast({"type": "game_over", "result": result})
             return {"success": True, "san": san, "game_over": True, "result": result}
 
@@ -664,6 +667,7 @@ class ChessManager:
         # Verifier fin de partie
         if self.board.is_game_over():
             result = self.get_game_result()
+            kpi_tracker.record_game_end(True)
             await self.broadcast({"type": "game_over", "result": result})
             return {"success": True, "san": san, "game_over": True, "result": result}
 
@@ -683,10 +687,12 @@ class ChessManager:
         self.engine.configure({"Skill Level": preset['skill_level']})
 
         try:
+            _t_stockfish_start = time.time()
             info = self.engine.analyse(
                 self.board,
                 chess.engine.Limit(depth=preset['depth'], time=preset['time_limit'])
             )
+            _stockfish_duration = time.time() - _t_stockfish_start
 
             move = info.get("pv", [None])[0]
             if not move:
@@ -772,6 +778,7 @@ class ChessManager:
 
             # Exécuter sur le robot
             self.set_status("moving", f"Déplacement {from_sq} → {to_sq}")
+            _t_robot_start = time.time()
             success = await self.robot.execute_move(
                 from_sq, to_sq, is_capture, captured_piece,
                 precise_pick_coords=precise_coords,
@@ -779,6 +786,9 @@ class ChessManager:
                 capture_sq=capture_sq,
                 moving_piece_type=piece.piece_type if piece else chess.PAWN,
             )
+            _robot_duration = time.time() - _t_robot_start
+            if success:
+                kpi_tracker.record_move_time(_stockfish_duration, _robot_duration)
 
             if not success:
                 await self.log("warning", "Mouvement interrompu par PAUSE")
@@ -811,6 +821,7 @@ class ChessManager:
             # Vérifier fin de partie
             if self.board.is_game_over():
                 result = self.get_game_result()
+                kpi_tracker.record_game_end(True)
                 await self.broadcast({"type": "game_over", "result": result})
                 return {
                     "success": True,
